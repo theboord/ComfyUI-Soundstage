@@ -118,3 +118,95 @@ and runs… camera follows low and handheld." The mic stays on; you don't press 
 ## MCP
 
 The same tools are an MCP server for Claude Desktop / Code: see [mcp.md](mcp.md).
+
+## Decisions in the Director's Book
+
+When a chat command changes the set, the Book keeps a decision note on the scene (`book.recordDecision`, in
+`web/book/model.mjs`). Later commands read it back as "Decided earlier: ...".
+
+- **What is kept:** the decision, not the chat. The note's `text` is a short summary the assistant wrote (`summary`),
+  or, without one, the change in words, such as `Weather: rain; Lens: 50`. `change` holds the calls as
+  `[{tool, args}]`. Only the argument keys listed for that tool in `DECISION_ARGS` are kept: numbers, enum values and
+  one-word ids or names (`sh_2`, `mara`). A tool not in the list keeps no arguments.
+- **What is not kept:** the user's typed sentence (`command`), or any piece of it. Free-text arguments (`note`,
+  `text`, `what`, `at`, `value`, a description) and names of more than one word are always dropped. A summary that
+  shares three words in a row with the sentence (two of them real words, not "to the") is dropped too. So is a
+  joined value (`red_pickup_truck`, `gas-station-pumps`, `a.b:c`) that, split on its separators, repeats the
+  sentence or two real words in a row of it; if the kept values still line up into such a run, only numbers and
+  on/off values stay. The cost: an enum spelled out in the sentence (`low_angle` from "a low angle shot") is dropped
+  from that decision. The sentence is used only to skip undo and play and to check the summary and values. The
+  summary and the ref are also checked with the spaces taken out (NFKC, lowercase, soft hyphens and joiners removed,
+  letters and digits only): `Done: makeitpourwithrain` or a ref `:makeItPourWithRain` is dropped too.
+- **Older notes:** decision notes written before 2026-11-07 held the typed sentence. On load they are rewritten to
+  the tools they changed (for example `Move; Lens`) and keep their id. Notes from the first 2026-11-07 version
+  (`dv: 2`) are cut to the allowed arguments and their text is written again from the change. The new text reaches
+  the server copy on the Book's next save.
+- **Older notes on the server (known limit):** that rewrite happens only in the open Book, on load. Every other
+  stored copy saved before it (`projects/<P>/autosave/*.json`, `projects/.trash/*/workflow.json`, another project's
+  `workflows/<P>.json`, a book in the books folder) keeps the typed sentence until it is forgotten or migrated.
+  `await book.legacyDecisions()` (`POST /soundstage/book/legacy`) lists them machine-wide:
+  `{ok, decisions: [{id, ref?, project_id?, project?, files}], files}`. Each can be forgotten by id or ref. `await
+  book.legacyDecisions({apply: true})` (`{apply: true}`) rewrites them all in place to the tools and number / on-off
+  arguments only (no string survives, a stricter cut than the load rewrite), `dv: 3`, `migrated: true`, keeping
+  the id and an opaque ref (a non-opaque old ref is dropped). It runs only when called: nothing runs it on startup.
+- **Notes Ask adds (`book.addNote(text, {source: "ask", ref})`):** the note keeps `text` as given, so Ask must pass
+  a short summary it wrote, never the user's typed sentence (needs Ask's side, `web/agent/`). `ref` is kept only
+  when it is an opaque `${projectId}:${turnId}` that does not spell the text. `forgetDecision(id or ref)` and the
+  server scrub remove `source: "ask"` notes as they remove decisions; `POST /soundstage/book/note` takes `ref` too.
+  With no `sceneId`, a multi-line Ask note is kept as one note holding every line (the source and ref on it), so
+  Forget by its id or ref leaves no line behind; before, lines 2+ were filed as plain shorthand with no ref.
+  Notes Ask added before 2026-11-07 have no ref: forget them by note id (their raw text stays in older stored copies
+  until then; `legacyDecisions` does not list them, as they are not decisions).
+- **Link id:** `recordDecision({..., ref})` stores `ref` only when it is an opaque `${projectId}:${turnId}`
+  (`DECISION_REF_RE` in `web/book/model.mjs`: `p_` + 8 hex or empty, a colon, then 1-48 of `A-Z a-z 0-9 _ -`).
+  Anything else is dropped and the note has no ref: chat text, a sentence, or a turn id that spells out the typed
+  words (`make_it_rain`). `forgetDecision(ref)` removes every decision note with that ref.
+- **Forget:** `await book.forgetDecision(id)` (a decision, source `chat`, or a note Ask added, source `ask`; never
+  the director's own notes or Pitch's) removes the note from the open Book and the workflow
+  (`node.properties.ss_book`), and saves the Book. It then calls `POST /soundstage/book/forget {ids, project: {id,
+  name}}`. That call removes the note from every stored copy of that project on the server:
+  - the books folder (`user/default/soundstage/books/*.json`, and leftover `*.json.tmp`)
+  - the user's `workflows/*.json`
+  - `projects/**`: manifests, the 20 autosaves and the trash
+  - `output/soundstage_projects/<P>/`: collected copies (`script/directors_book.json`, and `project.json`'s `book`
+    and `workflow`). A collected folder is the project's when its name is the project's folder name or its
+    `project.json` names the project; another collected folder holding the same note is in `other_copies`.
+
+  A file belongs to the project when it carries the same project id, or no id and the same project name, or sits
+  anywhere inside `projects/<project name>/` (a library Rename moves an old project's autosaves, which still name the
+  old project), and so does `workflows/<project name>.json` whatever id it carries (two tabs saving at once can leave
+  it with another id). Another project's file is left alone and listed in `other_projects`. When it holds a copy of
+  the same decision (the same note id: a Duplicate, a Save As copy) it is also listed in `other_copies` and `ok` is
+  `false`. `book.scrubDecision(id, {everywhere: true})` (body `everywhere: true`) removes those copies too, by note id,
+  or by a ref that names this project (`p_<id>:<turn>`: a Duplicate keeps the ref with the note, so a retry finds the
+  copy even after this project's own copy is gone). Another project's own decision that merely shares a ref with no
+  project in it (`:<turn>`) is never touched; when only such a note matches and nothing was removed, `ok` is `false`
+  and `ref_elsewhere_ids` names the note ids (forget them with `everywhere` if they are this decision). Every answer
+  carries `decision_ids` (the note ids found), and `scrubDecision` resends the ids a not-ok answer named on its retry. A file is rewritten only if its
+  text holds the id. `ok` is `false`, with an `error` line, when a copy was not cleaned: a file over 64 MB
+  (`skipped`), a file that names no project (`skipped`), a file whose text still mentions the id, for example inside
+  a string (`still_mentions`), another project's copy (`other_copies`), or a ref match only in another project with
+  nothing removed (`ref_elsewhere`). Without a project only the open book is
+  cleaned, and the answer says so.
+- **A note not in the open Book** (dropped by the 40-decision cap, another tab's, or one already removed locally):
+  `forgetDecision(id)` still runs the server scrub. It answers `{ok: true, in_book: false, copies}` when stored
+  copies were removed, and `{ok: false, in_book: false, copies: 0, error}` when nothing was left to remove (or the
+  scrub failed). `await book.scrubDecision(id)` does the same scrub without looking at the Book.
+- **What `ok: true` covers:** only the server-side files listed above. Not other open tabs, ComfyUI canvas undo,
+  browser storage, ComfyUI's queue history (`extra_pnginfo`), metadata inside rendered files, or a collected zip
+  already downloaded.
+- **Written back:** a second tab with the same project open, or ComfyUI's canvas undo to a step before the Forget,
+  still holds the note. Its next Save or autosave writes it back to the server. Forget again after closing it.
+
+**Copies that Forget does not reach** (Soundstage does not change ComfyUI itself):
+
+- **ComfyUI's queue history:** each queued prompt keeps the whole workflow in `extra_pnginfo`, Book included. It
+  lives in the server's memory until ComfyUI restarts or its queue history is cleared.
+- **Rendered files:** PNG and video metadata embed the workflow as it was when they were rendered.
+- **The browser:** the frontend keeps the open workflow and its in-tab undo steps in browser storage. The Director's
+  own Undo list holds the typed command in memory until the page reloads.
+- **A collected zip already downloaded** (the folder in `output/soundstage_projects/` is cleaned, the zip is not).
+
+From 2026-11-07 a decision note no longer holds the typed sentence, so these copies hold only the short summary and
+the change.
+

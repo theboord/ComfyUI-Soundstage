@@ -17,6 +17,9 @@ import { LadderViewer, RUNG_NAMES } from "./ladder/ladder.mjs";
 import { LookPanel } from "./look/look.mjs";
 import { SceneAgent, loadScene } from "./agent/agent.mjs";
 import { CutPanel, savedFields } from "./cut/cut.mjs";
+import * as CutModule from "./cut/cut.mjs";   // oneVideoSupport, when the Cut exports it (web/onevideo.mjs)
+import * as CutTimeline from "./cut/timeline.mjs";
+import { checkOneVideo, findHook as findOneVideoHook, oneVideoClips, leftOut as oneVideoLeftOut } from "./onevideo.mjs";
 import { attachEditLink, flattenClip } from "./cut/editlink_app.mjs";
 import { makeAudioGenerator, makeAudioUploader } from "./cut/gen.mjs";
 import { ShotStrip, readSaved } from "./cut/strip.mjs";
@@ -63,7 +66,7 @@ import { REGEN_LABEL, chooseLocks, regenBody, mergeLocked, stagesLine, fixBody, 
 import { guardModels, showModelNotice, allNodes } from "./ui/modelguard.mjs";
 import "./models/panel.mjs";   // Models… panel (sets globalThis.__ssOpenModels / __ssModelsNotice)
 import { mountDirector } from "./agent/directorpanel.mjs";
-import { cutSigOf, qualityHook, smoothAgentShots } from "./hosthooks.mjs";   // host.cutSig and host.quality for the Director and Ask
+import { cutSigOf, qualityHook, smoothAgentShots, projectHook, cutPanelHook, exposureHook, stageHook } from "./hosthooks.mjs";   // host.cutSig and host.quality for the Director and Ask
 import { mountAsk } from "./agent/ask.mjs";
 import { mountBook } from "./book/book.mjs";
 import { mountPresets } from "./ui/presets.mjs";
@@ -733,22 +736,31 @@ function createStageWidget(node, inputName) {
     ?.widgets?.find((x) => x.name === "step");
   const shotName = (id) => (stage.toJSON().shots || []).find((s) => s.id === id)?.name || id;
 
+  const cutFps = () => stage.toJSON().shot?.fps || 24;   // the rate sent to the join; gaps are measured at it
+  const oneVideoGuard = (raw, fps) => checkOneVideo(raw, findOneVideoHook(CutModule, CutTimeline), { fps });
   async function flattenCut() {
-    const entries = cutEntries();
-    if (!entries.length) { cutOut.textContent = "The cut is empty: add shots to the strip first."; return; }
+    // Decide on the RAW saved cut (gaps, upper picture tracks, detached audio...) before flattening: refuse in plain
+    // words and change nothing when the join can't honour it; a cut whose only extra is gaps joins with black + silence.
+    const raw = loadCut(), fps = cutFps();
+    const support = oneVideoGuard(raw, fps);
+    if (support.message) { cutOut.textContent = support.message; status.textContent = support.message; return; }
     const saved = savedRenders();
-    // a clip pinned to a take (Edit from the timeline) joins its pinned file
-    const clips = entries.map((e) => ({ shot_id: e.shot_id, name: shotName(e.shot_id), in: e.in, out: e.out, ...flattenClip(e, saved[e.shot_id] || {}, BEST) }));
+    // a clip pinned to a take (Edit from the timeline) joins its pinned file; a gap it can't measure refuses, never drops
+    let clips;
+    try { clips = oneVideoClips(raw, { fps, shotName, shotFile: (e) => flattenClip(e, saved[e.shot_id] || {}, BEST) }); }
+    catch (err) { cutOut.textContent = err.message; status.textContent = err.message; return; }
+    if (!clips.some((c) => !c.gap)) { cutOut.textContent = "The cut is empty: add shots to the strip first."; return; }
+    const gapCount = clips.filter((c) => c.gap).length, skipped = oneVideoLeftOut(raw);
     oneBtn.disabled = true;
-    cutOut.textContent = `Joining ${clips.length} clips…`;
+    const shotClips = clips.length - gapCount;
+    cutOut.textContent = `Joining ${shotClips} clips${gapCount ? ` and ${gapCount} gap${gapCount === 1 ? "" : "s"} (black, silent)` : ""}…`;
     try {
-      const sc = stage.toJSON();
       const res = await api.fetchApi("/soundstage/cut/render_video", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: node.title && node.title !== "Soundstage · 3D Stage" ? node.title : "cut", fps: sc.shot?.fps || 24, clips }) });
+        body: JSON.stringify({ name: node.title && node.title !== "Soundstage · 3D Stage" ? node.title : "cut", fps, clips }) });
       const j = await res.json().catch(() => ({ error: `server answered ${res.status}` }));
       if (!res.ok || j.error) throw new Error(j.error || `server answered ${res.status}`);
       const url = viewURL(j);
-      const notFinal = clips.filter((c) => !/^final/.test(c.kind || "")).length;
+      const notFinal = clips.filter((c) => !c.gap && !/^final/.test(c.kind || "")).length;
       cutOut.textContent = "";
       const a = (label, extra) => Object.assign(document.createElement("a"), { href: url, textContent: label, ...extra });
       const watch = a("", { target: "_blank", rel: "noopener" });
@@ -756,8 +768,9 @@ function createStageWidget(node, inputName) {
       watch.append(icon("play", 13), "Watch");
       dl.append(icon("download", 13), "Download");
       for (const x of [watch, dl]) { x.style.cssText = "color:var(--ss-accent, #F2FF59);display:inline-flex;gap:4px;align-items:center;margin-right:8px"; x.addEventListener("pointerdown", (e) => e.stopPropagation()); }
-      cutOut.append(watch, dl, document.createTextNode(`${j.seconds}s · ${clips.length} clips` +
-        (notFinal ? ` · ${notFinal} not Final yet (${j.missing?.length || 0} black slate${(j.missing?.length || 0) === 1 ? "" : "s"})` : "")));
+      cutOut.append(watch, dl, document.createTextNode(`${j.seconds}s · ${shotClips} clips` + (gapCount ? ` · ${gapCount} gap${gapCount === 1 ? "" : "s"}` : "") +
+        (notFinal ? ` · ${notFinal} not Final yet (${j.missing?.length || 0} black slate${(j.missing?.length || 0) === 1 ? "" : "s"})` : "") +
+        (skipped.length ? ` · left out: ${skipped.join(", ")} (the Cut's Render has them)` : "")));
       status.textContent = `The cut is one video now: ${j.filename}.`;
     } catch (err) {
       cutOut.textContent = `Couldn't join the cut: ${err.message}`;
@@ -784,6 +797,9 @@ function createStageWidget(node, inputName) {
     flattenCut();
   }
   async function renderMissing() {
+    // The batch ends in the one-video join: refuse a cut the join can't take BEFORE any Final is queued (no GPU time).
+    const guard = oneVideoGuard(loadCut(), cutFps());
+    if (guard.message) { const m = `${guard.message} Nothing was queued.`; cutOut.textContent = m; status.textContent = m; return; }
     const saved = savedRenders();
     const todo = [...new Set(cutEntries().map((e) => e.shot_id))].filter((id) => !/final/.test(Object.keys(saved[id] || {}).join(" ")));
     if (!todo.length) { flattenCut(); return; }
@@ -3380,9 +3396,11 @@ function createStageWidget(node, inputName) {
       cast: () => castPanel,
       // The co-pilot's hands (web/agent/copilot.mjs, docs/assistant.md): the set, ⑤ Motion's quality, the Cut and the
       // shot length. Each change is undone by the co-pilot's one Undo for its plan.
-      stage: { toJSON: () => stage.toJSON(), select: (id) => stage.select(id) },
+      stage: stageHook(stage),                // {toJSON, select, setPose, snapshot, restore, undo} (web/hosthooks.mjs)
       quality: qualityHost,
-      cut: { setTransition: (edit, type) => cut.setTransition(edit, type), undo: () => cut.undo() },
+      cut: { setTransition: (edit, type) => cut.setTransition(edit, type), undo: () => cut.undo(), panel: cutPanelHook(cut, cutView), show: () => showView("cut") },
+      project: projectHook(),                 // async () => {name, id}: the open project (id confirmed, else null)
+      lights: exposureHook(stage),            // "lights down": {get(), set(stops), down(stops), reset()}, stage undo
       shotLength: (secs) => {
         const s = stage.toJSON(), was = Math.round(s.shot.frames / s.shot.fps);
         dur.input.value = String(secs); dur.input.dispatchEvent(new Event("input"));

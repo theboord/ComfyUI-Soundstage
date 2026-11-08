@@ -181,7 +181,7 @@ export function shotPathSig(st) {
   const host = st._followActor?.() || null;
   const ev = sh.impact_shake && sh.impact_shake !== "off" ? st.state?.physics?.events : null;
   const evSig = ev?.length ? ev.reduce((h, e) => h + (e.frame || 0) * 31 + (e.t || 0) * 7 + (e.pos?.[0] || 0) * 13 + (e.pos?.[2] || 0) * 17, ev.length) : 0;
-  return JSON.stringify([sh.id, st._lastFrame(), st.state?.shot?.fps, st._camKeys(), sh.lens_keys || null, sh.rig || null, sh.camera_follow || "",
+  return JSON.stringify([sh.id, st._lastFrame(), st.state?.shot?.fps, (st._camKeysView ? st._camKeysView() : st._camKeys()), sh.lens_keys || null, sh.rig || null, sh.camera_follow || "",
     host ? [host.keys, host.position, host.rotation_deg || 0, host.drive || "", host.physics?.baked || false] : null, sh.impact_shake || "", evSig]);
 }
 
@@ -306,7 +306,7 @@ export class CameraViz {
 
   _rebuildPath() {
     for (const c of [...this.pathGroup.children]) { this.pathGroup.remove(c); disposeTree(c); }
-    const st = this.stage, last = st._lastFrame(), keys = st._camKeys();
+    const st = this.stage, last = st._lastFrame(), keys = st._camKeysView ? st._camKeysView() : st._camKeys();   // read-only: drawing never stores a key
     const step = Math.max(1, Math.ceil(last / MAX_SEGMENTS));
     const frames = [];
     for (let f = 0; f < last; f += step) frames.push(f);
@@ -667,7 +667,8 @@ export class PipViewer {
     r.setViewport(m, m, pw, ph);
     const auto = r.autoClear;
     r.autoClear = true;
-    r.render(st.scene, st.camera);
+    // The shot camera's picture is dimmed like the main view ("lights down", stage.setExposure).
+    if (st._withExposure) st._withExposure(() => r.render(st.scene, st.camera)); else r.render(st.scene, st.camera);
     r.autoClear = auto;
     r.setScissorTest(false);
     r.setViewport(0, 0, L.bw, L.bh);
@@ -807,7 +808,10 @@ export class TopView {
   }
 
   // ---- data
-  _keys() { return this.stage._camKeys(); }
+  // Drawing and hit-testing read the keys without writing them (a keyless shot shows its fallback key, not stored);
+  // an edit (insert, drag) goes through _editKeys(), which stores the first key.
+  _keys() { const st = this.stage; return st._camKeysView ? st._camKeysView() : st._camKeys(); }
+  _editKeys() { return this.stage._camKeys(); }
 
   /** The shot's ride-along host (its camera keys are in that vehicle's own space), or null. */
   _host() { return this.stage._followActor?.() || null; }
@@ -958,7 +962,7 @@ export class TopView {
   }
 
   _insertKey(f) {
-    const st = this.stage, keys = this._keys();
+    const st = this.stage, keys = this._editKeys();
     if (keys.some((k) => k.frame === f)) { this._scrub(f); return; }
     const c = st._cameraAt(f);
     const r3 = (v) => +v.toFixed(3);
@@ -1036,7 +1040,7 @@ export class TopView {
       if (!d.moved && Math.hypot(sx - d.sx, sy - d.sy) < 3) return;
       d.moved = true;
       cv.style.cursor = "grabbing";
-      const keys = this._keys(), h = d.hit;
+      const keys = this._editKeys(), h = d.hit;   // a drag is an edit: a keyless shot stores its key here
       const [wx, wz] = this._toWorld(sx, sy), [w0x, w0z] = this._toWorld(d.sx, d.sy);
       const r3 = (v) => +v.toFixed(3);
       const r3v = (p) => p.map(r3);

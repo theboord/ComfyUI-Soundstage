@@ -338,7 +338,7 @@ export function missingColorMaps(materials) {
 export function clayReason(a, ctx = {}) {
   if (ctx.blocking) return "Blocking look is on";
   if (a.simple_model) return "set to the clay model";
-  if (a.mount_id) return "rides or sits on something";
+  if (a.mount_id && !ctx.sits) return "rides or sits on something";   // sitting on a chair / bench / sofa: lifelike (sits)
   if (a.carry_id) return "is carried";
   if (a.mocap) return "plays a video mocap take";
   if (a.pose_keys?.length) return "has Pose keys";
@@ -374,6 +374,7 @@ export function feetUpReason(a, ctx = {}) {
   if (ctx.swims) return "swims";
   if (ctx.floats) return "floats in the water";
   if (ctx.airborne) return "is in the air (a jump or vault)";
+  if (ctx.sits) return "sits on a seat or the floor";
   return null;
 }
 

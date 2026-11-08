@@ -205,3 +205,260 @@ def test_installer_has_the_ollama_step_and_opt_outs():
     assert "https://ollama.com/install.sh" in start
     assert "OLLAMA_KEEP_ALIVE:-10m" in start and "OLLAMA_ORIGINS" in start and "8189" in start
     assert "/workspace/ollama/models" in inst and "/workspace/ollama/models" in start
+
+
+# ---------------------------------------------------------------- Ask hooks: status()['local'] and num_ctx sizing
+def test_status_says_whether_the_model_server_is_on_this_machine(monkeypatch):
+    hw = {"vram_gb": 16, "ram_gb": 64, "gpu": "RTX 4080"}
+    for url, local in [("127.0.0.1:11434", True), ("http://localhost:11434", True), ("http://[::1]:11434", True),
+                       ("0.0.0.0:11434", True), ("http://127.0.0.5:9000", True),
+                       ("https://abc123-11434.proxy.example.net", False), ("http://10.0.0.7:11434", False),
+                       ("http://ask-box.example.org:11434", False)]:
+        monkeypatch.setenv("SOUNDSTAGE_OLLAMA_URL", url)
+        st = A.status(hw, READY)
+        assert st["local"] is local, (url, st["url"])
+    monkeypatch.setattr(A.socket, "gethostname", lambda: "Studio-Mac.local")
+    assert A.is_local_url("http://studio-mac.local:11434") is True
+    assert A.is_local_url("http://studio-mac:11434") is True
+    assert A.is_local_url("http://other-mac.local:11434") is False
+    assert A.is_local_url("not a url") is False
+
+
+def test_num_ctx_is_sized_to_the_prompt_within_bounds(monkeypatch):
+    monkeypatch.delenv("SOUNDSTAGE_ASSISTANT_MAX_CTX", raising=False)
+    planner = [{"role": "system", "content": "x" * (3500 * 4)}, {"role": "user", "content": "add a chair"}]   # ~3,500 tokens
+    o = A.chat_options({"device": "gpu"}, messages=planner)
+    assert o["num_ctx"] == 8192 and o["num_ctx"] in A.CTX_SIZES, o
+    assert A.chat_options({"device": "gpu"}, messages=[{"role": "user", "content": "hi"}])["num_ctx"] == 8192   # the same size as the planner
+    huge = [{"role": "user", "content": "y" * 1_000_000}]
+    assert A.chat_options({"device": "gpu"}, messages=huge)["num_ctx"] == 32768                                 # bounded
+    monkeypatch.setenv("SOUNDSTAGE_ASSISTANT_MAX_CTX", "16384")
+    assert A.chat_options({"device": "gpu"}, messages=huge)["num_ctx"] == 16384
+    monkeypatch.setenv("SOUNDSTAGE_ASSISTANT_MAX_CTX", "100")                                                  # a bad max: still 4096
+    assert A.chat_options({"device": "gpu"}, messages=huge)["num_ctx"] == 4096
+    assert A.chat_options({"device": "gpu"}, messages=[{"role": "user", "content": "hi"}])["num_ctx"] == 4096   # never below Ollama's
+    monkeypatch.delenv("SOUNDSTAGE_ASSISTANT_MAX_CTX")
+    # the request's own num_ctx / num_predict count; the GPU decision is unchanged
+    assert A.chat_options({"device": "gpu"}, messages=[], options={"num_ctx": 12000})["num_ctx"] == 16384   # snapped up, never lowered
+    assert A.chat_options({"device": "gpu"}, messages=[], options={"num_predict": 7000})["num_ctx"] == 8192
+    assert A.chat_options({"device": "cpu"}, messages=planner)["num_gpu"] == 0
+    assert "num_ctx" not in A.chat_options({"device": "gpu"})   # no messages: as before
+
+
+def test_num_ctx_counts_tools_and_images_and_never_cuts_what_the_caller_asked(monkeypatch):
+    monkeypatch.delenv("SOUNDSTAGE_ASSISTANT_MAX_CTX", raising=False)
+    monkeypatch.delenv("OLLAMA_CONTEXT_LENGTH", raising=False)
+    short = [{"role": "user", "content": "add a lamp"}]
+    tools = [{"type": "function", "function": {"name": f"tool_{i}", "description": "d" * 400,
+              "parameters": {"type": "object", "properties": {"x": {"type": "string", "description": "e" * 200}}}}}
+             for i in range(60)]   # ~60 x 700 chars = ~12,000 tokens of schemas
+    assert A.chat_options({"device": "gpu"}, messages=short)["num_ctx"] == 8192
+    with_tools = A.chat_options({"device": "gpu"}, messages=short, tools=tools)["num_ctx"]
+    assert with_tools >= A.prompt_tokens(short, tools) + A.REPLY_TOKENS and with_tools >= 16384, with_tools
+    pics = [{"role": "user", "content": "match this frame", "images": ["aGVsbG8="] * 4}]
+    assert A.prompt_tokens(pics) >= 4 * A.IMAGE_TOKENS
+    assert A.chat_options({"device": "gpu"}, messages=pics)["num_ctx"] >= 4 * A.IMAGE_TOKENS + A.REPLY_TOKENS
+    # the caller's num_ctx: plain decimal strings and floats count, snapped UP to CTX_SIZES (never lowered), not capped at max_ctx() (only at CTX_CEILING)
+    for asked, want in [("12000", 16384), (12000.0, 16384), ("9000.5", 16384), ("8192", 8192), (65536, 65536), ("65536", 65536), (70000, 131072)]:
+        assert A.chat_options({"device": "gpu"}, messages=short, options={"num_ctx": asked})["num_ctx"] == want, asked
+    for junk in ["lots", True, -5, 0, None, float("nan")]:
+        assert A.chat_options({"device": "gpu"}, messages=short, options={"num_ctx": junk})["num_ctx"] == 8192, junk
+    assert A.chat_options({"device": "gpu"}, messages=short, options={"num_predict": "7000"})["num_ctx"] == 8192
+    # never below the server's own OLLAMA_CONTEXT_LENGTH (as this process sees it)
+    monkeypatch.setenv("OLLAMA_CONTEXT_LENGTH", "16384")
+    assert A.chat_options({"device": "gpu"}, messages=short)["num_ctx"] == 16384
+    monkeypatch.setenv("SOUNDSTAGE_ASSISTANT_MAX_CTX", "8192")
+    assert A.chat_options({"device": "gpu"}, messages=[{"role": "user", "content": "y" * 1_000_000}])["num_ctx"] == 16384, \
+        "a max below the server's context is raised to it"
+
+
+def test_local_means_a_loopback_url_and_url_kind_tells_the_cases_apart(monkeypatch):
+    hw = {"vram_gb": 16, "ram_gb": 64, "gpu": "RTX 4080"}
+    monkeypatch.setattr(A.socket, "gethostname", lambda: "Studio-Mac.local")
+    for url, kind in [("http://127.0.0.1:11434", "loopback"), ("http://localhost:11434", "loopback"),
+                      ("http://studio-mac.local:11434", "this_host"), ("http://10.0.0.7:11434", "remote")]:
+        monkeypatch.setenv("SOUNDSTAGE_OLLAMA_URL", url)
+        st = A.status(hw, READY)
+        assert (st["url_kind"], st["local"]) == (kind, kind != "remote"), url
+    # an SSH tunnel to a pod is a loopback URL: local is True, url_kind says only "loopback" (it cannot see the tunnel)
+    monkeypatch.setenv("SOUNDSTAGE_OLLAMA_URL", "http://127.0.0.1:11435")
+    assert A.status(hw, READY)["url_kind"] == "loopback"
+
+
+def test_chat_route_sizes_num_ctx_from_the_request_messages_tools_and_options(monkeypatch):
+    """The /soundstage/assistant/chat route (assistant.py register) passes the request's messages, tools and options
+    to chat_options: what reaches Ollama carries the sized num_ctx and the caller's own options."""
+    from aiohttp import web
+    from aiohttp.test_utils import TestClient, TestServer
+    monkeypatch.delenv("SOUNDSTAGE_ASSISTANT_MAX_CTX", raising=False)
+    monkeypatch.delenv("OLLAMA_CONTEXT_LENGTH", raising=False)
+    monkeypatch.setattr(A, "hardware", lambda: {"vram_gb": 16.0, "ram_gb": 128.0, "gpu": "test"})
+    A._status_cache["v"] = None
+    A.forget_ctx()
+    seen = []
+
+    async def fake(request):
+        body = await request.json() if request.can_read_body else None
+        seen.append((request.path, body))
+        if request.path == "/api/tags":
+            return web.json_response({"models": [{"name": "qwen3:30b-a3b"}]})
+        if request.path == "/api/ps":
+            return web.json_response({"models": []})
+        return web.json_response({"message": {"content": "{}"}})
+
+    tools = [{"type": "function", "function": {"name": f"t{i}", "description": "d" * 700}} for i in range(60)]
+
+    async def go():
+        ollama = web.Application()
+        ollama.router.add_route("*", "/{tail:.*}", fake)
+        async with TestServer(ollama) as o:
+            monkeypatch.setattr(A, "ollama_url", lambda: str(o.make_url("")).rstrip("/"))
+            routes = web.RouteTableDef()
+            A.register(routes)
+            app = web.Application()
+            app.add_routes(routes)
+            async with TestClient(TestServer(app)) as c:
+                msgs = [{"role": "user", "content": "add a chair"}]
+                a = await c.post("/soundstage/assistant/chat", json={"messages": msgs, "tools": tools})
+                b = await c.post("/soundstage/assistant/chat", json={"messages": msgs, "options": {"num_ctx": "20000", "temperature": 0.2}})
+                d = await c.post("/soundstage/assistant/chat", json={"messages": msgs})
+                return a.status, b.status, d.status
+    assert asyncio.run(go()) == (200, 200, 200)
+    chats = [b for p, b in seen if p == "/api/chat"]
+    assert len(chats) == 3
+    assert chats[0]["options"]["num_ctx"] >= 16384 and chats[0]["tools"] == tools, "the tool list was counted"
+    assert chats[0]["options"]["num_ctx"] in A.CTX_SIZES
+    assert chats[1]["options"]["num_ctx"] == 32768 and chats[1]["options"]["temperature"] == 0.2, "20000 snapped up"
+    assert chats[2]["options"]["num_ctx"] == 32768, "a short chat after: the model's size is reused (no reload)"
+    A._status_cache["v"] = None
+
+
+def test_num_ctx_is_bounded_by_the_ceiling_whatever_the_caller_or_environment_says(monkeypatch):
+    """Fix: the caller's num_ctx and OLLAMA_CONTEXT_LENGTH used to pass through unbounded (1e12, 1e308 went to Ollama
+    as-is). Every value is clamped to CTX_CEILING; non-finite values and exponent strings are ignored."""
+    monkeypatch.delenv("SOUNDSTAGE_ASSISTANT_MAX_CTX", raising=False)
+    monkeypatch.delenv("OLLAMA_CONTEXT_LENGTH", raising=False)
+    short = [{"role": "user", "content": "add a lamp"}]
+    ctx = lambda **o: A.chat_options({"device": "gpu"}, messages=short, options=o)["num_ctx"]
+    assert A.CTX_CEILING == 131072
+    for huge in [1e12, 1e308, 10 ** 400, "1000000000000", "999999999999999999999999", 131073]:
+        assert ctx(num_ctx=huge) == A.CTX_CEILING, huge
+    for refused in ["1e3", "1e12", "inf", "-inf", "nan", float("inf"), float("-inf"), "0x2000", " ", ""]:
+        assert ctx(num_ctx=refused) == 8192, refused
+    assert ctx(num_ctx=131072) == 131072 and ctx(num_ctx="65536") == 65536
+    assert ctx(num_predict=1e308) <= A.CTX_CEILING
+    for env, want in [("1e12", 4096), ("1000000000000", A.CTX_CEILING), ("inf", 4096), ("nan", 4096), ("16384", 16384)]:   # server_ctx() itself
+        monkeypatch.setenv("OLLAMA_CONTEXT_LENGTH", env)
+        assert A.server_ctx() == want, env
+        n = ctx()
+        assert isinstance(n, int) and 4096 <= n <= A.CTX_CEILING, (env, n)
+    monkeypatch.setenv("OLLAMA_CONTEXT_LENGTH", "1000000000000")
+    assert ctx(num_ctx=8192) == A.CTX_CEILING
+    monkeypatch.setenv("SOUNDSTAGE_ASSISTANT_MAX_CTX", "1e308")
+    monkeypatch.delenv("OLLAMA_CONTEXT_LENGTH")
+    assert A.max_ctx() == 32768, "an exponent string max falls back to the default"
+    monkeypatch.setenv("SOUNDSTAGE_ASSISTANT_MAX_CTX", "99999999")
+    assert A.max_ctx() == A.CTX_CEILING
+
+
+def test_num_ctx_is_stable_so_ollama_does_not_reload_the_model(monkeypatch):
+    """Fix: the chat route sent a num_ctx sized to each prompt (4096 / 8192 / 12288 ...), and Ollama reloads the model
+    whenever num_ctx changes, so mixing short chats with planner calls reloaded a big local model on every request.
+    Now: a small set of fixed sizes (CTX_SIZES), the largest already sent to the model reused, never below the
+    server's own OLLAMA_CONTEXT_LENGTH."""
+    monkeypatch.delenv("SOUNDSTAGE_ASSISTANT_MAX_CTX", raising=False)
+    monkeypatch.delenv("OLLAMA_CONTEXT_LENGTH", raising=False)
+    monkeypatch.setattr(A, "ollama_url", lambda: "http://127.0.0.1:11434")
+    A.forget_ctx()
+    short = [{"role": "user", "content": "hi"}]
+    planner = [{"role": "system", "content": "x" * (3500 * 4)}, {"role": "user", "content": "add a chair"}]   # ~3,500 tokens
+    mid = [{"role": "user", "content": "z" * (5000 * 4)}]                                                      # ~5,700 tokens
+    big = [{"role": "user", "content": "w" * (9000 * 4)}]                                                      # ~10,300 tokens
+    def ctx(m, model=None):   # one request; with a model, Ollama replied 2xx (the route then calls remember_ctx)
+        n = A.chat_options({"device": "gpu"}, messages=m, model=model)["num_ctx"]
+        A.remember_ctx(model, n)
+        return n
+    # same size: consecutive short, long, short, long prompts send one value (no model given: sizes only)
+    assert [ctx(m) for m in (short, planner, mid, short, planner, mid)] == [8192] * 6
+    # the old per-prompt rounding gave 4096 / 8192 / 12288 for these: three reloads
+    assert len({ctx(m) for m in (short, planner, mid)}) == 1
+    # a bigger prompt steps up a size; for the same model, later short chats keep that size (no reload back down)
+    assert [ctx(m, "qwen3:30b-a3b") for m in (short, planner, big, short, planner)] == [8192, 8192, 16384, 16384, 16384]
+    # another model (or another Ollama URL) has its own size
+    assert ctx(short, "llama3.2:3b") == 8192
+    monkeypatch.setattr(A, "ollama_url", lambda: "http://127.0.0.1:11435")
+    assert ctx(short, "qwen3:30b-a3b") == 8192
+    monkeypatch.setattr(A, "ollama_url", lambda: "http://127.0.0.1:11434")
+    # an unload forgets it (the model is out of memory, its next load may be smaller)
+    monkeypatch.setattr(A, "_http", lambda *a, **k: {})
+    assert A.unload("qwen3:30b-a3b") is True
+    assert ctx(short, "qwen3:30b-a3b") == 8192
+    # never below the server's own OLLAMA_CONTEXT_LENGTH, which is then the one value for every small prompt
+    monkeypatch.setenv("OLLAMA_CONTEXT_LENGTH", "12000")
+    A.forget_ctx()
+    assert [ctx(m, "m") for m in (short, planner, mid, short)] == [12000] * 4
+    monkeypatch.setenv("OLLAMA_CONTEXT_LENGTH", "65536")
+    assert ctx(short, "m") == 65536 and ctx(big, "m") == 65536
+    # every value sent is one of the sizes, the server's own context or the max (a handful of values, not one per prompt)
+    monkeypatch.delenv("OLLAMA_CONTEXT_LENGTH")
+    A.forget_ctx()
+    seen = {ctx([{"role": "user", "content": "q" * (n * 1000)}]) for n in range(1, 200, 3)}
+    assert seen <= set(A.CTX_SIZES) | {A.max_ctx()}, seen
+    A.forget_ctx()
+
+
+def test_a_failed_big_request_does_not_keep_its_num_ctx(monkeypatch):
+    """Fix: num_ctx_for(..., model=...) stored the size before the request was forwarded, so a big request that failed
+    (Ollama 500, or unreachable -> 502) still made every later short chat send the big num_ctx. Only a size Ollama
+    accepted (a 2xx reply) is reused now."""
+    from aiohttp import web
+    from aiohttp.test_utils import TestClient, TestServer
+    monkeypatch.delenv("SOUNDSTAGE_ASSISTANT_MAX_CTX", raising=False)
+    monkeypatch.delenv("OLLAMA_CONTEXT_LENGTH", raising=False)
+    monkeypatch.setattr(A, "hardware", lambda: {"vram_gb": 16.0, "ram_gb": 128.0, "gpu": "test"})
+    A._status_cache["v"] = None
+    A.forget_ctx()
+    seen = []
+
+    async def fake(request):
+        body = await request.json() if request.can_read_body else None
+        if request.path == "/api/tags":
+            return web.json_response({"models": [{"name": "qwen3:30b-a3b"}]})
+        if request.path == "/api/ps":
+            return web.json_response({"models": []})
+        seen.append(body["options"]["num_ctx"])
+        if body["options"]["num_ctx"] > 8192:   # the big one fails (out of memory)
+            return web.json_response({"error": "model requires more system memory"}, status=500)
+        return web.json_response({"message": {"content": "{}"}})
+
+    short = [{"role": "user", "content": "hi"}]
+    big = [{"role": "user", "content": "w" * (9000 * 4)}]   # ~10,300 tokens -> 16384
+
+    async def go():
+        ollama = web.Application()
+        ollama.router.add_route("*", "/{tail:.*}", fake)
+        async with TestServer(ollama) as o:
+            url = str(o.make_url("")).rstrip("/")
+            monkeypatch.setattr(A, "ollama_url", lambda: url)
+            routes = web.RouteTableDef()
+            A.register(routes)
+            app = web.Application()
+            app.add_routes(routes)
+            async with TestClient(TestServer(app)) as c:
+                out = []
+                for m in (big, short, big, short):
+                    r = await c.post("/soundstage/assistant/chat", json={"model": "qwen3:30b-a3b", "messages": m})
+                    out.append(r.status)
+                # unreachable Ollama (the route answers 502): nothing is kept either
+                monkeypatch.setattr(A, "ollama_url", lambda: "http://127.0.0.1:9")
+                r = await c.post("/soundstage/assistant/chat", json={"model": "qwen3:30b-a3b", "messages": big})
+                out.append(r.status)
+                monkeypatch.setattr(A, "ollama_url", lambda: url)
+                r = await c.post("/soundstage/assistant/chat", json={"model": "qwen3:30b-a3b", "messages": short})
+                out.append(r.status)
+                return out
+    assert asyncio.run(go()) == [500, 200, 500, 200, 502, 200]
+    assert seen == [16384, 8192, 16384, 8192, 8192], "a short chat after a failed big request is not kept at the big size"
+    assert A._ctx_sent == {(A.ollama_url(), "qwen3:30b-a3b"): 8192}
+    A.forget_ctx()
+    A._status_cache["v"] = None

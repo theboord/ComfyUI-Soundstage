@@ -90,34 +90,96 @@ def inside(base: Path, rel: str) -> Path | None:
 
 # ------------------------------------------------------------------------------------------------ file references
 
-def parse_ref(v) -> dict | None:
-    """A ComfyUI file reference in any of the shapes the App stores -> {filename, subfolder, type}, or None.
+_DRIVE = re.compile(r"^[A-Za-z]:")
+_WIN = os.sep == "\\"
 
-    'soundstage/draft_00007_.mp4 [output]', {'filename','subfolder','type'}, or a /view?filename=&subfolder=&type= URL.
-    """
+
+def _ref_parts(filename: str, subfolder: str):
+    """(filename, subfolder) of a ref, made whole, or None when either names a place outside the ComfyUI folder:
+    an absolute path, a drive letter, a '..' part, or (on macOS / Linux, where it's a plain character) a backslash.
+    A relative path in the file name is folded into the subfolder ('a/b.mp4' -> subfolder 'a', file 'b.mp4'), never
+    cut down to its basename: that would copy an unrelated output/<basename> instead."""
+    for part in (filename, subfolder):
+        if not part:
+            continue
+        if "\\" in part and not _WIN:
+            return None
+        q = part.replace("\\", "/")
+        if q.startswith("/") or _DRIVE.match(q) or ".." in q.split("/") or "\x00" in q:
+            return None
+    fn = filename.replace("\\", "/")
+    sub = "/".join(x for x in (subfolder.replace("\\", "/").strip("/"), fn.rpartition("/")[0].strip("/")) if x)
+    fn = fn.rpartition("/")[2]
+    if not fn:
+        return None
+    return fn, sub
+
+
+def _ref_fields(v):
+    """(filename, subfolder, type) of anything shaped like a ComfyUI file ref, before any safety check, or None."""
     if isinstance(v, dict):
         fn = v.get("filename")
         if isinstance(fn, str) and fn and _EXT_OK.search(fn):
             t = v.get("type") or "output"
             if t in ("output", "input", "temp"):
-                return {"filename": os.path.basename(fn), "subfolder": str(v.get("subfolder") or "").strip("/"), "type": t}
+                return fn, str(v.get("subfolder") or ""), t
         return None
     if not isinstance(v, str) or len(v) > 2000:
         return None
     s = v.strip()
     m = _REF_STR.match(s)
     if m:
-        p = m.group("path").strip().replace("\\", "/")
-        sub, _, fn = p.rpartition("/")
-        return {"filename": fn, "subfolder": sub.strip("/"), "type": m.group("type")}
+        p = m.group("path").strip()
+        cut = max(p.rfind("/"), p.rfind("\\"))
+        return (p[cut + 1:], p[:cut] if cut >= 0 else "", m.group("type")) if cut >= 0 else (p, "", m.group("type"))
     if "/view?" in s or s.startswith("view?"):
         q = parse_qs(urlparse(s).query)
         fn = (q.get("filename") or [""])[0]
         if fn and _EXT_OK.search(fn):
             t = (q.get("type") or ["output"])[0]
             if t in ("output", "input", "temp"):
-                return {"filename": os.path.basename(fn), "subfolder": (q.get("subfolder") or [""])[0].strip("/"), "type": t}
+                return fn, (q.get("subfolder") or [""])[0], t
     return None
+
+
+def parse_ref(v) -> dict | None:
+    """A ComfyUI file reference in any of the shapes the App stores -> {filename, subfolder, type}, or None.
+
+    'soundstage/draft_00007_.mp4 [output]', {'filename','subfolder','type'}, or a /view?filename=&subfolder=&type= URL.
+    A ref whose filename / subfolder points outside the ComfyUI folder is None here; unsafe_ref_path names it.
+    """
+    f = _ref_fields(v)
+    if not f:
+        return None
+    parts = _ref_parts(f[0], f[1])
+    if not parts:
+        return None
+    return {"filename": parts[0], "subfolder": parts[1], "type": f[2]}
+
+
+def unsafe_ref_path(v) -> str | None:
+    """The raw 'subfolder/filename' of a ref-shaped value Collect must not read (absolute path, drive letter,
+    backslash, '..' part), so it is reported as unsupported instead of quietly copying output/<basename>. Else None."""
+    f = _ref_fields(v)
+    if not f or _ref_parts(f[0], f[1]):
+        return None
+    return f"{f[1]}/{f[0]}" if f[1] else f[0]
+
+
+def walk_unsafe_refs(obj, path: tuple = ()):
+    """Yield (path, raw) for every ref-shaped value inside obj that unsafe_ref_path refuses."""
+    raw = unsafe_ref_path(obj)
+    if raw:
+        yield path, raw
+        return
+    if parse_ref(obj):
+        return
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            yield from walk_unsafe_refs(v, path + (str(k),))
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            yield from walk_unsafe_refs(v, path + (i,))
 
 
 def ref_key(r: dict) -> str:
@@ -136,6 +198,72 @@ def walk_refs(obj, path: tuple = ()):
     elif isinstance(obj, list):
         for i, v in enumerate(obj):
             yield from walk_refs(v, path + (i,))
+
+
+_MEDIA_EXT = re.compile(r"\.(mp4|mov|webm|mkv|m4v|avi|png|jpe?g|webp|exr|tiff?|gif|wav|mp3|m4a|aac|flac|ogg|opus|glb|gltf|fbx|obj)$", re.I)
+_AUDIO_EXT = (".wav", ".mp3", ".m4a", ".aac", ".flac", ".ogg", ".opus")
+_RAWISH = re.compile(r"^(?:file:|https?://|~|/|\\\\|[A-Za-z]:[\\/])|[\\/]")
+
+
+def raw_path(v) -> str | None:
+    """A string that names a media file by a raw path or a remote / file: URL (not a ComfyUI ref, so Collect can't
+    copy it from output / input / temp), stripped of any ?query / #fragment, else None."""
+    if not isinstance(v, str) or len(v) > 1024 or "\n" in v or parse_ref(v):
+        return None
+    t = v.strip().split("?", 1)[0].split("#", 1)[0]
+    if not _MEDIA_EXT.search(t) or not _RAWISH.search(t):
+        return None
+    return t if re.split(r"[\\/]", t)[-1] else None
+
+
+def raw_path_name(v) -> str | None:
+    """The file name of raw_path(v): '/Users/x/clip.mov' -> 'clip.mov'. Also the name of an unsafe ref path."""
+    t = raw_path(v) or (v if isinstance(v, str) and v else None)
+    if not t:
+        return None
+    return re.split(r"[\\/]", t)[-1] or None
+
+
+_CTRL = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]+")
+
+
+def report_text(s, limit: int = 200) -> str:
+    """One line of a report (MISSING.txt, the Collect message): newlines and other control characters become a space."""
+    return _CTRL.sub(" ", str(s if s is not None else ""))[:limit].strip()
+
+
+def walk_cut(obj, path: tuple = (), shot_id=None, rung=None):
+    """Like walk_refs, for the Cut: yield (path, ref | None, raw path | None, shot_id, rung) with the nearest enclosing
+    shot_id and take rung, for every file reference AND every raw path (or unsafe ref, unsafe_ref_path) the Cut names.
+    The raw path is the whole string, so two files of the same name in different places stay two."""
+    r = parse_ref(obj)
+    if r:
+        yield path, r, None, shot_id, rung
+        return
+    u = unsafe_ref_path(obj)
+    if u:
+        yield path, None, u, shot_id, rung
+        return
+    if isinstance(obj, dict):
+        sid = obj.get("shot_id") if isinstance(obj.get("shot_id"), str) else shot_id
+        rg = obj.get("rung") if isinstance(obj.get("rung"), str) else rung
+        for k, v in obj.items():
+            yield from walk_cut(v, path + (str(k),), sid, rg)
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            yield from walk_cut(v, path + (i,), shot_id, rung)
+    else:
+        t = raw_path(obj)
+        if t:
+            yield path, None, t, shot_id, rung
+
+
+def path_label(path: tuple) -> str:
+    """('ss_cut', 'cut', 2, 'take', 'url') -> 'ss_cut.cut[2].take.url'."""
+    out = ""
+    for p in path:
+        out += f"[{p}]" if isinstance(p, int) else (f".{p}" if out else str(p))
+    return out
 
 
 def _maybe_json(v):
@@ -343,6 +471,44 @@ def plan_collect(workflow: dict, name: str, *, extras: dict | None = None, layer
                     entry["files"].append(dest)
         (loc_list if is_loc else cast_list).append(entry)
 
+    # The Cut: the live cut (ss_cut), the Script's archived scene Cuts and scene stages (ss_script), and the App's
+    # timeline (extras.timeline: pinned takes, upper picture clips, independent audio). Same add(): a file already
+    # collected for a shot keeps its place; only output / input / temp refs are copied. Raw paths and remote URLs the
+    # Cut names can't be collected: they are reported by file name (unsupported).
+    # Reported once per raw path (the whole string, so /A/clip.mov and /B/clip.mov are two entries), across all sources:
+    # the live cut is in ss_cut AND in extras.timeline, and keeps the first 'where' it was found at.
+    unsupported: list[dict] = []
+    seen_raw: set[str] = set()
+
+    def report(raw: str, path: tuple) -> None:
+        if raw in seen_raw:
+            return
+        seen_raw.add(raw)
+        unsupported.append({"name": report_text(raw_path_name(raw) or raw, 120), "where": report_text(path_label(path))})
+
+    cut_sources = [("ss_cut", props.get("ss_cut")), ("ss_script", props.get("ss_script")), ("timeline", extras.get("timeline"))]
+    for label, val in cut_sources:
+        if not isinstance(val, (dict, list)):
+            continue
+        for path, ref, raw, sid, rung in walk_cut(val, (label,)):
+            if raw:
+                report(raw, path)
+                continue
+            fn = ref["filename"].lower()
+            sh = shot_by_id.get(sid) if sid else None
+            if fn.endswith((".glb", ".gltf", ".fbx", ".obj")):
+                add(ref, "locations/set", slug(os.path.splitext(ref["filename"])[0], 40))
+            elif sh:
+                folder = KIND_FOLDER.get(str(rung or "").lower()) or _folder_for(path)
+                kind = slug(str(rung).lower(), 20) if rung and KIND_FOLDER.get(str(rung).lower()) else folder.split("/")[-1]
+                dest = add(ref, f"scenes/{sh['scene']}/shots/{sh['code']}/{folder}", f"{sh['code']}_{kind}")
+                take = {"kind": kind, "file": dest, "source": ref_key(ref), "chosen": ref_key(ref) in chosen_keys}
+                if not any(t["source"] == take["source"] for t in shot_out[sh["id"]]["takes"]):
+                    shot_out[sh["id"]]["takes"].append(take)
+            else:
+                audio = fn.endswith(_AUDIO_EXT) or any(isinstance(p, str) and re.search(r"audio|sound|music|voice", p, re.I) for p in path)
+                add(ref, "cut/audio" if audio else "cut/media", slug(os.path.splitext(ref["filename"])[0], 40))
+
     # Anything else on the node that names a file (stage set GLBs, look refs...) goes to refs/ at the top.
     for prop, val in props.items():
         if prop in ("ss_renders", "ss_chosen", "ss_ltx", "ss_shot_cast", "ss_approvals", "ss_cast", "ss_cut", "ss_script"):
@@ -353,6 +519,13 @@ def plan_collect(workflow: dict, name: str, *, extras: dict | None = None, layer
     for path, ref in walk_refs(state.get("stage") or {}):
         if ref["filename"].lower().endswith((".glb", ".gltf", ".fbx", ".obj")):
             add(ref, "locations/set", slug(os.path.splitext(ref["filename"])[0], 40))
+    # A file ref anywhere on the node whose filename / subfolder points outside ComfyUI's folders ('/etc/x.mp4', 'C:\\..',
+    # '../..'): never cut down to its basename and copied from output/ (that is another file), reported instead.
+    for prop, val in props.items():
+        for path, raw in walk_unsafe_refs(val, (str(prop),)):
+            report(raw, path)
+    for path, raw in walk_unsafe_refs(state.get("stage") or {}, ("stage",)):
+        report(raw, path)
 
     # Script, cut, book: text files.
     texts: dict[str, str] = {}
@@ -389,9 +562,11 @@ def plan_collect(workflow: dict, name: str, *, extras: dict | None = None, layer
         "cut": {"timeline": "cut/timeline.json" if "cut/timeline.json" in texts else None,
                 "exports": sorted(k for k in texts if k.startswith("cut/") and k != "cut/timeline.json")},
         "relink": relink,
+        "unsupported": unsupported,
         "workflow": workflow,
     }
-    return {"name": name, "copies": copies, "texts": texts, "layerpacks": lp_plan, "voices": voice_plan, "project": project}
+    return {"name": name, "copies": copies, "texts": texts, "layerpacks": lp_plan, "voices": voice_plan, "project": project,
+            "unsupported": unsupported}
 
 
 # ------------------------------------------------------------------------------------------------ writing
@@ -492,11 +667,19 @@ def write_collect(plan: dict, roots: dict, dest_root: Path, *, user_dir: Path | 
         title = f"{name}"
         (tmp / "README.txt").write_text(README.format(name=title, rule="=" * (len(title) + 35),
                                                       when=time.strftime("%Y-%m-%d %H:%M")), encoding="utf-8")
-        if missing:
-            (tmp / "MISSING.txt").write_text(
-                "These files are named by the project but were not found when it was collected.\n"
-                "The rest of the project was collected; re-render these or copy them in by hand.\n\n"
-                + "\n".join(missing) + "\n", encoding="utf-8")
+        unsupported = list(plan.get("unsupported") or [])
+        if missing or unsupported:
+            body = ""
+            if missing:
+                body += ("These files are named by the project but were not found when it was collected.\n"
+                         "The rest of the project was collected; re-render these or copy them in by hand.\n\n"
+                         + "\n".join(missing) + "\n")
+            if unsupported:
+                body += (("\n" if body else "") + "The project names these files by a raw path, a web address or a path outside\n"
+                         "ComfyUI's folders, not a ComfyUI file, so Collect could not copy them (it only reads ComfyUI's\n"
+                         "output / input / temp folders). Copy them in by hand:\n\n"
+                         + "\n".join(f"{report_text(u.get('name'), 120)}\t({report_text(u.get('where'))})" for u in unsupported) + "\n")
+            (tmp / "MISSING.txt").write_text(body, encoding="utf-8")
         if out.exists():
             old = out.with_name(f".{name}.old")
             if old.exists():
@@ -509,7 +692,8 @@ def write_collect(plan: dict, roots: dict, dest_root: Path, *, user_dir: Path | 
     except BaseException:
         shutil.rmtree(tmp, ignore_errors=True)
         raise
-    return {"folder": str(out), "name": name, "copied": copied, "missing": missing, "bytes": nbytes}
+    return {"folder": str(out), "name": name, "copied": copied, "missing": missing, "bytes": nbytes,
+            "unsupported": unsupported}
 
 
 def build_zip(folder: Path) -> Path:

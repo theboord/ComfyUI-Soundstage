@@ -426,7 +426,7 @@ export function installParts(Stage, deps) {
 
   P._camKeyFrames = function (ch) {
     const sh = this.activeShot();
-    if (ch === "focal_mm") return this._camKeys().map((k) => k.frame);
+    if (ch === "focal_mm") return (this._camKeysView ? this._camKeysView() : this._camKeys()).map((k) => k.frame);   // read-only
     if (ch === "shutter_deg") return (sh.parts?.shutter_deg || []).map((k) => k.frame);
     const field = { focus_m: "focus_m", t_stop: "t_stop", roll_deg: "roll" }[ch];
     return field ? (sh.lens_keys || []).filter((k) => k[field] != null).map((k) => k.frame) : [];

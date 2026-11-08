@@ -75,8 +75,8 @@ Server (`soundstage/project/library.py`), all in the requesting user's folder (`
 `/userdata` resolves it):
 
 ```
-GET  /soundstage/project/list        -> {"projects": [{name, saved_at, counts{scenes,shots,takes}, thumb, thumb_kind,
-                                         autosaves, autosave_at, autosave_newer}]} newest first
+GET  /soundstage/project/list        -> {"projects": [{name, id, saved_at, counts{scenes,shots,takes}, thumb, thumb_kind,
+                                         autosaves, autosave_at, autosave_newer}]} newest first (id: see Project id)
 POST /soundstage/project/duplicate   {name, to}   workflow + manifest, not the autosaves
 POST /soundstage/project/rename      {name, to}   folder, autosaves and workflow; the stamp inside is updated
 POST /soundstage/project/trash       {name}       -> projects/.trash/<name> <stamp>/
@@ -93,7 +93,7 @@ All in ComfyUI's per-user folder (`ComfyUI/user/<user>/`), never in `output/`:
 
 ```
 workflows/<name>.json                    the project: a normal ComfyUI workflow, opens anywhere
-projects/<name>/project.json             {format, v, name, workflow, created, saved_at, saves, title, scenes, shots}
+projects/<name>/project.json             {format, v, id, name, workflow, created, saved_at, saves, title, scenes, shots}
 projects/<name>/autosave/<stamp>.json    {name, saved_at, workflow}, newest 20 kept
 soundstage/scripts/<hash>.json           a long script's full text (unchanged, as before)
 ```
@@ -101,6 +101,82 @@ soundstage/scripts/<hash>.json           a long script's full text (unchanged, a
 The workflow carries its project name in `extra.ss_project`, so a project opened through Workflow → Open still
 autosaves into its own folder. Workflows saved before this change have no `ss_project` and open as before. They are
 autosaved as `Untitled <date> <time>` once you change something.
+
+## Project id
+
+Each saved project has an id, `p_` and 8 lowercase hex digits (for example `p_3fa85f64`). Ask's memory uses it to
+know which project a memory belongs to, so it must not move to a different project by accident.
+
+- **Where:** `projects/<name>/project.json` (`id`) and the workflow's `extra.ss_project.id`. Save writes both.
+- **When it is kept:** Save keeps the project's id only when the workflow being saved carries that same id. Any
+  other save gets a fresh id: Save As to a new name, a project saved before ids existed, a workflow that carries
+  another id, a workflow with no id at all (even one that names this project, so someone else's old pre-id
+  workflow with the same name never takes your id), or a workflow saved under a name whose `projects/<name>/`
+  folder was left behind after its workflow was deleted from ComfyUI's sidebar. The cost: a second tab opened before
+  the first Save, canvas undo back past the first Save, or a restored autosave from before it gets a fresh id when it
+  is saved.
+- **Two tabs saving in turn:** one exception to the rule above. A graph carrying an id that this same page saved for
+  the project (same `created` stamp in `project.json`) takes the id another tab's save has since put in
+  `project.json`. So when two tabs (pages) save one project in turn, the id changes once (the second tab's first
+  save) and then stays: tested with 8 alternating saves, 2 ids in all, the last 7 the same. Before this, every save
+  made a new id. It is still a change: memory keyed to the first id must re-key after a Save
+  (`await __ssProject.project()`). A page that is reloaded forgets what it saved, so a stale graph saved from a
+  reloaded page gets a fresh id once. A project replaced after Trash has a new `created` and is never adopted into.
+  Nor is a project replaced with other content: a save that makes a fresh id over a copy, a graph carrying another
+  id, a graph named for another project, or a confirmed "Replace project?" (Save As `Q` under the name `P`; the pill
+  passes `replace: true`) resets `created`, so a tab still holding `P`'s old id gets a fresh id of its own instead of
+  the one made for `Q`. Known limit: a direct `store.save` of a graph that names no project and is passed without
+  `replace` keeps `created`, as a pre-id tab of the same project would.
+- **Two saves at the same moment:** saves of one project from one page run one after the other. Across tabs there
+  is no lock, so after writing, Save reads `workflows/<name>.json` and `project.json` back and, while their ids
+  differ, sets `project.json` to the saved workflow's id (up to 6 tries). Save then reports `confirmed: true` only
+  when that id is the one this graph carries; otherwise the pill says the other tab's copy is the one on disk.
+  Still open: a save that settled just before the other tab's write landed says confirmed although the disk has
+  moved on. `projectId()` can then report a stale id until the next check (at most 15 s, or the next Save/Open). In
+  a 200-trial test with random delays this happened in 2-8 of 400 saves; the two files never disagreed at the end.
+- **Known limit, two pages creating the same new name at once:** New project checks whether the name is taken and
+  then saves (`projectbar.newProject`, then `store._save`). With no lock between the check and the write, two pages
+  creating the same new project name at the same moment can both pass the check, and the two-saves settling above can
+  then leave both sharing one id. Not fixed; create a new project from one page at a time.
+- **New project under an existing name:** New project with the name of a saved project asks "Replace project?"
+  first. No writes nothing; Yes saves the template with `replace: true`, so it gets a fresh id and a new `created`
+  and a tab still holding the old project never adopts the template's id.
+- **Collected copy:** Open collected project drops the id the copy carries. On the machine it was collected from,
+  `projects/<name>/project.json` still holds that id, so the copy would confirm as the live project and a plain Save
+  would overwrite it. Its first Save asks for a name, asks before replacing an existing project of that name, and
+  writes a fresh id.
+- **ComfyUI's own copies:** a workflow open from any path other than `workflows/<name>.json` (ComfyUI's Workflow →
+  Duplicate or Save As, an exported `.json` dragged in, a render dragged in), or a temporary never-saved workflow, is
+  a copy, even though it carries the project's name and id in `extra.ss_project`. It is treated like a collected
+  copy: `projectId()` is `null` (`project()` answers `confirmed: false, copy: true`, `current()` adds `copy: true`),
+  its first Save asks for a name and asks before replacing a project of that name, and it gets a fresh id. Its
+  autosaves go to `projects/<name> (copy)/autosave/` with no id, so they never push the project's own autosaves out.
+  Once saved from the pill, that tab is the project and later Saves are ordinary. `store.save(name, wf, {from: path})`
+  and `store.confirmProjectId(wf, {path})` apply the same rule outside the pill; `store.save` refuses (error code
+  `exists`) to overwrite an existing project from a copy unless `replace: true` is passed.
+- **Library:** Duplicate gives the copy a fresh id (in both files). Rename, Trash and Untrash keep it.
+- **Old projects:** a project saved before ids existed has none (`id: null` in the list) until its next Save.
+  Opening, listing or autosaving it never writes one.
+- **Reading it:**
+  - In the page: `window.__ssProject.projectId()` gives the open workflow's id only once it is confirmed against
+    the saved `project.json` of the same name, else `null`. It is `null` when the project is not saved yet, is an old
+    project not saved since, was renamed in the library while the tab stayed open, or is a collected or exported copy
+    whose `project.json` is not here, or was opened with Open collected project and not saved yet. A Save, an Open,
+    and a check every 15 s confirm it. It only reads. `window.__ssProject` is assigned once per page in
+    `mountProjectBar` (`web/project/projectbar.mjs`).
+  - `await window.__ssProject.project()` reads `project.json` now: `{id, name, graph_id, manifest_id, confirmed}`.
+  - `window.__ssProject.current()` gives `{id, name}` as the graph says, unconfirmed. Forget uses it to pick the
+    project whose copies it cleans.
+  - From `web/project/store.mjs`: `projectIdOf(workflow)` (the graph's id, unconfirmed), `await
+    store.confirmProjectId(workflow)`, or `await store.projectId(name)`, which reads `project.json`.
+- **Tab state:** the pill keeps a tab's state (bound project, confirmed id) per ComfyUI workflow object, not per path.
+  A project tab opened from the pill and closed, then an older exported `<name>.json` dragged in at the same path,
+  is a copy again (it inherits nothing); the state of tabs ComfyUI no longer lists in `openWorkflows` is dropped.
+  Not checked against a live ComfyUI frontend: if it swapped the workflow object of an open tab (for example on its
+  own Save), that tab would lose its bound state and be judged by its path again.
+- **Not told apart:** a copy is told apart only by the path ComfyUI opened it from. A file copied outside ComfyUI over
+  `workflows/<name>.json` itself is the project.
+  - On the server: `GET /soundstage/project/list`, where each project has an `id` (`null` for an old project).
 
 ## Autosave
 
@@ -138,6 +214,17 @@ way film post works, and downloads it as a zip:
 - What gets mapped: every file reference in `ss_renders` (clay, look, draft, final, final with sound), `ss_chosen`
   (the chosen frame), `ss_ltx` and `ss_shot_cast` (per-shot audio and reference inputs), `ss_cast` (cast and location
   references), and any other `ss_*` property or set model that names a file.
+- The Cut too: the live cut (`ss_cut`), the Script's archived scene Cuts and scene stages (`ss_script`) and the App's
+  timeline (pinned takes, upper picture clips, independent audio). A pinned take goes with its shot, in its rung's
+  folder (`takes/final/`…); cut sound goes in `cut/audio/`, other cut media in `cut/media/`. A file already collected
+  for a shot is copied once.
+- Only ComfyUI files are copied (output / input / temp). A file the Cut names by a raw path (`/Users/…/x.wav`,
+  `C:\…`, `file://…`) or a web address is not copied: it is listed by file name in `MISSING.txt`, in `project.json`
+  (`unsupported`) and in the Collect message. So is a ComfyUI-style ref anywhere in the project whose `filename` or
+  `subfolder` points outside ComfyUI's folders (an absolute path, a drive letter, a `..` part, or a backslash on
+  macOS / Linux): it is never cut down to its file name and read from `output/` (that would be some other file). Each
+  raw path is listed once, by its whole path (two `clip.mov` in different folders are two lines), at the first place
+  it was found; newlines and control characters in those lines become spaces.
 - The shot's newest Layer Pack (`output/soundstage_layerpacks/<shot>_<stamp>/`) is copied to `layerpack/` when one
   exists. It is matched on the shot's id, name or code.
 - Missing files go into `MISSING.txt`. They are not an error, and the rest is collected.
@@ -149,7 +236,8 @@ way film post works, and downloads it as a zip:
    `ComfyUI/output/soundstage_projects/` and pick it from the list.
 3. The workflow from `project.json` opens in a new tab. Every file reference is relinked to the copies in
    `output/soundstage_projects/<Project>/…`. Files that were missing keep their old reference.
-4. Save it to make it a project on that machine.
+4. Save it to make it a project on that machine. The first Save asks for a name and gives it a fresh project id
+   (the copy's own id is dropped on open), and asks before replacing a project of the same name.
 
 ### Server routes
 

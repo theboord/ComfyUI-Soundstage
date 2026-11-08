@@ -305,6 +305,67 @@ export function drive(skin, { frame, fps, speed, phase, seed }) {
   skin.weights = w;
 }
 
+// ---------------------------------------------------------------- sitting (stage.setPose "sit" / "sit_floor")
+const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _d = new THREE.Vector3(), _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion(), _qc = new THREE.Quaternion();
+const SIT_BONES = ["Bip01_L_Thigh", "Bip01_L_Calf", "Bip01_L_Foot", "Bip01_R_Thigh", "Bip01_R_Calf", "Bip01_R_Foot"];
+/** Turn bone b (in world space, axis-free) so its child c lies along world direction dir. */
+function aimBone(b, c, dir) {
+  b.updateWorldMatrix(true, true);
+  b.getWorldPosition(_a); c.getWorldPosition(_b);
+  const cur = _b.sub(_a).normalize();
+  if (cur.lengthSq() < 1e-8) return;
+  _qa.setFromUnitVectors(cur, _d.copy(dir).normalize());
+  b.getWorldQuaternion(_qb);
+  b.parent.getWorldQuaternion(_qc);
+  b.quaternion.copy(_qc.invert().multiply(_qa.multiply(_qb)));
+  b.updateWorldMatrix(false, true);
+}
+const boneLen = (b, c) => { b.updateWorldMatrix(true, true); return b.getWorldPosition(_a).distanceTo(c.getWorldPosition(_b)); };
+
+/**
+ * Fold a lifelike body (already placed and posed in its idle) into a seated pose, then move it so the hips land on
+ * the seat: sit = stage._sitSpec(a) {pose: "sit" | "sit_floor", seat: [x, y, z] (the seat top or the floor), yaw};
+ * heightM = the person's height. Bones are aimed in world space (no assumption about Rocketbox's local axes): "sit"
+ * thighs level forward, shins straight down, hands on the thighs; "sit_floor" knees up, feet flat on the floor, hands
+ * on the knees. The hip joints end ~0.10 m (at 1.8 m) above the seat. Returns the hips' world position, or null when
+ * the body lacks the leg bones (then it is left in its idle).
+ */
+export function sitBody(skin, sit, heightM = 1.8) {
+  const B = skin.bones || {};
+  if (SIT_BONES.some((n) => !B[n])) return null;
+  const s = heightM / 1.8, fwd = new THREE.Vector3(Math.sin(sit.yaw), 0, Math.cos(sit.yaw)), up = new THREE.Vector3(0, 1, 0);
+  const floor = sit.pose === "sit_floor";
+  for (const lr of ["L", "R"]) {
+    const th = B[`Bip01_${lr}_Thigh`], ca = B[`Bip01_${lr}_Calf`], fo = B[`Bip01_${lr}_Foot`];
+    if (!floor) {
+      aimBone(th, ca, fwd.clone().addScaledVector(up, -0.05));
+      aimBone(ca, fo, up.clone().negate().addScaledVector(fwd, 0.12));
+    } else {
+      const lt = boneLen(th, ca), lc = boneLen(ca, fo), ang = 0.62;   // thighs ~35 deg up from the floor
+      aimBone(th, ca, fwd.clone().multiplyScalar(Math.cos(ang)).addScaledVector(up, Math.sin(ang)));
+      const drop = Math.min(lc * 0.999, 0.10 * s + lt * Math.sin(ang) - 0.08 * s);   // knee down to the ankle near the floor
+      aimBone(ca, fo, fwd.clone().multiplyScalar(Math.sqrt(Math.max(0, lc * lc - drop * drop))).addScaledVector(up, -drop));
+    }
+    const ua = B[`Bip01_${lr}_UpperArm`], fa = B[`Bip01_${lr}_Forearm`], ha = B[`Bip01_${lr}_Hand`];
+    if (ua && fa && ha) {
+      aimBone(ua, fa, floor ? fwd.clone().multiplyScalar(0.75).addScaledVector(up, -0.66) : fwd.clone().multiplyScalar(0.3).addScaledVector(up, -0.95));
+      aimBone(fa, ha, floor ? fwd.clone().addScaledVector(up, 0.25) : fwd.clone().addScaledVector(up, -0.35));
+    }
+  }
+  // Hips onto the seat: the midpoint of the two thigh roots to (seat, +0.10 m), a little back from the seat's centre
+  // on a chair (people sit back, knees over the front edge).
+  const hip = B.Bip01_L_Thigh.getWorldPosition(new THREE.Vector3()).add(B.Bip01_R_Thigh.getWorldPosition(new THREE.Vector3())).multiplyScalar(0.5);
+  const target = new THREE.Vector3(sit.seat[0], sit.seat[1] + 0.10 * s, sit.seat[2]).addScaledVector(fwd, floor ? 0 : -0.06 * s);
+  const h = skin.holder, par = h.parent;
+  if (par) {
+    par.updateWorldMatrix(true, false);
+    const wp = h.getWorldPosition(new THREE.Vector3()).add(target.clone().sub(hip));
+    h.position.copy(par.worldToLocal(wp));
+  } else h.position.add(target.clone().sub(hip));
+  h.updateWorldMatrix(false, true);
+  return target;
+}
+
 /** The strides (m per loop) of a kit's walk and run at this scale. */
 export const kitStrides = (kit, scale) => ({ walk: (kit.clips.walk?.travel || 120) * scale, run: (kit.clips.run?.travel || 210) * scale });
 
@@ -455,10 +516,13 @@ export function avatarsAt(stage) {
     users ||= C.propUsers(actors);
     if (skin.faceless !== (a.face === "faceless")) applyFace(skin, a.face === "faceless");
     const wet = !!(stage.water || stage.setFx?.underwater);
+    // on a chair / bench / sofa or the floor (stage.setPose): the lifelike body sits (sitBody)
+    const sit = stage._sitSpec?.(a, f) || null;
     const body = {
       swims: wet && C.swimsInShot(a, () => stage._swimPlan?.(a, g)),
       floats: !!stage._floatsInShot?.(a),   // a video mocap take in water too deep to stand in: the clay floats (stage._waterPhysics)
       tipped: tippedNow(g),
+      sits: !!sit,
     };
     const reason = C.clayReason(a, {
       blocking, holders: users.holders, carriers: users.carriers, gazeKeyed: gazeKeys(a).length > 0, ...body,
@@ -469,10 +533,17 @@ export function avatarsAt(stage) {
     setShown(skin, !reason);
     // The grounding gate is the feet, not the clay (C.feetUpReason): today a hidden body isn't posed at all, and once
     // the clay is retired a person holding a prop, with gaze or Pose keys, on a mocap take ... is lifelike and stands.
-    // Swimming is per frame here (a person who walks and then swims is grounded while walking).
+    // Swimming is per frame here (a person who walks and then swims is grounded while walking). Seated: feet up.
     skin.feetUp = C.feetUpReason(a, { ...body, swims: swimsNow(stage, a, g, f) });
     if (reason) continue;
     const { scale } = ensureGait(stage, a, skin, { last, fps, f });
+    if (sit) {   // seated (setPose / a mount on a chair, or the floor): idle, then fold the legs onto the seat; no foot plan
+      placeHolder(g, skin.holder, { x: sit.seat[0], y: sit.seat[1] - F.floorFor(skin.kit, C.clipWeights(0)) * scale, z: sit.seat[2], yaw: sit.yaw, scale });
+      drive(skin, { frame: f, fps, speed: 0, phase: 0, seed: C.phaseSeed(a.id) });
+      sitBody(skin, sit, C.clayHeight(a) * (a.scale || 1));
+      skin.footOut = null;
+      continue;
+    }
     const plan = footPlanFor(stage, a, g, skin, { last, fps, scale });
     poseRaw(stage, a, g, skin, f, { fps, scale, last });
     skin.footOut = plan ? F.groundFeet({ plan, rig: skin.kit.feet, mesh: skin.mesh, bones: skin.legs, holder: skin.holder, frame: f, saved: (skin.ikSaved ||= []) }) : null;

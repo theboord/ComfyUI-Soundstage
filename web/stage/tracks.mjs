@@ -41,7 +41,7 @@ export class TrackSheet {
   /** Rows: camera first, then every object in scene order. */
   _rows() {
     const st = this.stage;
-    const rows = [{ kind: "camera", id: "__camera__", name: "Camera", keys: st._camKeys(), color: "#e39a40" }];
+    const rows = [{ kind: "camera", id: "__camera__", name: "Camera", keys: st._camKeysView ? st._camKeysView() : st._camKeys(), color: "#e39a40" }];   // read-only
     for (const a of st.state.actors || []) {
       rows.push({ kind: "actor", id: a.id, a, name: a.name || a.kind || a.id, keys: st._actorKeys(a),
         color: a.mount_id ? "#b9a7ff" : "#539bf5" });
@@ -113,6 +113,11 @@ export class TrackSheet {
       return;
     }
     if (this.drag.kind === "scrub") { this._scrub(this._frameAt(x)); return; }
+    if (this.drag.row.kind === "camera" && this.stage.activeShot().camera_keys !== this.drag.row.keys) {
+      // the first real move of a keyless shot's fallback key is an edit: store the key, then drag the stored one
+      const i0 = this.drag.row.keys.indexOf(this.drag.key), real = this.stage._camKeys();
+      this.drag.row.keys = real; this.drag.key = real[Math.max(0, i0)];
+    }
     const { row, key } = this.drag;
     const keys = row.keys, i = keys.indexOf(key);
     const lo = i > 0 ? keys[i - 1].frame + 1 : 0;

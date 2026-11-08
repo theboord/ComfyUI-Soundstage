@@ -6,9 +6,24 @@ POST /soundstage/book/draft   {script, scene_id, llm_text}  -> {sections, ground
 POST /soundstage/book/spine   {script, llm_text}            -> {spine, statement, grounding}
 POST /soundstage/book/place   {script, notes, llm_text?}    -> {placements, backend}
 GET  /soundstage/book                                       -> the stored book (404 if none)
-POST /soundstage/book/save    {book}                        -> {ok, path}
+POST /soundstage/book/save    {book, project?: {id, name}}  -> {ok, path}; project is kept as book._project
 GET  /soundstage/book/context?scene=sc_1                    -> book_context() of the stored book
-POST /soundstage/book/note    {text, scene_id?, category?, source?, script?} -> {note}; the open App merges it
+POST /soundstage/book/note    {text, scene_id?, category?, source?, script?, ref?} -> {note}; the open App merges it;
+                              ref (an opaque `${projectId}:${turnId}`, else dropped) lets Forget find the note
+POST /soundstage/book/forget  {id} or {ids}, project: {id, name} -> {ok, removed, files, still_mentions, skipped,
+                              other_projects, errors, error?}: removes those chat decision notes (by note id or ref) from
+                              every stored copy OF THAT PROJECT (books folder, the user's workflows/ and projects/: saved
+                              workflows, manifests, autosaves, trash, *.json.tmp; output/soundstage_projects/<P>/:
+                              collected copies, script/directors_book.json and project.json "book"). ok:true covers
+                              only these server-side files: not other open tabs, canvas undo, browser storage, ComfyUI's
+                              queue history (extra_pnginfo) or metadata inside rendered files. Other projects' copies (a Duplicate)
+                              are listed in other_projects, not changed. ok is false when any copy was skipped or still
+                              mentions the id (store.forget). book.forgetDecision / scrubDecision call it. Removes
+                              source "chat" decisions and source "ask" notes (Ask's addNote), never the director's own.
+POST /soundstage/book/legacy  {apply?} -> {ok, decisions: [{id, ref?, project_id?, project?, files}], files, rewritten,
+                              skipped, errors}: decision notes saved before v3 (may hold the typed sentence) in every
+                              stored copy, machine-wide. apply: rewrite them in place to tools + number args only
+                              (ids and refs kept). book.legacyDecisions() calls it.
 """
 from __future__ import annotations
 
@@ -100,7 +115,7 @@ def register(routes=None, send=None) -> bool:
         b = await _body(request)
         if not isinstance(b.get("book"), dict):
             return web.json_response({"error": "send {book}"}, status=400)
-        return web.json_response({"ok": True, "path": ST.save(b["book"])})
+        return web.json_response({"ok": True, "path": ST.save(b["book"], project=b.get("project") if isinstance(b.get("project"), dict) else None)})
 
     @routes.get("/soundstage/book/context")
     async def context(request):
@@ -114,6 +129,9 @@ def register(routes=None, send=None) -> bool:
         if not t:
             return web.json_response({"error": "send {text}"}, status=400)
         n = {"text": t, "source": str(b.get("source") or "chat"), "by": str(b.get("source") or "chat")}
+        ref = ST.clean_ref(b.get("ref"), t)       # opaque `${projectId}:${turnId}` only, so Forget can find the note
+        if ref:
+            n["ref"] = ref
         script = _script(b)
         if b.get("scene_id"):
             n.update(scope="scene", scene_id=str(b["scene_id"]), category=str(b.get("category") or "blocking"),
@@ -126,6 +144,48 @@ def register(routes=None, send=None) -> bool:
         stored = ST.add_note(n)
         send(EVENT, {"type": "note", "note": stored})
         return web.json_response({"note": stored})
+
+    @routes.post("/soundstage/book/forget")
+    async def forget(request):
+        b = await _body(request)
+        ids = [i for i in (b.get("ids") or [b.get("id")]) if isinstance(i, str) and i.strip()]
+        if not ids:
+            return web.json_response({"error": "send {id} or {ids}"}, status=400)
+        roots = []
+        try:
+            from ..project.routes import user_root
+            u = user_root(request)
+            roots = [u / "workflows", u / "projects"]
+        except Exception:  # noqa: BLE001 - no ComfyUI user folder: the books folder only
+            pass
+        try:
+            from ..project.routes import projects_root
+            roots.append(projects_root())             # output/soundstage_projects/: collected copies of the book
+        except Exception:  # noqa: BLE001 - no ComfyUI output folder
+            pass
+        import asyncio
+        project = b.get("project") if isinstance(b.get("project"), dict) else None
+        res = await asyncio.to_thread(ST.forget, ids, roots, project, bool(b.get("everywhere")))
+        return web.json_response(res, status=200 if not res["errors"] else 500)
+
+    @routes.post("/soundstage/book/legacy")
+    async def legacy(request):
+        b = await _body(request)
+        roots = []
+        try:
+            from ..project.routes import user_root
+            u = user_root(request)
+            roots = [u / "workflows", u / "projects"]
+        except Exception:  # noqa: BLE001 - no ComfyUI user folder: the books folder only
+            pass
+        try:
+            from ..project.routes import projects_root
+            roots.append(projects_root())
+        except Exception:  # noqa: BLE001 - no ComfyUI output folder
+            pass
+        import asyncio
+        res = await asyncio.to_thread(ST.legacy_decisions, roots, bool(b.get("apply")))
+        return web.json_response(res, status=200 if not res["errors"] else 500)
 
     _REGISTERED = True
     return True

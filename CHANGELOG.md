@@ -85,6 +85,272 @@ Each entry links to the code; every milestone ships with tests.
 - **Also:** 20 degree hill 5-15 floating frames -> 0-2, stairs up to 8 -> 0; the station ramp's slide limit in footplant.test back to 1.0 cm (the dock and the turn on the spot 1.2-1.3, from 1.5). Unchanged: browser flat walk, ramp walk, dock walk, idle turn (0 floating, planted 0 mm, slides 2-6 mm, before and after).
 - **Tests:** [tests/js/footground.test.mjs](tests/js/footground.test.mjs): walk-stop-go and U-turns (both fail on 3abc644), standing off the station edge (x 1.55-1.61, both headings) and 20 / 40 cm ledges 2-15 cm back, parked-crate step-ups, flat-keyed set-box stairs, walk then swim, sprints and 0 -> 7 m/s (every stride touches down), the 20 degree hill and short rough ground; [tests/js/footkit.mjs](tests/js/footkit.mjs) `physical()` now counts every frame it leaves out (hidden, skipped) and `check()` fails on them; [tests/js/footplant.test.mjs](tests/js/footplant.test.mjs): key-edit cost and the drag deferral.
 
+**Cut shell, fixes, 2026-11-08 02:30 (private branch `private/ask-hooks`, not pushed): a gap can no longer fill the disk; Collect never copies the wrong file; the raw-path report counts each path once**
+
+- **Still wrong (read first, known limits):** Node and pytest only; not run in the browser, the App or a live
+  ComfyUI, and GPT's Cut code is still not on this machine.
+  - **The caps are fixed numbers, not settings:** one gap at most 10 minutes (App and server), the joined video at
+    most 4 hours (server only; the App doesn't add up clip lengths, so a 5-hour cut is refused by the server, after
+    the click, with "... longer than the 4-hour limit"). A real 10-minute-plus black hold has to be split.
+  - **The ffmpeg timeout is a guess** (300 s + 8x the output length, at most 6 h): a very slow machine joining a long
+    cut could be stopped early ("ffmpeg took longer than ... and was stopped; nothing was saved"). Timing was not
+    measured on the Mac Pro or a pod.
+  - **A backslash in a ref is read by platform:** unsupported on macOS / Linux (where it's a plain character), a
+    folder separator on Windows (where ComfyUI writes subfolders that way). A project collected on a Mac from a
+    Windows machine's refs (`soundstage\takes`) lists those as unsupported instead of copying them.
+  - **Unsupported refs are listed by file name only** (as before, no paths in the report), so two different
+    `clip.mov` entries look alike apart from their 'where'.
+  - The App's fps is still `shot.fps || 24`, so an fps of 0 on the stage becomes 24 before the server sees it; the
+    server's new fps check guards other callers.
+- **Gap length capped, both sides** ([web/onevideo.mjs](web/onevideo.mjs) `MAX_GAP_SECONDS`, `maxGapFrames`,
+  `longGaps`, `checkOneVideo`, `oneVideoClips`): a gap longer than 10 minutes at the cut's exact rate (14385 frames at
+  23.976) is refused, whatever `oneVideoSupport` answered ("This cut has a gap longer than 10 minutes; one-video
+  export can't include it yet."). Before, `{kind: "gap", in: 0, out: 1e12}` passed as gaps-only and asked ffmpeg for
+  about 4.2e10 s of black. The server ([soundstage/cut/assemble.py](soundstage/cut/assemble.py) `plan`, `assemble`)
+  refuses the same gap, any clip or whole cut over 4 hours, and runs ffmpeg with a timeout; a stopped or failed
+  ffmpeg leaves no half-written file.
+- **Server input checks:** a gap whose `frames` is null, missing (with no `in`/`out`), not a number or negative is
+  refused instead of dropped; an fps of 0, negative, `24/0`, text, nan, inf or over 1000 is a plain-words 400 instead
+  of a ZeroDivisionError or an ffmpeg failure (0 used to become 24 silently).
+- **Collect never cuts a ref down to its basename** ([soundstage/project/collect.py](soundstage/project/collect.py)
+  `parse_ref`, `unsafe_ref_path`, `walk_unsafe_refs`): `{"filename": "/etc/passwd.mp4", "type": "output"}` used to copy
+  an unrelated `output/passwd.mp4` into `cut/media/`. A filename / subfolder with an absolute path, a drive letter, a
+  `..` part or a backslash is now listed in the unsupported raw paths (anywhere on the node, not only in the Cut); a
+  relative path in `filename` folds into `subfolder`.
+- **The raw-path report** dedupes by the whole raw path across `ss_cut`, `ss_script` and `extras.timeline`:
+  `/A/clip.mov` and `/B/clip.mov` both appear, and the live cut seen in both `ss_cut` and the timeline is listed once
+  (first 'where' kept), so "and N more" in the Collect message is right. Newlines and control characters in a name or
+  'where' become a space, in `project.json` and `MISSING.txt`.
+- Tests: [tests/js/onevideo.test.mjs](tests/js/onevideo.test.mjs) (1e12 gap, the 10-minute edge at 24 and 23.976, a
+  hook answering ok), [tests/test_cut_assemble.py](tests/test_cut_assemble.py) (caps, null / negative gaps, bad rates,
+  the timeout stopping ffmpeg and cleaning up, the route answering 400 without running ffmpeg),
+  [tests/test_project_collect.py](tests/test_project_collect.py) (absolute / drive / backslash / `..` refs with a decoy
+  `output/passwd.mp4`, dedupe across sources, a 'where' with a newline). All fail on e196608.
+
+**Cut shell, final round, 2026-11-08 02:06 (private branch `private/ask-hooks`, not pushed): the App measures every gap itself; only a structured "gaps" reason unlocks the gap path; Render missing shots refuses before queueing**
+
+- **Still wrong (read first, known limits):** Node and pytest only; not run in the browser, the App or a live
+  ComfyUI, and GPT's Cut code (gaps, upper tracks, `audio_detached`, `oneVideoSupport`) is still not on this machine,
+  so the gap shape `{kind: "gap", in, out}` is the agreed contract, not something seen.
+  - **Gap length is strict now:** `out - in` first; `frames` only when it is an integer; `duration` only when `in` and
+    `out` are both missing, read as seconds x the cut's exact fps (23.976 = 24000/1001). `length` is no longer read, and
+    a gap with only `in` or only `out` is refused. A cut that joined yesterday with `{kind: "gap", duration: 12}`
+    meaning 12 frames is refused today (it was read as frames; now it is 12 seconds, or refused without a rate).
+  - **A hook's plain-text reasons always refuse**, even "gaps (3)": a Cut that answers with strings instead of
+    `{code: "gaps"}` gets no gap path.
+  - **The fps the gaps are measured at** is the stage's `shot.fps` (the rate already sent to the join), not a rate on
+    the cut itself; if the Cut gains its own rate the two could disagree.
+  - **Render missing shots refuses the whole batch** when the join would refuse, so shots that could be rendered on
+    their own aren't (render them one by one in ⑤ Motion). The guard is also re-run by the join at the end, so a cut
+    edited during the batch is still checked.
+  - A gap whose `out - in` is fractional is rounded to the nearest frame, as before.
+- **Every gap measured by the App** ([web/onevideo.mjs](web/onevideo.mjs) `gapFrames`, `unmeasurableGaps`,
+  `checkOneVideo`): whatever `oneVideoSupport` (the Cut's or the local one) answers, a gap the App can't measure turns
+  the answer into a refusal ("This cut has 1 gap with no length it can read; one-video export can't include it yet.")
+  and `oneVideoClips` throws rather than dropping it, so the join never comes out shorter than the cut.
+- **Only `{code: "gaps"}` (or `"gap"`) marks a cut gaps-only** (`normalizeAnswer`); any other code or plain text is a
+  refusal, even "upper track gap overlaps".
+- **Render missing shots** ([web/soundstage.js](web/soundstage.js) `renderMissing`): runs the same guard on the raw
+  cut before queueing any Final ("... Nothing was queued."), so no GPU time is spent on a cut the join will refuse.
+- **Minor:** `audio_detached` counts only when truthy (0 / false / "" / null are not detached); the sentence says
+  "it" whenever there is a single reason.
+- Tests: [tests/js/onevideo.test.mjs](tests/js/onevideo.test.mjs) (a stub hook answering ok for `{kind: "gap", dur: 12}`,
+  `{in: 0, out: 36, duration: 1.5}` -> 36, NTSC seconds -> frames, the hook reason "upper track gap overlaps", the
+  Render missing shots guard before `app.queuePrompt`).
+
+**Cut shell for the new Cut, 2026-11-08 01:49 (private branch `private/ask-hooks`, not pushed): Cut → one video refuses what it can't honour and joins gaps frame-accurately; Collect walks the Cut**
+
+- **Still wrong (read first, known limits):** checked with Node, pytest and a local ffmpeg on invented clips only, not
+  in the browser, the App or a live ComfyUI. The new Cut fields (true gaps, upper picture tracks, `audio_detached`) are
+  not on this machine yet, so the guard and Collect read them by the shapes in the coordination note
+  (`{kind: "gap", in, out}`, `video` / `video_tracks` as arrays of clips or `{clips|events}`), guessed, not seen.
+  - **The rule set is a fallback** until the Cut exports `oneVideoSupport(rawCut) -> {ok, reasons}`; the App looks for
+    it on `web/cut/cut.mjs` and `web/cut/timeline.mjs` only. A hook that throws or answers in another shape is ignored
+    silently (local rules used).
+  - **Still left out, as before, not refused:** transitions, opacity keys, titles, graphics, subtitles and the cut's
+    sound tracks never were in the one-video join; it now names them on the result line ("left out: …, the Cut's
+    Render has them") instead of refusing, so cuts that joined yesterday still join.
+  - **Gaps:** black and silent only; a gap's length is `out - in` (superseded at 02:06, see above). A cut of only
+    gaps is refused by the server. Video and stills are now trimmed by whole frames (was a duration in seconds), so a
+    clip can come out a frame different from before at odd lengths (the old seconds rounding).
+  - **Collect:** "raw path" means a media-file string with a slash, drive letter, `~`, `file:` or `http(s)`; a bare
+    `soundstage/x.mp4` with no `[output]` is reported, not guessed. Cut media with no shot lands in `cut/audio/` or
+    `cut/media/` by extension or key name. The timeline copy in `cut/timeline.json` keeps the original paths (the
+    workflow is relinked on open, as before).
+- **Cut → one video guard** ([web/onevideo.mjs](web/onevideo.mjs), `flattenCut` in [web/soundstage.js](web/soundstage.js)):
+  decided on the raw saved cut before flattening; "This cut has gaps (2) and an upper picture track; one-video export
+  can't include them yet." and nothing changes. `cutEntries`' shot filter is kept for Render missing shots and shot order.
+- **Gaps in the join** ([soundstage/cut/assemble.py](soundstage/cut/assemble.py)): black + silence of the gap's exact
+  length; `timeline()` puts every segment on whole frames and whole 48 kHz samples from its record start; 23.976 /
+  29.97 / 59.94 run at 24000/1001, 30000/1001, 60000/1001.
+- **Collect walks the Cut** ([soundstage/project/collect.py](soundstage/project/collect.py)): `ss_cut`, `ss_script`
+  (scene Cuts, scene stages) and `extras.timeline`, through the same `add()` (dedup, output / input / temp only); raw
+  paths reported by file name in MISSING.txt, `project.json` `unsupported` and the Collect message.
+- Tests: `tests/js/onevideo.test.mjs`, `tests/test_cut_assemble.py` (timeline math, NTSC joins checked with
+  silencedetect), `tests/test_project_collect.py` (invented projects).
+
+**Ask hooks, close-out, 2026-11-08 01:20 (private branch `private/ask-hooks`, not pushed): sit_floor never slides, opening / playing / scrubbing a scene writes no camera keys, num_ctx stays put so Ollama stops reloading the model**
+
+- **Still wrong (read first, known limits):** checked with Node and pytest only (invented test data), not in the
+  browser, the App, a render or a live ComfyUI / Ollama; that Ollama now keeps the model loaded across mixed short
+  and planner requests is reasoned from Ollama's reload-on-num_ctx-change behaviour, not measured.
+  - **num_ctx only grows within a ComfyUI run:** the largest value Ollama accepted for a model (one big prompt that
+    got a 2xx reply, or a caller's own `num_ctx: 100000` -> 131072 that succeeded) is reused for every later request
+    to it until `unload()` or a restart, so the model can keep a bigger KV cache than a short chat needs. A big
+    request that failed (Ollama 500, or the route's 502) is not kept. The fixed sizes also round a caller's own value UP (12000 ->
+    16384, 20000 -> 32768): more memory than asked, never less. Short chats now get 8192 (was 4096). An
+    `OLLAMA_CONTEXT_LENGTH` set only in the shell that started Ollama (not ComfyUI's) is still not seen, so the floor
+    can be below the server's own and the first request at a new size still reloads once. The memory is per
+    process, not shared with other Ask callers (`soundstage/cine/llm.py` keeps its own options).
+  - **sit_floor is refused for anyone with movement keys** (the "refuse" fix, not "pin where they sat"): to sit a
+    walker down on the floor, take their movement keys out first. Movement keyed after they sat (an older save, a
+    later key edit) makes both bodies stand on the path (the pose is kept) until the keys hold still again; there is
+    no "sit at frame N" yet. The check is per shot for the body (`_actorKeys`), any shot for the refusal.
+  - **An older scene with no `shots` whose camera moves (`camera` + `camera_end`)** still gets that move stored as the
+    Master's two keys when it is opened (that is the scene's own move, not a new key); the flat field is not created.
+  - **Other writers of the live flat `state.camera_keys` remain** and are edits, not playback: the phone viewfinder
+    (`web/vcam/viewfinder.mjs:445`, `:462`), the Director's new-group camera (`web/soundstage.js:3078`), every
+    `_camKeys()` key edit. `setActiveShot` no longer re-points it (viewing a shot is not an edit; `toJSON()` mirrors
+    the shot on screen into the saved copy as before).
+- **sit_floor slid along the keyed path (`web/stage/stage.mjs:2311`, `:4753` `_keysMove`, `:4761`
+  `_movesInAnyShot`, `_sitSpec`, `setPose`):** `setPose(id, 'sit_floor')` on a person keyed x = 0 -> 5 returned ok
+  and the seated clay and lifelike body slid along the path. It is refused now while the person has movement keys
+  (base `keys` or any shot's `by_shot`; a hold at one spot is fine): `'<name>' has movement keys (<base / shot
+  ids>): sit_floor would slide them ...`, nothing changed; a floor sitter whose keys start moving later is not
+  folded down (clay) and gets no sit spec (lifelike). Tests in `tests/js/askhooks_sit.test.mjs` (the new one fails
+  on 80ab105; one older case that expected sit_floor to succeed for a walker now expects the refusal).
+- **Play / scrub / First-Last / opening a scene wrote camera keys (`web/stage/stage.mjs:2521` `setKey`, `:1342`
+  `_shots`, `_legacyCamKeys`, `:1361` `setActiveShot`; `web/ui/presets.mjs:391` hover preview):** `setKey('start'|
+  'end')` went through `_camKeys()`, so First / Last re-pointed the flat field and `load()` (which jumps with
+  `setKey('start')`) stored a key on a keyless active shot and wrote the flat field just from opening the scene.
+  `setKey` reads `_camKeysView()` now; `_shots()` migrates a shot-less scene without creating the flat field or a
+  still-camera key; `setActiveShot` leaves the flat field; the preset hover puts the shot's own keys back (deleting
+  the field if it had none) and no longer writes the flat field. Only an explicit key edit stores keys.
+  `tests/js/askhooks_play.test.mjs` now builds the stage through `load()` with a chair sitter and a floor sitter,
+  watches every assignment to the flat field, and checks flat + per-shot keys and the whole scene byte-identical
+  after play, scrub and First / Last on a keyed, another keyed and a keyless shot; plus opening a keyless shot and
+  a shot-less older scene (3 new tests, all fail on 80ab105).
+- **num_ctx changed from request to request (`soundstage/assistant.py:220` `CTX_SIZES`, `:224` `_snap_ctx`, `:229`
+  `forget_ctx`, `:301` `num_ctx_for`, the chat route, `:391` `unload`):** sized to each prompt in 4096 steps
+  (4096 / 8192 / 12288 ...), and Ollama reloads the model whenever num_ctx changes, so mixing short chats with
+  planner calls could reload a large local model on every request. num_ctx is now snapped up to a few fixed sizes
+  (8192, 16384, 32768, 65536, 131072: a short chat and a ~3,500-token planner both 8192), the chat route reuses the
+  largest value already sent to that model on that Ollama URL (forgotten on unload), and it is never below
+  `OLLAMA_CONTEXT_LENGTH` or above the max / `CTX_CEILING`. Test in `tests/test_assistant.py` (consecutive short and
+  long prompts in one size send one value; fails on 80ab105); older num_ctx tests updated to the sizes.
+- **sit_floor reported "already so" for a walker (`web/stage/stage.mjs` `setPose`):** someone saved as `sit_floor`
+  whose keys move (an older save, a later key edit) walks the path upright, but `setPose(id, 'sit_floor')` returned
+  `{ok: true, changed: false}` before the movement check ran. The movement-keys refusal now comes first; `changed:
+  false` only for a floor sitter who holds still. Test in `tests/js/askhooks_sit.test.mjs` (fails on 949f052).
+- **A failed big request kept its num_ctx (`soundstage/assistant.py` `num_ctx_for`, `remember_ctx`, the chat
+  route):** `num_ctx_for(..., model=...)` stored the size before the request was forwarded, so a big request that
+  Ollama refused (500, out of memory) or that never reached it (502) still made every later short chat send the big
+  num_ctx. `num_ctx_for` only reads now; the route calls `remember_ctx` after a 2xx reply. Test in
+  `tests/test_assistant.py` (a failed big request, then a short chat sends 8192; fails on 949f052).
+- Docs: `web/stage/STAGE_API.md` (setPose refusal, Play / open read-only, num_ctx sizes) and the coordination
+  handoff note match.
+
+**Ask hooks, last fixes, 2026-11-08 (private branch `private/ask-hooks`, not pushed): restore checks the whole snapshot, num_ctx has a ceiling, the dimmer is clamped, the saved flat camera keys follow the shot on screen, seats measured from the floor and never on something that moves**
+
+- **Still wrong (read first, known limits):** checked with Node and pytest only (invented test data), not in the
+  browser, the App, a render or a live ComfyUI / Ollama.
+  - **The agent's `set_lighting` op itself is not clamped** (`web/agent/agent.mjs` is the Ask lane's, not edited
+    here): its scene is clamped when it reaches the stage through `load()` (`loadScene`), but `applyOpsToScene`'s
+    own output, before it is loaded, can still carry `exposure_stops: 1e12` or `"1e3"`.
+  - **Snapshots from before this change no longer restore:** `snapshot()` now returns a stamped string
+    (`{soundstage_snapshot: 1, epoch, scene_ids, scene}`); a bare scene (the old form) is refused. "The scene open
+    now" means the stage's scene epoch (moved on by every `resetHistory()`: opening a workflow, another script scene,
+    a Try-it preset) plus the shots' `scene_id`s; an App path that swaps scenes without `resetHistory()` would not be
+    seen.
+  - **A seat picked up by another path is not stopped:** only the stage's drop-on-a-person pick-up (`_dropProp`)
+    refuses an occupied seat; live.mjs / drive.mjs / objparts.mjs carries are not guarded. A sitter on a seat that
+    becomes carried keeps the old mount placement (a frame behind) for the clay; the lifelike body stops sitting.
+  - **"Floor" for seat height is the set's walkable floor (`setFx.floorAt`) else 0:** a prop sunk below a raised
+    floor reads lower than it looks; there is still no lower seat limit.
+  - **`CTX_CEILING` is fixed at 131072:** a model with a bigger window cannot be asked for more through Ask.
+  - **A keyless shot's saved flat `camera_keys` is now one key** (`[{frame: 0, ...camera}]`, what the stage plays),
+    where it used to be absent or another shot's: an older reader that used `camera` + `camera_end` for such a shot
+    now sees a still camera, as the stage films it.
+- **`restore('{"actors":[]}')` wiped the scene (`web/stage/stage.mjs:4853` `restoreSnapshot`, `:260`
+  `validSnapshotScene`, `:4842` `snapshot`, `:4442` `resetHistory`):** only `actors` was checked, so a bare scene
+  replaced everything and the next `setFrame` threw. The whole snapshot is now checked before anything is touched:
+  the stamp, the scene epoch and shot scene ids (another scene is refused), actors (unique ids, valid positions /
+  keys), camera, shot timing, shots and camera keys, active shot, lighting. A set that can't be built from it is
+  rolled back. `stageHook(null)` (`web/hosthooks.mjs:211`) threw on toJSON / select / setPose / snapshot; it refuses
+  now (`null` / `{ok: false, error: "no stage"}`), and `select` refuses an unknown id. Tests in
+  `tests/js/askhooks_sit.test.mjs`.
+- **num_ctx had no top (`soundstage/assistant.py:214` `CTX_CEILING`, `:220` `_pos_int`, `:291`):** a caller's
+  `num_ctx: 1e12` or `OLLAMA_CONTEXT_LENGTH=1e308` went to Ollama as-is, and `"1e3"` was read as 1000. Every value is
+  clamped to 131072; NaN / Infinity / exponent strings / booleans are ignored. Test in `tests/test_assistant.py`.
+- **The dimmer was not clamped on load (`web/stage/lighting.mjs:10` `exposureStopsOf`, `web/stage/stage.mjs:293`
+  `cleanExposure`, `:5529` in `load()`, `:2684` `exposure()`):** a saved `exposure_stops: -1e9` (or an agent
+  `set_lighting` op) went straight into the render factor, and `true` read as +1 stop. Now clamped to -6..+2, a
+  non-number dropped, in load, `exposure()`, `_exposureFactor` and the prompt line; `setExposure` refuses `"1e3"`.
+  `host.lights.down` (`web/hosthooks.mjs:185`) stops at -6 (-5.5 then `down(1)` gives -6) and refuses `''` / `null`
+  / `true` (they gave `ok: true`). Tests in `tests/js/askhooks_lights.test.mjs`.
+- **The saved flat `camera_keys` kept shot A's keys (`web/stage/stage.mjs:5546` `toJSON`):** after
+  `setActiveShot('b')` (a keyless shot) and a play, the saved scene, and so the Look panel and the look compiler,
+  still had A's keys. It now always carries the shot on screen (`tests/js/askhooks_play.test.mjs`; fails on e7f1637).
+- **Seat height was measured from the prop's base (`web/stage/stage.mjs:4734` `_seatHeightFromFloor`):** a chair
+  stacked on cubes 1 m up passed for a 1.8 m person. It is measured from the floor now (seat 1.47 m: refused).
+- **A carried / riding seat could be sat on (`web/stage/stage.mjs:4702` `_canSitOn`, `:4712` `_seatMoving`, `:2196`
+  `_dropProp`):** the sitter was placed before the carry moved the seat (a frame behind, in the air). Carried
+  (`carry_id`), mounted / riding (`mount_id`) seats and a seat on the sitter (a cycle) are refused; an occupied seat
+  is not picked up from under its sitter. Tests in `tests/js/askhooks_sit.test.mjs` (mutation-checked: removing the
+  carried refusal fails them).
+- **`projectHook` with a non-numeric `timeoutMs` gave up at once (`web/hosthooks.mjs:149`):** `"soon"` / `null` was
+  0 ms; it is the 3 s default now. The `cutPanelHook` comment pointed at `host.goStep("cut")`; it says
+  `host.cut.show()` (`:174`). Tests in `tests/js/askhooks_host.test.mjs`.
+
+**Ask hooks, final review round, 2026-11-08 00:30: Play read-only in the App's overlays, pose keeps the keys, seat rules, Ask can take back a pose or lights change, the dimmer in the PiP and captures, num_ctx counts tools, project() always settles, cut.panel() only when shown (private branch `private/ask-hooks`)**
+
+- **Still wrong (read first, known limits):** checked with Node and pytest only, not looked at in the browser, the App,
+  a render or a live ComfyUI / Ollama.
+  - **`local` cannot see an SSH tunnel:** `status()` `local: true` means the model server's URL is loopback (or this
+    machine's name), not that the model or the data stays here; a `localhost:11434` tunnel to a pod reads `local:
+    true`. The new `url_kind` (`loopback` / `this_host` / `remote`) splits the URL cases but a tunnel still reads
+    `loopback`.
+  - **`OLLAMA_CONTEXT_LENGTH` is read from the ComfyUI process's environment:** it is what autostart hands Ollama; an
+    Ollama started elsewhere with its own setting is not visible, and num_ctx is still estimated from characters
+    (tools and messages / 3.5) plus a flat 1536 tokens per image, not the model's tokenizer.
+  - **One person per seat:** a sofa or bench seats one person through `setPose` (its seat is one point); a second is
+    refused, not placed beside the first. Seat height is capped at max(0.8 m, 0.6 x height): there is no lower limit.
+  - **Standing up follows the keys:** `setPose` never changes a person's movement keys, so after "stand" they are
+    where their keys say, which can be inside the chair they left when a key is there (the old 1.2 m step-off is gone).
+    A keyed person sitting on the floor still slides along their keys seated.
+  - **Ask's restore puts back the whole scene:** `host.stage.restore(snap)` also takes back any edit the person made
+    between Ask's snapshot and its restore; `host.stage.undo()` is the stage's last step, whoever made it.
+  - **A dimmed Color capture is brighter than the viewport below -2 stops:** captures stop at `CAPTURE_EXPOSURE_MIN`
+    (-2) so Frame / Motion never get a near-black picture, and guide passes (clay, depth, wire, ID, dust) are not
+    dimmed; the prompt's lighting line carries the rest.
+  - **`host.cut.panel()` is null while another step is open:** the Cut must be on screen; `host.cut.show()` (new)
+    opens it first.
+- **Play still wrote camera keys in the App (`web/stage/camviz.mjs` `shotPathSig`, `_rebuildPath`, `TopView._keys`,
+  `web/stage/tracks.mjs` `_rows`, `web/stage/objparts.mjs` `_camKeyFrames`):** the viewport overlays called the
+  key-creating `_camKeys()` on every render, so a keyless shot gained a stored key on its first render. They read
+  `_camKeysView()` now; TopView insert / drag and a Tracks drag of the fallback key still store it (an edit).
+  `_camKeysView()` no longer re-points the flat `state.camera_keys` either; `toJSON()` writes the active shot's keys
+  into the saved copy's flat field for older readers (`tests/js/askhooks_overlays.test.mjs`; the rewritten
+  `askhooks_play.test.mjs` cases fail on e3774ad, as every overlays case does).
+- **`setPose` overwrote movement keys (`web/stage/stage.mjs` `setPose`):** stand (through `unmount`) and sit to
+  sit_floor replaced a walk 0 to 8 m with one key. The keys are never touched now. Seats: one person per seat
+  (`'<seat>' is taken by '<name>'`), chairs / benches / sofas / armchairs picked ahead of a nearer table / cube / rock,
+  seats above max(0.8 m, 0.6 x height) refused (a 3 m cube, a chair at scale 4). `SITTABLE` drops `couch` and
+  `stool`, which are not library kinds (`couch` was already an alias of `sofa`) (`tests/js/askhooks_sit.test.mjs`).
+- **Ask could not undo a pose or lights change:** `stage.snapshot()` / `stage.restoreSnapshot(snap)` (one undo step)
+  and Ask's `host.stage = stageHook(stage)` `{toJSON, select, setPose, snapshot, restore, undo}`
+  (`web/hosthooks.mjs`, `web/soundstage.js`); the handoff no longer claims Ask gets "the same Undo as any set edit".
+- **Lights down missed the shot-camera picture-in-picture (`camviz.mjs` `PipViewer._draw`)** and could take captures
+  to near-black: the PiP renders through `_withExposure`; captures follow `_exposureFactor` (above)
+  (`tests/js/askhooks_lights.test.mjs`).
+- **num_ctx (`soundstage/assistant.py` `num_ctx_for`, chat route):** counts the request's `tools` and images; the
+  caller's own `num_ctx` (int, float or numeric string) passes through, never lowered or capped; never below
+  `OLLAMA_CONTEXT_LENGTH`; the chat route passes `tools` (route test in `tests/test_assistant.py`).
+- **`host.project()` never settled when `__ssProject.project()` hung:** it resolves `{name, id: null}` after 3 s
+  (`PROJECT_TIMEOUT_MS`). **`host.cut.panel()` returned the hidden panel:** null unless the Cut view is shown;
+  `host.cut.show()` opens it (`tests/js/askhooks_host.test.mjs`).
+- Every signature, return shape and refusal: `web/stage/STAGE_API.md`.
+
 ## 2026-11-07
 
 **Review of the final round: an un-awaited QA Chrome close() left its whole profile, the signal tests did not check helper processes, a take-check test that failed alone, a load-sensitive shader timeout test; what stays open (private branch `private/stage-next`, 23:45 by this machine's clock)**
@@ -484,6 +750,306 @@ Each entry links to the code; every milestone ships with tests.
 - **Foot grounding on the avatar's own skeleton** ([web/stage/people/footplant.mjs](web/stage/people/footplant.mjs), called by [web/stage/people/avatars.mjs](web/stage/people/avatars.mjs) `avatarsAt`): the sole vertices found once per avatar; one plan per person per shot (stance from sole height and speed with hysteresis, each stance locked at mid-stance, pitched to the ground's slope and lowered onto it, long drifting stances split into one-foot-at-a-time steps, 3-frame blends); per frame the pelvis comes down when out of reach, two-bone IK puts each foot on its target, a swinging foot is kept above the ground. It never reads the clay figure, so it carries over when one motion drives both the avatar and the logic rig. Frames in the air, a physics lift, and everyone who shows as clay are untouched.
 - **Two bugs found on the way:** three's `PropertyMixer` writes a bone only when the clip's value changed, so posing the same frame again kept the last IK values (now put back before the mixer runs); and the raw pose read stale bone world matrices (now updated after posing). Both made the feet depend on the scrub order until fixed.
 - **Tests** ([tests/js/footplant.test.mjs](tests/js/footplant.test.mjs), 13): man and woman, planted soles within 1 cm on flat ground, a platform, a ramp (sole pitched to it) and a deck; the mid-stance vertex moves 0.00 cm over each stance (limit 1 cm); no sole 1 cm into the floor through a walk-to-stop and a 2.4 m/s run; no pop at contact changes; the same feet in forward, scrambled and reverse order and with the plan rebuilt at any frame; turning on the spot steps each foot at least twice, never both at once; a hop's air frames and a physics lift untouched, a rider never planned; the pure parts (stance runs, step schedule, IK, floors). Full suites: JS 1651 tests, 1647 pass, 2 fail (`ask_robust` "root cause 4" and `oneclick_sweep` "stopped answering", the known flakes: both pass alone), 1 skipped, 1 todo; Python 1807 passed, 25 skipped. Docs: [web/stage/people/README.md](web/stage/people/README.md) (Foot grounding), [web/stage/STAGE_API.md](web/stage/STAGE_API.md) (`stage.footGrounding`).
+
+**Ask hooks, 2026-11-07 evening: project id, Cut panel, sit / sit on the floor, lights down, read-only Play, local + num_ctx for the model server (private branch `private/ask-hooks`)**
+
+- **Still wrong (read first, known limits):** checked with Node and pytest only (the real Rocketbox man sits in a Node
+  test, measured by bone positions), not looked at in the browser, the App, a render or a live ComfyUI / Ollama.
+  - **The seated lifelike body is measured, not seen:** `sitBody` aims thighs, shins and arms in world space with
+    shortest-arc turns; the test checks hips on the seat, thighs level, shins down, toes forward and hands on the lap,
+    but a twist in a knee or a hand clipping a thigh would only show on screen. Sitting on the floor is knees-up only
+    (no cross-legged), and a keyed (moving) person sitting on the floor slides along their keys seated.
+  - **Only chairs, benches, sofas, armchairs, rocks, tables, cubes (and a named static custom prop) can be sat
+    on with `setPose`;** car seats, horses, bikes and boats keep their own mounts, and those riders stay clay as
+    before. A custom prop's seat is guessed at 0.6 x its height. A seat now also scales with the prop's `height_m`
+    against the library height (a resized chair has a higher seat; scenes at the library size are unchanged).
+  - **Lights down scales lights, not emission:** neon, screens and other emissive surfaces keep their glow; a sky
+    that is a picture (a backdrop plate) is not dimmed. The clay pass is dimmed too. There is no slider for it in the
+    App yet (stage API and Ask's `host.lights` only).
+  - **num_ctx is estimated from characters** (length / 3.5), not counted by the model's tokenizer; a prompt over the
+    cap (`SOUNDSTAGE_ASSISTANT_MAX_CTX`, default 32768) is still capped, and Ollama then drops its oldest part.
+    `local` compares the URL's host name with loopback and this machine's own name only (no DNS): a LAN address of
+    this same machine reads as `false`.
+- **Playing a shot wrote its camera keys (`web/stage/stage.mjs` `_camKeys` via `_cameraAt` / `_rigCameraAt` /
+  `keyInfo`):** a shot with no keys got one stored on its first played frame. Playback, scrubbing and the key strip now
+  read through `_camKeysView()` (never creates or edits a key); edits still create the first key. The flat
+  `camera_keys` field still mirrors the active shot's own array (the look compiler reads it; a first try that froze
+  it broke `tests/test_racing_cinema_edges.py`) (`tests/js/askhooks_play.test.mjs`: the real `setFrame` over every
+  frame leaves every shot's keys byte-identical).
+- **`stage.setPose(id, "sit" | "sit_floor" | "stand", {on})`:** sit on the nearest seat within 1.5 m or a named one
+  (seat height from the prop: chair 0.47 m, sofa 0.54, armchair 0.44, new `MOUNTS` entries), on the floor, or stand;
+  one undo step, refusals change nothing. A person sitting on a chair / bench / sofa or on the floor is no longer sent
+  to the clay: the lifelike body sits (`web/stage/people/avatars.mjs` `sitBody`, `avatarcore.clayReason` ctx.sits).
+  No new clay-only UI (`tests/js/askhooks_sit.test.mjs`).
+- **`stage.setExposure(stops)` (lights down):** a scene dimmer, -6..+2 stops, saved as `lighting.exposure_stops`, one
+  undo step; the prompt's lighting line says the lights are dimmed (`web/stage/lighting.mjs`,
+  `tests/js/askhooks_lights.test.mjs`).
+- **Ask's host (`web/soundstage.js` `mountAsk`, `web/hosthooks.mjs`):** `project()` -> `{name, id}` (id confirmed via
+  `window.__ssProject.project()`, else null), `cut.panel()` -> the live `CutPanel`, `lights` `{get, set, down, reset}`,
+  `stage.setPose` (`tests/js/askhooks_host.test.mjs`).
+- **Model server (`soundstage/assistant.py`):** `status()` has `local` (true on this machine / loopback);
+  `/soundstage/assistant/chat` sets `num_ctx` sized to the prompt (8192 for a ~3,500-token planner prompt; 4096
+  floor; `SOUNDSTAGE_ASSISTANT_MAX_CTX` cap) (`tests/test_assistant.py`).
+- Every call, its return shape and its refusals: `web/stage/STAGE_API.md`.
+
+**Close-out, 2026-11-07: a collected copy is judged by id first (private branch `private/project-id`)**
+
+- **Still wrong (read first, known limits):** checked with Node and pytest only, not in the browser, the App or a live
+  ComfyUI.
+  - **Two pages creating the same NEW project name at the same moment can end up sharing one id:** New project checks
+    the name and then saves (`web/project/projectbar.mjs` `newProject`, `store._save`) with no lock between, so both
+    pages can pass the check. Not fixed (`docs/projects.md`).
+- **Forget could delete an unrelated project's note from a collected copy (`soundstage/book/store.py` `forget`,
+  `collected_scope`):** a collected folder (`output/soundstage_projects/<name>/`) with this project's folder name was
+  taken as in scope before its `project.json` id was read, so a same-named copy of a different project (other id)
+  lost its note to a shared turn ref. The ids now decide whenever both sides carry one; the folder name or the
+  manifest's name decides only when an id is missing (`tests/test_book.py`
+  `test_collected_same_name_foreign_id_is_scoped_out`, fails on ead9677).
+
+**Sixth review fixes, 2026-11-07 night: New project over an existing name, multi-line Ask notes, the Forget everywhere retry (private branch `private/project-id`)**
+
+- **Still wrong (read first, known limits):** checked with Node and pytest only, not in the browser, the App or a live
+  ComfyUI; the original probe files (adv5probe) were not in this worktree, so each repro was rewritten as a test from
+  its description.
+  - **An Ask ref with no project id (`:<turn>`, saved before the project had an id)** is never matched by ref in another
+    project's files. When only such a note matches and nothing was removed, Forget is `ok: false` with
+    `ref_elsewhere_ids`; the caller must forget those note ids with `everywhere` itself.
+  - **A multi-line Ask note filed with no scene is one note** placed where its first line was placed (the other lines'
+    placement is dropped). Pitch's and the director's multi-line notes still file one note per line.
+  - **New project's "Replace project?" is asked after the template loads from the server** (a failed template load
+    still asks nothing and writes nothing).
+  - Unchanged: Ask still passes the typed words to `addNote` (Jon's Claude's lane); ComfyUI queue history and render
+    metadata keep copies Forget cannot reach.
+- **New project overwrote a saved project of the same name without asking (`web/project/projectbar.mjs` `newProject`,
+  `save({replace})`):** and, saved as a plain save, kept its `created`, so another tab's next Save adopted the id made
+  for the template. It now asks "Replace project?" (No: nothing written) and saves with `replace: true`
+  (`tests/js/project.test.mjs`, fails on 4dd3424).
+- **Lines 2+ of a multi-line Ask note survived Forget (`web/book/book.mjs` `addNote`):** with no `sceneId` only the
+  first filed line got `source: "ask"` and the ref. Every filed line now carries the source and ref, and an Ask note is
+  kept as one note, so Forget by id or ref leaves no line in the Book or the workflow's `ss_book`
+  (`tests/js/hosthooks.test.mjs`).
+- **The Forget everywhere retry said ok with nothing removed (`soundstage/book/store.py` `forget`, `web/book/book.mjs`
+  `scrub`):** after the first pass removed this project's copy, a retry by ref found no note ids, removed 0 and said
+  `ok: true` while the Duplicate (`Film 3.json`) kept the typed sentence. A ref naming this project
+  (`p_<id>:<turn>`) now finds its notes in other projects' copies on any pass; answers carry `decision_ids`, which
+  `scrubDecision` resends on its retry; a ref match only in another project with nothing removed is `ok: false`
+  (`ref_elsewhere`) (`tests/test_book.py`, `tests/js/hosthooks.test.mjs`).
+
+**Fifth (final) review fixes, 2026-11-07 late: adopt across content, closed-tab state, Ask's notes, legacy copies, squashed refs (private branch `private/project-id`)**
+
+- **Still wrong (read first, known limits; not chased further):** checked with Node and pytest only, not in the browser,
+  the App or a live ComfyUI.
+  - **Ask's notes still store what Ask passes:** `book.addNote(text, {source: "ask", ref})` keeps `text` as given. Ask
+    (`web/agent/assistant.mjs` `add_note` -> `ask.mjs`) passes the user's typed words and no ref today; that is Jon's
+    Claude's lane. Until it passes a ref (or a summary), those notes can be forgotten only by note id.
+  - **Legacy decision copies are migrated only on request:** `POST /soundstage/book/legacy {apply: true}` rewrites them;
+    nothing runs it on startup. Until then autosaves, trash and other copies keep the typed sentence. Ask's pre-ref notes
+    are not decisions and are not listed.
+  - **Tab state per workflow object** is untested against a live ComfyUI frontend (whether it keeps one object per open
+    tab across its own Save).
+  - **A direct `store.save` of a graph naming no project, without `replace`,** keeps `created` (the pill always passes
+    `replace` after "Replace project?").
+  - Unchanged: two tabs change the id once; Forget's `ok: true` is server-side files only (not ComfyUI's queue history,
+    render metadata, other tabs, browser storage or a downloaded zip).
+- **A tab could adopt an id minted for other content (`web/project/store.mjs` `_save`, `web/project/projectbar.mjs` `save`):**
+  page B's Save As `Q` under the name `P` + Replace kept `P`'s `created`, so page A, saving `P` with its old id, adopted
+  `Q`'s id. A fresh id over a copy, another id, another project's name or a confirmed Replace now resets `created`
+  (always to a new value, even in the same millisecond), and the pill passes `replace: true` after Replace.
+- **A closed tab's bound state carried over (`web/project/projectbar.mjs` `tick`, `_cur`, `_isCopy`, `_prune`, `load`):**
+  tab state was keyed by path and never pruned, so a dragged-in older `<name>.json` at a closed project tab's path
+  saved over the project with no prompt. State now belongs to one workflow object; closed tabs are dropped; `open()`
+  re-checks the id once bound (it was unconfirmed for up to 15 s).
+- **Ask's notes could never be forgotten (`web/book/book.mjs` `addNote`, `forgetDecision`; `soundstage/book/store.py`
+  `FORGETTABLE`, `clean_ref`, `_strip`; `soundstage/book/routes.py` note):** `addNote` takes an opaque `ref`;
+  `forgetDecision` and the server scrub remove `source: "ask"` notes by ref or id.
+- **Legacy decision notes kept the typed sentence server-side (`soundstage/book/store.py` `legacy_decisions`,
+  `routes.py` `/soundstage/book/legacy`, `book.legacyDecisions()`):** listed machine-wide with ids, refs and files;
+  `apply` rewrites them in place to tools + number args.
+- **Refs and summaries passed the check with the spaces removed (`web/book/model.mjs` `squash`, `squashEchoes`,
+  `decisionRef`, `recordDecision`):** `:makeitpourwithrain` / `:makeItPourWithRain` / a soft-hyphenated piece are
+  rejected; matching now also removes soft hyphens and joiners.
+- Tests: `tests/js/project.test.mjs` (Save As + Replace, store and pill; bind, close, temporary tab at the same path),
+  `tests/js/hosthooks.test.mjs` (Ask note by ref, legacy route), `tests/js/book.test.mjs` (squashed refs and
+  summaries), `tests/test_book.py` (Ask notes in every copy, `clean_ref`, note route ref, legacy list + migrate).
+
+**Fourth review fixes, 23:00-23:59: ComfyUI copies, collected-copy Forget, two-tab id ping-pong, capped decisions (private branch `private/project-id`)**
+
+- **Still wrong (read first):** checked with Node and pytest only, not in the browser, the App or a live ComfyUI.
+  - **Copy detection rests on ComfyUI's tab path:** a tab is a copy when `activeWorkflow.path` is not
+    `workflows/<name>.json` or the workflow is temporary. That was not checked against a live ComfyUI frontend
+    (how it names a dragged-in file, or whether a project opened from the pill comes up temporary). A host with no
+    workflow store treats nothing as a copy. A file copied outside ComfyUI over `workflows/<name>.json` is still the
+    project.
+  - **Two tabs still change the id once:** the second tab's first save mints a new id, the first tab then adopts
+    it. A reloaded page forgets what it saved, so a stale graph saved from it gets a fresh id once more.
+  - **Forget's `ok: true` is server-side files only:** other open tabs, canvas undo, browser storage, ComfyUI's
+    queue history (`extra_pnginfo`), render metadata and a downloaded collected zip still hold what they held.
+  - **A capped decision with nothing left on the server** answers `ok: false` ("no stored copy"), the same as a
+    made-up id.
+- **ComfyUI copies replaced the project (`web/project/projectbar.mjs` `_isCopy`, `_autoName`, `save`; `web/project/store.mjs`
+  `save`, `confirmProjectId`):** a Duplicate / Save As / dragged-in copy kept the original's name and id, confirmed as
+  it, and a plain Save overwrote `workflows/<name>.json`; its autosaves pushed the original's out. Now a copy has no
+  confirmed id, its Save asks for a name and before replacing, it gets a fresh id, and it autosaves to
+  `projects/<name> (copy)/`.
+- **Forget missed collected copies (`soundstage/book/store.py` `forget`, `soundstage/book/routes.py`):** it now also
+  cleans `output/soundstage_projects/<P>/script/directors_book.json` and that folder's `project.json` (`book`,
+  `workflow`); another project's collected copy is reported in `other_copies`.
+- **Two tabs made a new id on every save (`web/project/store.mjs` `_save`):** a graph carrying an id its own page
+  saved for the project (same `created`) adopts the id in `project.json`; 8 alternating saves now give 2 ids, not 8.
+- **Forget of a capped decision did nothing (`web/book/book.mjs` `forgetDecision`):** a note dropped by the
+  40-decision cap (or forgotten in another tab) still runs the server scrub: `{ok, in_book: false, copies}`.
+- Tests: `tests/js/project.test.mjs` (copy at another path, the pill's Duplicate tab, alternating two-tab saves),
+  `tests/js/hosthooks.test.mjs` (41+ decisions), `tests/test_book.py` (collected copies).
+
+**Third review fixes, 21:30-22:30: collected-copy id collision, opaque refs, two-tab save race, Forget's other copies (private branch `private/project-id`)**
+
+- **Still wrong (read first):** checked with Node and pytest only, not in the browser, the App or a live ComfyUI.
+  - **Stale confirmed id:** two tabs saving one project at once now always leave `workflows/<name>.json` and
+    `project.json` with the same id, but a save that settled just before the other tab's write landed still says
+    `confirmed`. `projectId()` can then report an id the disk no longer holds until the next check (at most 15 s).
+    2-8 of 400 saves in the random-delay test.
+  - **Ask's summary:** it is rejected only when it repeats 3 words in a row of the typed sentence (or 4 characters
+    in CJK / Thai). A reworded summary can still carry private content into the Book.
+  - **Not ours to fix (Jon's lane, `web/agent/director.mjs`):** line 401 keeps `label: plan.command` (the typed
+    sentence) in the Director's undo / redo stacks; Director Undo does not call `forgetDecision`; line 407 passes no
+    `summary` and no `ref` to `recordDecision`, so no decision can be forgotten by its turn yet.
+  - **Collected copy loses its id:** an opened collected copy has no id until its first Save, which writes a fresh
+    one. Memory keyed to the original id does not follow the copy to another machine.
+  - **Not changed:** ComfyUI's queue history and render metadata still hold the Book as it was (docs/director.md).
+- **Collected copy overwrote the live project (`web/project/projectbar.mjs` `openCollected`, `save`):** the copy kept
+  the id it carried, so on the machine it came from `projectId()` confirmed it as the live project and a plain Save
+  replaced `workflows/<name>.json` with the copy relinked to `output/soundstage_projects/`. It now opens with no id,
+  and its first Save asks for a name and before replacing a project of that name.
+- **Refs are opaque (`web/book/model.mjs` `DECISION_REF_RE`, `decisionRef`, `recordDecision`):** any string was kept
+  as `ref` (80 characters), so a caller passing the typed sentence put it in the Book. Only `${projectId}:${turnId}`
+  is kept now, and not when the turn id spells out the sentence.
+- **Two-tab save race (`web/project/store.mjs` `save`, `_settle`):** in 21 of 200 trials the two files ended with
+  different ids. Saves in one page now run one at a time, and save() reads both files back and settles
+  `project.json` to the saved workflow's id. It returns `confirmed` and `disk_id`; the pill trusts only a confirmed id.
+- **Forget and other projects' copies (`soundstage/book/store.py` `forget`, `routes.py`, `web/book/book.mjs`
+  `scrubDecision(id, {everywhere})`):** a Duplicate or Save As copy of the same decision note was left on disk while
+  Forget said `ok: true`. It is now listed in `other_copies` and `ok` is false; `everywhere: true` removes it by note
+  id only. The project's own `workflows/<name>.json` is cleaned whatever id a save race left in it.
+- **Tests:** `tests/js/project.test.mjs` collected copy on the same machine (fails on 9da6f2b), 200-trial two-tab race
+  (fails on 9da6f2b), one-page saves in order; `tests/js/book.test.mjs` refs that echo the sentence are dropped;
+  `tests/test_book.py` other_copies, everywhere, own workflow with a raced id.
+
+**Second review fixes: Forget after a library Rename, the spec's id rule, joined-token args (private branch `private/project-id`)**
+
+- **Still wrong (read first):** checked with Node and pytest only, not in the browser, the App or a live ComfyUI.
+  - **Id changes more often now:** a second tab opened before the first id'd Save, canvas undo past it, or a
+    restored pre-id autosave gets a fresh id when saved. Two tabs saving a new project at the same time keep
+    changing the id until one is closed. Memory keyed on an old id must be re-keyed after each Save.
+  - **Folder means project:** any file inside `projects/<name>/` is cleaned as that project's, even one left by an
+    older deleted project with the same name.
+  - **Lost enum values:** a joined enum the user spelled out (`low_angle` from "a low angle shot") is dropped from
+    that decision. Values with no separator (one word, such as `mara`) are still kept.
+  - **Short refs:** a ref under 8 characters (`t1`) also matches `shot1` and makes Forget answer `ok: false`.
+    Nothing enforces the length; callers must use `${projectId}:${turnId}`.
+- **Forget after Rename (`soundstage/book/store.py` `_folder_of`, `forget`):** a pre-id project Renamed in the
+  library kept autosaves naming the old name, so Forget listed them in `other_projects`, left the note on disk and
+  said `ok: true`. Now every file inside `projects/<project name>/` is in scope.
+- **Id rule as specified (`web/project/store.mjs` `save`):** the id is kept only when the saved workflow carries it.
+  The same-name exception (`_ownHistory`) let an unrelated pre-id workflow with the same name take the project's id;
+  it is removed.
+- **Joined-token args (`web/book/model.mjs` `tokenEchoes`, `scrubArgs(args, tool, command)`, `recordDecision`):**
+  `red_pickup_truck` / `gas-station-pumps` carried 3-word runs of the typed sentence into the Book. They are split on
+  separators and dropped when they repeat it; a last check keeps only numbers if values still line up into a run.
+- **Tests:** `tests/test_book.py` rename-then-forget on a pre-id project; `tests/js/project.test.mjs` foreign id-less
+  same-name graph gets a fresh id; `tests/js/book.test.mjs` no 3-word run through `_` / `-` / `.` / `:` joined values.
+
+**Review fixes: Forget scoped to one project, Book args allowlisted, project id stable and confirmed (private branch `private/project-id`, 20:36 by this machine's clock)**
+
+- **Still wrong (read first):** checked with Node and pytest only, not in the browser, the App or a live ComfyUI.
+  - **Forget scope:** a file belongs to the forgetting project by its project id, or by name when it has no id.
+    So an old id-less autosave left in a reused name's folder is cleaned as this project's. A Save As copy made
+    after a decision keeps it: it is another project.
+  - **Unscoped files:** a file that names no project (a plain ComfyUI workflow holding a Book) is reported, not
+    cleaned, so `ok` is `false` until it is removed by hand.
+  - **Written back:** a second open tab, or ComfyUI's canvas undo, can write a forgotten note back on its next save.
+  - **Still not reached:** ComfyUI's queue history, render metadata and browser storage, as before.
+  - **Allowlist limits:** a one-word name (`mara`) taken from the sentence is kept, because it is a reference to
+    something on the set. `DECISION_ARGS` is a hand copy of the Director / parts / Ask schemas: a new tool keeps no
+    args until it is added. Tools whose enums are free text by schema, such as `part.value` (open / 65), lose that
+    value.
+  - **Id confirmation:** ComfyUI's own Save As / Duplicate and a dragged-in render carry the source's name and id,
+    so they confirm as the source project. `projectId()` is `null` for up to one 3 s tick after a graph change.
+  - **Lane:** the Director's call site (`web/agent/director.mjs`, Jon's lane) still passes no `ref`.
+- **Forget is per project (`soundstage/book/store.py` `forget(ids, roots, project)`, `_ident`, `_in_scope`; `routes.py`; `web/book/book.mjs` `projectRef`):**
+  - **The bug:** forgetting ref `t1` in project A used to strip B's note with the same ref, and a Duplicate's twin.
+  - **Now:** only the forgetting project's files are cleaned. Others are listed in `other_projects`. The book
+    save stores `_project`, so `books/current.json` is scoped too.
+  - **Note ids:** decision note ids gain 4 random hex.
+- **Forget says what it missed:** files over 64 MB and project-less files are listed in `skipped`, and copies still
+  holding the id in `still_mentions`. Either one, or an error, makes `ok` false and adds an `error` line, which
+  `scrubDecision` / `forgetDecision` pass on. Leftover `*.json.tmp` files are scanned.
+- **Book args allowlisted (`web/book/model.mjs` `DECISION_ARGS`, `scrubArgs(args, tool)`, `DECISION_V` 3):**
+  - **Kept:** per tool, numbers and one-token enums or ids only.
+  - **Dropped:** free text (`note`, `what`, `at`, `value`) and multi-word names.
+  - **Summary check:** a summary that shares three real words in a row with the sentence is refused.
+  - **Old notes:** v2 notes are cut down on load.
+  - **Tests:** parser clauses, a sentence split over two calls, a quoting summary, and a direct note. None of them
+    leaves a three-word run of the sentence anywhere in the book.
+- **Id stable through the project's own history (`ProjectStore.save` / `_ownHistory`):** a graph without an id that
+  names the project, while `workflows/<name>.json` still holds the id, keeps it. That covers two tabs, undo past
+  the first save, and a restored pre-save autosave.
+- **Id confirmed (`store.confirmProjectId`, `ProjectController.projectId` / `project()` / `current()`):** `projectId()`
+  is `null` unless the saved `project.json` of that name holds the same id. Examples are a library rename with the
+  tab still open, or a collected or exported copy.
+- **Tests:** `tests/test_book.py` (two projects sharing a ref and a duplicated note id; skipped, `.tmp` and
+  string-mention reporting), `tests/js/book.test.mjs`, `tests/js/hosthooks.test.mjs`, `tests/js/project.test.mjs`.
+  Docs: `docs/director.md`, `docs/projects.md`.
+
+**Project id for Ask's memory; the Director's Book keeps decisions, not chat text (private branch `private/project-id`, 20:15 by this machine's clock)**
+
+- **Still wrong (read first):** checked with Node and pytest only, not in the browser, the App or a live ComfyUI. The
+  `/soundstage/book/forget` route's user folder comes from ComfyUI's user manager, which no test runs. Without
+  ComfyUI it scrubs only the books folder. Forget does not reach these copies:
+  - ComfyUI's queue history (every queued prompt carries the workflow, Book included, until restart or a clear)
+  - PNG / video metadata of renders made while the note existed
+  - the frontend's browser-stored workflow and its in-tab undo
+  - the Director's in-memory Undo list (`web/agent/director.mjs` keeps `plan.command` as the label, not changed here: Jon's lane)
+  - collected projects
+
+  Decision notes saved before today held the typed sentence. They are rewritten on load, so a server copy changes
+  only on the Book's next save, and an old autosave keeps it until it rotates out or Forget is used on that note.
+  An assistant note posted to `POST /soundstage/book/note` (default source "chat") still stores the text it was
+  sent. An old project has no id until its next Save, so `projectId()` is `null` for it until then. A project
+  re-opened from a collected copy keeps the id it was collected with. The Director's own call site still passes
+  only `command` (no `summary` / `ref`), so its notes read like `Weather: rain`, not prose.
+- **Project id (`web/project/store.mjs` `newProjectId`, `projectIdOf`, `ProjectStore.save` / `projectId`; `web/project/projectbar.mjs` `ProjectController.projectId`; `soundstage/project/library.py`):**
+  `p_` + 8 lowercase hex, in `project.json` (`id`) and `extra.ss_project.id`.
+  - **Save:** keeps the manifest's id only when the workflow carries the same id. Otherwise the save gets a fresh
+    id: Save As, an old project, a leftover `projects/<name>/` folder after the workflow was deleted from the
+    sidebar, another project's workflow saved over it. A manifest field can't override it.
+  - **Pill:** the pill now carries the id through Save and naming, where it used to rewrite `ss_project` with the
+    name only.
+  - **Library:** duplicate writes a fresh id into both files. Rename, trash and untrash keep it.
+  - **List:** `GET /soundstage/project/list` returns `id` (`null` for old projects).
+  - **Load:** nothing writes an id on open, list or autosave.
+  - Docs: `docs/projects.md` "Project id".
+- **Decisions (`web/book/model.mjs` `recordDecision`, `scrubArgs`, `decisionSummary`, `normalizeBook`):**
+  - **Text:** the note's text is Ask's `summary`, or the change in words. It is never the typed `command`; a summary
+    or argument that repeats the command is dropped.
+  - **Fields:** `change: [{tool, args}]` keeps only short argument values. The optional `ref` is the chat turn id.
+  - **Older notes:** recordDecision's own older notes are rewritten to their tool list on load. Assistant-posted
+    notes are left alone.
+- **Forget (`web/book/book.mjs` `forgetDecision`, `scrubDecision`; `soundstage/book/store.py` `forget`; `POST /soundstage/book/forget`):**
+  - **Match:** `forgetDecision` matches a note id or a `ref`.
+  - **Order:** it saves the Book as before, then removes the notes from every stored copy: the books folder, and
+    the user's `workflows/` and `projects/` (manifests, autosaves, trash).
+  - **Answers:** `{ok: true, copies}`, or `{ok: false, removed: true, error}` when the clean-up failed (the book
+    save already landed; `scrubDecision` retries).
+  - **Scope:** only chat decisions are removed, and only files that mention the id are rewritten.
+  - Docs: `docs/director.md` "Decisions in the Director's Book", `docs/agent.md`.
+- **Tests:**
+  - New tests: `tests/js/project.test.mjs` (id kept / fresh, old-project migration, leftover folder, controller getter),
+    `tests/test_project_library.py` (duplicate fresh, rename / trash keep, listing writes nothing),
+    `tests/js/book.test.mjs` (no typed sentence anywhere in the book or context, legacy rewrite),
+    `tests/js/hosthooks.test.mjs` (Forget by ref, failed clean-up), `tests/test_book.py` (scrub across workflows,
+    subgraphs, autosaves, trash; route).
+  - JS (`node --test tests/js/*.test.mjs`): 1626 tests, 1616 passed, 0 failed, 9 skipped, 1 todo (the try-it re-publish TODO).
+  - Python (`python3 -m pytest tests -q`): 1812 passed, 25 skipped.
 
 ## 2026-11-06
 

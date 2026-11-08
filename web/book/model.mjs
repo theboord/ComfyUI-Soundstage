@@ -128,6 +128,9 @@ export function normalizeBook(b, script = null) {
   if (!out.scenes || typeof out.scenes !== "object") out.scenes = {};
   if (!out.edited || typeof out.edited !== "object") out.edited = {};
   if (!out.title && script?.title) out.title = script.title;
+  // Decision notes written before 2026-11-07 kept the typed chat sentence as their text: replace it with the tools
+  // they changed (from `why`), so no copy of the raw chat survives a load + save. docs/director.md "Decisions".
+  if (out.notes.some(isLegacyDecision)) out.notes = out.notes.map((n) => (isLegacyDecision(n) ? legacyDecision(n) : n));
   return out;
 }
 
@@ -419,7 +422,9 @@ export function pageFor(book, script, sc, stage, look = null, opts = {}) {
 // --------------------------------------------------------------------------------------------- notes
 
 let _nid = 0;
-const noteId = () => `n_${now().toString(36)}_${(++_nid).toString(36)}`;
+// Time + counter + 4 random hex: two tabs (or two projects) writing a note in the same millisecond still differ.
+const rand4 = () => Math.floor(Math.random() * 0x10000).toString(16).padStart(4, "0");
+const noteId = () => `n_${now().toString(36)}_${(++_nid).toString(36)}${rand4()}`;
 
 /** File placements from the server (/soundstage/book/place) into the book. Each keeps its raw text, why and confidence. */
 export function addPlacements(book, placements, { source = "shorthand" } = {}) {
@@ -528,22 +533,211 @@ export function getBookContext(book, script, sceneId = null) {
     prompt: { style: style.slice(0, 3), constraints: constraints.slice(0, 4) }, text };
 }
 
+export const DECISION_V = 3;   // 3: args cut to DECISION_ARGS (2 kept any short string that was not most of the sentence)
+
+const toolLabel = (t) => { const s = String(t || "change").replace(/_/g, " ").trim(); return s ? s[0].toUpperCase() + s.slice(1) : "Change"; };
+// Unicode-aware: NFKC, lowercase, every letter / number / mark kept (Cyrillic, Greek, Devanagari, CJK...), the rest a space.
+// Invisible characters that can sit inside a word without showing: soft hyphen, combining grapheme joiner, zero-width
+// space / non-joiner / joiner, word joiner, BOM. Removed before matching, so "pour\u00ADing" is one word, "pouring".
+const INVISIBLE = /[\u00AD\u034F\u180E\u200B-\u200D\u2060\uFEFF]/gu;
+const norm = (s) => String(s ?? "").normalize("NFKC").replace(INVISIBLE, "").toLowerCase().replace(/[^\p{L}\p{N}\p{M}]+/gu, " ").trim();
+/** `s` squashed for an unspaced match: NFKC, invisible characters removed, lowercase, only letters and digits left
+ *  ("Make-It Pour_with rain" -> "makeitpourwithrain"). */
+const squash = (s) => String(s ?? "").normalize("NFKC").replace(INVISIBLE, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+const SQUASH_MIN = 6;   // a squashed run shorter than this is too short to say it quotes the sentence
+/** True when squashed `s` holds the squashed typed sentence, or a squashed 3-word run of it that has 2 or more real
+ *  words ("pourwithrain" from "make it pour with rain"): the same echo test with the spaces taken out. */
+function squashEchoes(s, command) {
+  const a = squash(s), c = squash(command);
+  if (!a || !c) return false;
+  if (c.length >= SQUASH_MIN && a.includes(c)) return true;
+  const cw = norm(command).split(" ").filter(Boolean);
+  for (let i = 0; i + 3 <= cw.length; i++) {
+    const run = cw.slice(i, i + 3);
+    if (run.filter((w) => !GLUE.has(w)).length < 2) continue;
+    const r = squash(run.join(""));
+    if (r.length >= SQUASH_MIN && a.includes(r)) return true;
+  }
+  return false;
+}
+// Scripts written without spaces between words: there a "word run" is the whole clause, so they are matched by
+// character n-grams (NGRAM characters in a row) instead.
+const UNSPACED = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}\p{Script=Tibetan}]/u;
+const NGRAM = 4;
+/** The NGRAM-character runs of normalized `c` (spaces dropped) that hold at least one unspaced-script character. */
+function grams(c) {
+  const chars = [...c.replace(/ /g, "")], out = [];
+  for (let i = 0; i + NGRAM <= chars.length; i++) {
+    const g = chars.slice(i, i + NGRAM);
+    if (g.some((ch) => UNSPACED.test(ch))) out.push(g.join(""));
+  }
+  return out;
+}
+
+const GLUE = new Set("a an the to of in on at and or for with his her its it is be then by from up into this that me my you your please".split(" "));
+/** True when `s` is (or holds) the typed sentence, or shares a run of 3 words with it that has 2 or more real words in
+ *  it (a clause, a partial quote: "under his breath" is one, "to the window" is not). */
+function echoes(s, command) {
+  const a = norm(s), c = norm(command);
+  if (!a || !c) return false;
+  if (a.includes(c) && (c.split(" ").length >= 2 || (UNSPACED.test(c) && [...c].length >= NGRAM))) return true;
+  if (UNSPACED.test(c)) {   // CJK / Thai...: any NGRAM characters in a row of the sentence (spaces ignored)
+    const flat = a.replace(/ /g, "");
+    if (grams(c).some((g) => flat.includes(g))) return true;
+  }
+  const cw = c.split(" "), aw = ` ${a} `;
+  for (let i = 0; i + 3 <= cw.length; i++) {
+    const run = cw.slice(i, i + 3);
+    if (run.filter((w) => !GLUE.has(w)).length >= 2 && aw.includes(` ${run.join(" ")} `)) return true;
+  }
+  return false;
+}
+
+// What a decision may keep of a call's arguments: per tool, the keys whose values are numbers, enums or references
+// to things on the set (ids / names), never free text. Kinds: "num" (a finite number or boolean), "tok" (one short
+// token: an enum value, an id like sh_2, a one-word name; a list of up to 8 of them). Every other key is dropped,
+// whatever its value: note, text, what, at, description, command, value, setup words, a multi-word name... Unknown
+// tools keep nothing (the decision is then just the tool). Schemas: soundstage/agent/director.py TOOLS, parts.py TOOL,
+// web/agent/copilot.mjs TOOLS.
+const N = "num", T = "tok";
+const GRADE = { warmth: N, contrast: N, saturation: N, grain: N, exposure: N, tint: N, vignette: N, sharpness: N };
+export const DECISION_ARGS = {
+  add: { near: T }, stack: { near: T, count: N }, move: { target: T, near: T, dir: T, amount: N }, remove: { target: T },
+  turn: { target: T, face: T, deg: N }, scale: { target: T, factor: N }, time: { preset: T }, weather: { weather: T },
+  set: { set: T }, light: { type: T, on: T }, add_shot: { on: T, over: T }, reframe: { move: T },
+  mount: { target: T, on: T }, dismount: { target: T }, select_shot: { shot: T }, lens: { mm: N }, camera_move: { move: T, speed: T },
+  rig: { type: T }, camera_on: { target: T, view: T }, stunt: { target: T, stunt: T }, drive: { target: T, through: T, speed: T },
+  physics: { target: T, mode: T }, ram: { target: T, victim: T, into: T }, reroute: { target: T, around: T },
+  keep_keyed: { target: T, on: T }, gaze: { who: T, time: N }, direct: { who: T }, grade: GRADE, scene: { scene: T },
+  approve: { shot: T, status: T }, part: { part: T, target: T, at: N },
+  // Ask (web/agent/copilot.mjs)
+  camera: { lens_mm: N, move: T, speed: T, rig: T }, shot_length: { seconds: N }, set_stunt: { stunt: T },
+  set_quality: { adherence: T, ic_lora: N, follow_clay: N, preset: T }, add_transition: { edit: N, type: T },
+  add_sfx_rig: { on: T, at: N }, select_object: { name: T }, update_character: { name: T }, update_location: { name: T },
+  update_prop: { name: T }, profile_character: { name: T }, profile_location: { name: T }, profile_prop: { name: T },
+};
+const TOKEN = /^[\p{L}\p{N}][\p{L}\p{N}\p{M}_.:#+-]{0,31}$/u;   // any script: a Cyrillic or Japanese one-word name is a token too
+/** Does a joined token (red_pickup_truck, gas-station-pumps, a.b:c) carry a phrase of the typed sentence? Yes when,
+ *  split on its separators, it echoes the sentence (a 3-word run) or two of its parts in a row that are real words
+ *  (3+ letters, not glue, not a number: sh_2 is an id) also stand next to each other in the sentence ("red_pickup" from "the red pickup truck"). A token with
+ *  no separator is one word and passes (a one-word name from the sentence is kept). */
+const word = (w) => ([...w].length >= 3 || UNSPACED.test(w)) && !/^\d+$/.test(w) && !GLUE.has(w);   // a real word, not glue or an id part (sh, 2)
+function tokenEchoes(v, command) {
+  const parts = norm(v).split(" ").filter(Boolean);
+  if (!command) return false;
+  // An unspaced-script token has no separators to split on: it echoes when it shares NGRAM characters with the sentence.
+  if (UNSPACED.test(parts.join("")) && echoes(parts.join(""), command)) return true;
+  if (parts.length < 2) return false;
+  if (echoes(parts.join(" "), command)) return true;
+  const c = ` ${norm(command)} `;
+  for (let i = 0; i + 1 < parts.length; i++) {
+    if (word(parts[i]) && word(parts[i + 1]) && c.includes(` ${parts[i]} ${parts[i + 1]} `)) return true;
+  }
+  return false;
+}
+const tok = (v, command = "") => (typeof v === "number" && Number.isFinite(v) ? v
+  : typeof v === "string" && TOKEN.test(v.trim()) && !tokenEchoes(v.trim(), command) ? v.trim() : undefined);
+
+/** A call's arguments cut down to the decision itself: only DECISION_ARGS[tool]'s keys, numbers and single tokens.
+ *  With `command` (the typed sentence), a joined token that carries a phrase of it is dropped too (tokenEchoes). */
+export function scrubArgs(args, tool = "", command = "") {
+  const allow = DECISION_ARGS[String(tool)] || {};
+  const out = {};
+  for (const [k, v] of Object.entries(args && typeof args === "object" ? args : {})) {
+    const kind = Object.prototype.hasOwnProperty.call(allow, k) ? allow[k] : null;
+    if (kind === N) { if ((typeof v === "number" && Number.isFinite(v)) || typeof v === "boolean") out[k] = v; }
+    else if (kind === T) {
+      if (Array.isArray(v)) { const xs = v.slice(0, 8).map((x) => tok(x, command)); if (xs.length && xs.every((x) => x !== undefined)) out[k] = xs; }
+      else if (typeof v === "boolean") out[k] = v;
+      else { const x = tok(v, command); if (x !== undefined) out[k] = x; }
+    }
+  }
+  return out;
+}
+
+/** "Weather: rain; Lens: 50, shot sh_2": the structured change in a few words (never the typed sentence). */
+export function decisionSummary(change = []) {
+  const parts = change.map(({ tool, args }) => {
+    const vals = Object.entries(args || {});
+    if (!vals.length) return toolLabel(tool);
+    const val = (v) => (Array.isArray(v) ? v.join(" + ") : String(v));
+    return `${toolLabel(tool)}: ${vals.length === 1 ? val(vals[0][1]) : vals.map(([k, v]) => `${k.replace(/_/g, " ")} ${val(v)}`).join(", ")}`;
+  });
+  return short(parts.join("; "), 160);
+}
+
+// Only recordDecision's own old notes (why "decided in the Director chat (...)"): a note an assistant posted through
+// POST /soundstage/book/note (source "chat" too) holds the assistant's words, not the user's, and keeps its text.
+const isLegacyDecision = (n) => n?.source === "chat" && n.dv !== DECISION_V && /^decided in the Director chat\b/.test(String(n.why || ""));
+
+function legacyDecision(n) {
+  // v2 notes kept [{tool, args}] with any short string arg and Ask's summary, which could quote the chat: keep the
+  // tools, cut the args to DECISION_ARGS, and say it again in words from the change. v1 notes: the tools in "why".
+  const change = Array.isArray(n.change) && n.change.length
+    ? n.change.filter((c) => c && c.tool).map((c) => ({ tool: String(c.tool), args: scrubArgs(c.args, c.tool) }))
+    : (/\(([^)]*)\)\s*$/.exec(String(n.why || ""))?.[1] || "").split(",").map((t) => t.trim()).filter(Boolean).map((tool) => ({ tool, args: {} }));
+  return { ...n, text: change.length ? decisionSummary(change) : "Changed in the chat", change, dv: DECISION_V };
+}
+
 const TOOL_CAT = { lens: "camera", camera_move: "camera", shot: "camera", select_shot: "camera", rig: "camera", time: "lighting",
   light: "lighting", weather: "lighting", direct: "performance", move: "blocking", place: "blocking", add: "blocking", mount: "blocking",
   dismount: "blocking", sound: "sound", music: "sound", line: "sound", look: "lighting", style: "lighting" };
 
+/** The shape of a decision's `ref`: an opaque `${projectId}:${turnId}` (projectId p_<8 hex>, or empty while the project
+ *  has none yet; turnId 1-48 of [A-Za-z0-9_-], no spaces). Never chat text. */
+/** Note sources Forget may remove: "chat" (recordDecision's decisions) and "ask" (notes Ask added through
+ *  book.addNote(text, {source: "ask", ref})). The director's own notes and Pitch's never. */
+export const FORGETTABLE_SOURCES = new Set(["chat", "ask"]);
+
+export const DECISION_REF_RE = /^(?:p_[0-9a-f]{8})?:[A-Za-z0-9_-]{1,48}$/;
+
+/** `ref` as recordDecision keeps it, or null: only the opaque shape (DECISION_REF_RE), and never one whose turn id
+ *  repeats the typed sentence (a joined phrase like make_it_pour_with_rain, the sentence itself, or the sentence with
+ *  its spaces taken out: makeitpourwithrain, makeItPourWithRain, or a 3-word run of it: pourWithRain; compared after
+ *  NFKC, lowercase, soft hyphens / joiners removed, only letters and digits kept). */
+export function decisionRef(ref, command = "") {
+  const r = ref == null ? "" : String(ref).trim();
+  if (!DECISION_REF_RE.test(r)) return null;
+  const turn = r.slice(r.indexOf(":") + 1);
+  const c = String(command || "").trim();
+  // ...or is a squashed piece of it 8+ letters long (pourwithrain from "pour\u00ADwith rain"); an opaque id never is
+  const piece = squash(turn).length >= 8 && squash(c).includes(squash(turn));
+  if (c && (tokenEchoes(turn, c) || echoes(turn.replace(/[_-]+/g, " "), c) || squashEchoes(turn, c) || piece)) return null;
+  return r;
+}
+
 /**
  * The assistant writes back a decision made in chat as a note on the scene ("Decided earlier: ..." in every later
  * context). Only real changes: an undo, play or render isn't a decision. Returns the note, or null.
+ *
+ * The note keeps the decision, never the chat: `text` is `summary` (a short line the assistant wrote) or, without one,
+ * the structured change in words (decisionSummary); `change` is [{tool, args}] with only the allowlisted argument
+ * keys (DECISION_ARGS: numbers, enums, one-token ids / names; free text such as a `note` never). `command`, the user's
+ * typed sentence, is read only to skip undo / play and to reject a summary that quotes it (any 3 words in a row) and
+ * is not stored. `ref` (optional): an opaque `${projectId}:${turnId}` so forgetDecision(ref) finds the note; anything
+ * else (chat text, a sentence, a turn id that spells out the typed words) is dropped and the note gets no ref
+ * (decisionRef).
  */
-export function recordDecision(book, { command, calls = [], results = [], sceneId = null, source = "chat" } = {}) {
-  const text = String(command || "").trim();
-  if (!text || /^(undo|redo|play|stop|yes|no)\b/i.test(text)) return null;
-  const tools = (calls || []).map((c) => c.tool).filter((t, i) => (results[i]?.ok ?? true) && !["undo", "play", "frames", "render"].includes(t));
+export function recordDecision(book, { command, calls = [], results = [], sceneId = null, source = "chat", summary = "", ref = null } = {}) {
+  const typed = String(command || "").trim();
+  if (/^(undo|redo|play|stop|yes|no)\b/i.test(typed)) return null;
+  const ok = (calls || []).filter((c, i) => c && (results[i]?.ok ?? true) && !["undo", "play", "frames", "render"].includes(c.tool));
+  const tools = ok.map((c) => c.tool);
   if (!tools.length) return null;
   const cat = TOOL_CAT[tools.find((t) => TOOL_CAT[t])] || "blocking";
-  const n = { id: noteId(), text, scope: sceneId ? "scene" : "global", scene_id: sceneId, line: null, character: null, category: cat,
+  let change = ok.map((c) => ({ tool: String(c.tool), args: scrubArgs(c.args, c.tool, typed) }));
+  // Last guard: values that are each clean can still line up into a phrase of the sentence ("victim red_pickup, into
+  // ..."). Then keep only the numbers / booleans and say it with the tool names.
+  const spoken = (ch) => ch.map(({ tool, args }) => [tool, ...Object.entries(args || {}).flat()].join(" ")).join(" ");
+  if (typed && (echoes(spoken(change), typed) || echoes(decisionSummary(change), typed) || squashEchoes(spoken(change), typed))) {
+    change = change.map(({ tool, args }) => ({ tool, args: Object.fromEntries(Object.entries(args).filter(([, v]) => typeof v === "number" || typeof v === "boolean")) }));
+  }
+  const said = String(summary || "").replace(/\s+/g, " ").trim();
+  const text = said && !echoes(said, typed) && !squashEchoes(said, typed) ? short(said, 160) : decisionSummary(change);
+  const n = { id: noteId(), text, change, dv: DECISION_V, scope: sceneId ? "scene" : "global", scene_id: sceneId, line: null, character: null, category: cat,
     categories: [cat], confidence: 1, why: `decided in the Director chat (${tools.join(", ")})`, by: source, source: "chat", at: now() };
+  const r = decisionRef(ref, typed);
+  if (r) n.ref = r;
   book.notes.push(n);
   // Keep the chat's trail short: the 40 newest decisions.
   const chat = book.notes.filter((x) => x.source === "chat");

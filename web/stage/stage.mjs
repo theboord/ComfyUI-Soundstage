@@ -4,7 +4,7 @@
 // wheel = dolly (proportional, flies through the target), drag an actor = move it on the floor.
 import * as THREE from "../vendor/three.module.min.mjs";
 import { LIBRARY, SEATS, buildObject, buildFromRecipe, resolveKind, resolveCompound, makeGlass, paintColorOf, withoutPaint } from "./library.mjs";
-import { applyPose, MOUNTS, applyJoints, mirrorPose, POSE_PRESETS } from "./humans.mjs";
+import { applyPose, MOUNTS, applyJoints, mirrorPose, POSE_PRESETS, SIT_POSES } from "./humans.mjs";
 import { applyGaze, setGazeKey, clearGaze, gazeKeys } from "./gaze.mjs";
 import * as Mocap from "./mocap.mjs";
 import * as Gait from "./gait.mjs";
@@ -128,7 +128,7 @@ function loadAsset(url, format) {
   p.catch(() => assetCache.delete(key));
   return p;
 }
-import { LIGHT_TYPES, TIME_PRESETS, solarPosition, hourForElevation, kelvinToColor, skyFor, skyBackground, describeLighting } from "./lighting.mjs";
+import { LIGHT_TYPES, TIME_PRESETS, solarPosition, hourForElevation, kelvinToColor, skyFor, skyBackground, describeLighting, EXPOSURE_MIN, EXPOSURE_MAX, exposureStopsOf } from "./lighting.mjs";
 
 /** Rigged CC0 horse (Quaternius, poly.pizza): Idle / Walk / Gallop skeletal cycles. */
 const HORSE_GLB = new URL("./models/horse.glb", import.meta.url).href;
@@ -174,6 +174,11 @@ function mountHorse(g, hg, seatPos, t, h, drop) {
 
 export const FRAME_W = 960;
 export const FRAME_H = 512;
+export { EXPOSURE_MIN, EXPOSURE_MAX, exposureStopsOf };   // the scene dimmer's range in stops (setExposure; lighting.mjs)
+// Captures are never dimmed to near-black: a Color capture (the picture Frame / Motion / Deliver read) is dimmed to at
+// most CAPTURE_EXPOSURE_MIN stops (a quarter of the light); the guide passes (clay, depth, wire, ID, dust) are not
+// dimmed at all. The prompt's lighting line carries the rest of "lights down" (lighting.mjs describeLighting).
+export const CAPTURE_EXPOSURE_MIN = -2;
 /** Delivery frame sizes: every side a multiple of 64 (LTX Layout-To-Render requirement). */
 export const ASPECTS = {
   "1.85": { label: "1.85:1 (flat)", size: [960, 512] },
@@ -209,7 +214,12 @@ export const CAR_SHOTS = {
 };
 const LIFT_FRAMES = 8;
 const RIDEABLE = new Set(["horse", "bicycle", "motorcycle"]);
-const SITTABLE = new Set(["chair", "bench", "sofa", "armchair", "couch", "stool"]);
+const SITTABLE = new Set(["chair", "bench", "sofa", "armchair"]);
+// setPose("sit") picks these real seats ahead of the other things a person can perch on (a table, cube, rock, a prop).
+const REAL_SEATS = SITTABLE;
+// The highest seat a person can sit on with setPose (metres above the prop's base): 0.6 x their height, at least 0.8 m
+// (an adult 1.8 m: 1.08 m, so a 1 m cube is fine and a 3 m cube or a chair scaled x4, seat 1.88 m, is refused).
+const MAX_SEAT_FRAC = 0.6, MAX_SEAT_MIN_M = 0.8;
 const NEVER_CARRIED = new Set(["horse", "cow", "car", "police_car", "sports_car", "hatchback", "truck", "bus", "bicycle", "motorcycle", "tree", "house", "building", "wall",
   "fridge", "wardrobe", "kitchen_counter", "bath", "bookshelf", "bed", "single_bed", "sofa", "door", "lamp_post", "post"]);
 // Physics: kinds that never collide (foliage, rugs, fire, lights) and cars that collide as a body plus a cabin.
@@ -239,6 +249,53 @@ export const DEFAULT_SCENE = {
 };
 
 const clone = (o) => JSON.parse(JSON.stringify(o));
+
+const SNAPSHOT_VERSION = 1;
+const isVec3 = (v) => Array.isArray(v) && v.length === 3 && v.every((x) => typeof x === "number" && Number.isFinite(x));
+const isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+/** The script scenes a stage's shots belong to (shot.scene_id), sorted. */
+function sceneIdsOf(st) {
+  return [...new Set((Array.isArray(st?.shots) ? st.shots : []).map((x) => x?.scene_id).filter((x) => typeof x === "string" && x))].sort();
+}
+/** Why a scene from a snapshot can't be put on the stage (a short reason), or null when it is a complete scene. */
+function validSnapshotScene(st) {
+  if (!isObj(st)) return "no scene in it";
+  if (!Array.isArray(st.actors)) return "no actors list";
+  const ids = new Set();
+  for (const a of st.actors) {
+    if (!isObj(a) || typeof a.id !== "string" || !a.id) return "an object without an id";
+    if (ids.has(a.id)) return `two objects with id '${a.id}'`;
+    ids.add(a.id);
+    if (a.kind != null && typeof a.kind !== "string") return `object '${a.id}' has a bad kind`;
+    if (a.position != null && !isVec3(a.position)) return `object '${a.id}' has a bad position`;
+    if (a.keys != null && (!Array.isArray(a.keys) || !a.keys.every((k) => isObj(k) && Number.isFinite(k.frame) && isVec3(k.position)))) return `object '${a.id}' has bad keys`;
+  }
+  if (st.props != null && !Array.isArray(st.props)) return "bad props list";
+  if (!isObj(st.camera) || !isVec3(st.camera.position) || !isVec3(st.camera.target)) return "no camera (position and target)";
+  if (!isObj(st.shot) || !(Number.isFinite(st.shot.frames) && st.shot.frames >= 1) || !(Number.isFinite(st.shot.fps) && st.shot.fps > 0)) return "no shot timing (frames, fps)";
+  if (st.shots != null) {
+    if (!Array.isArray(st.shots) || !st.shots.length) return "bad shots list";
+    const sids = new Set();
+    for (const sh of st.shots) {
+      if (!isObj(sh) || typeof sh.id !== "string" || !sh.id) return "a shot without an id";
+      if (sids.has(sh.id)) return `two shots with id '${sh.id}'`;
+      sids.add(sh.id);
+      if (sh.camera_keys != null && (!Array.isArray(sh.camera_keys) || !sh.camera_keys.every((k) => isObj(k) && Number.isFinite(k.frame) && isVec3(k.position) && isVec3(k.target)))) return `shot '${sh.id}' has bad camera keys`;
+    }
+    if (st.active_shot != null && !sids.has(st.active_shot)) return `active shot '${st.active_shot}' is not one of its shots`;
+  }
+  if (st.lighting != null && !isObj(st.lighting)) return "bad lighting";
+  if (st.lighting?.lights != null && !Array.isArray(st.lighting.lights)) return "bad lights list";
+  if (st.environment != null && !isObj(st.environment)) return "bad environment";
+  return null;
+}
+
+/** lighting.exposure_stops clamped to EXPOSURE_MIN..EXPOSURE_MAX in place; a non-number (true, "1e3") or 0 removed. */
+function cleanExposure(L) {
+  if (!L || typeof L !== "object" || !("exposure_stops" in L)) return;
+  const v = exposureStopsOf(L.exposure_stops);
+  if (v === null || v === 0) delete L.exposure_stops; else L.exposure_stops = v;
+}
 
 /** Yield one task without setTimeout, which hidden tabs throttle to 1 s or more. */
 const yieldToBrowser = () => new Promise((resolve) => {
@@ -1342,7 +1399,13 @@ export class Stage {
   /** Shots share actors, set, lighting and timing; each has its own camera keys. */
   _shots() {
     if (!this.state.shots?.length) {
-      this.state.shots = [{ id: "shot_1", name: "Master", setup: "master", camera_keys: this._legacyCamKeys() }];
+      // An older scene with no shots: one Master. Opening it writes no keys: the shot takes the scene's own keys (the
+      // flat field's array, shared) or its start / end move; a still camera gets no key (it plays the scene camera,
+      // _camKeysView) and the flat camera_keys field is not created.
+      const shot = { id: "shot_1", name: "Master", setup: "master" };
+      const legacy = this._legacyCamKeys();
+      if (legacy.length > 1 || this.state.camera_keys?.length) shot.camera_keys = legacy;
+      this.state.shots = [shot];
       this.state.active_shot = "shot_1";
     }
     return this.state.shots;
@@ -1355,7 +1418,7 @@ export class Stage {
 
   setActiveShot(id) {
     if (!this._shots().some((x) => x.id === id)) return;
-    this.state.active_shot = id;
+    this.state.active_shot = id;   // viewing another shot writes no keys (toJSON's flat camera_keys follows it)
     this.setFrame(this.frame);
     this.onChange(this.toJSON());
     this.onShots?.();
@@ -1400,18 +1463,32 @@ export class Stage {
     return shot.camera_keys;
   }
 
+  /**
+   * Camera keys of the active shot, READ-ONLY: what playback, scrubbing and display read. Never writes the shot: a shot
+   * without keys gets a fallback key that is not stored, so Play leaves shot.camera_keys byte-identical. Edits use
+   * _camKeys(), which creates and stores the first key. It never writes the flat state.camera_keys field either: the
+   * live state is untouched by Play. Older readers of that flat field (soundstage/look/scene.py) read the saved scene,
+   * and toJSON() writes the active shot's keys into the copy's flat field, so a preset that hands the shot a new keys
+   * array is still seen there.
+   */
+  _camKeysView() {
+    const shot = this.activeShot?.();
+    if (shot?.camera_keys?.length) return shot.camera_keys;
+    return [{ frame: 0, ...clone(this._cameraAt0Legacy()) }];
+  }
+
   _cameraAt0Legacy() {
     return this.state.camera || DEFAULT_SCENE.camera;
   }
 
-  /** Camera keys [{frame, position, target, focal_mm}], migrated from the old start/end pair. */
+  /** Camera keys [{frame, position, target, focal_mm}]: the flat field's own array, else built (not stored) from the
+   *  old start/end pair. Reading writes nothing. */
   _legacyCamKeys() {
-    if (!this.state.camera_keys?.length) {
-      const a = this.state.camera, b = this.state.camera_end;
-      this.state.camera_keys = [{ frame: 0, ...clone(a) }];
-      if (b && JSON.stringify(b) !== JSON.stringify(a)) this.state.camera_keys.push({ frame: this._lastFrame(), ...clone(b) });
-    }
-    return this.state.camera_keys;
+    if (this.state.camera_keys?.length) return this.state.camera_keys;
+    const a = this.state.camera || DEFAULT_SCENE.camera, b = this.state.camera_end;
+    const keys = [{ frame: 0, ...clone(a) }];
+    if (b && JSON.stringify(b) !== JSON.stringify(a)) keys.push({ frame: this._lastFrame(), ...clone(b) });
+    return keys;
   }
 
   /** Object position keys [{frame, position}], migrated from position / position_end. */
@@ -1480,7 +1557,8 @@ export class Stage {
    * host's own space (what the keys are written in; a rig runs there, so it stays on its mount).
    */
   _cameraAt(frame, { local = false } = {}) {
-    const keys = this._camKeys();
+    // read-only: playing a shot never writes its camera keys (a tool calling this on a plain {_camKeys} gets those)
+    const keys = this._camKeysView ? this._camKeysView() : this._camKeys();
     const shot = this.activeShot?.();
     let cam;
     if (curveVersion(shot) === CAM_CURVE) {
@@ -1547,7 +1625,7 @@ export class Stage {
     if (!rig?.type || rig.type === "free" || rig.amount === 0) return this._cameraAt(frame);   // amount 0 = the keys exactly
     const last = this._lastFrame(), fps = this.state.shot?.fps || 24;
     const host = this._followActor?.();
-    const keys = this._camKeys();
+    const keys = this._camKeysView();
     const sig = JSON.stringify([shot.id, keys, shot.cam_curve || 1, shot.cam_speed || "", shot.lens_keys || null, shot.parts || null, shot.sensor || null, rig, last, fps,
       shot.camera_follow || "", host ? [host.keys, host.position, host.rotation_deg || 0, host.kind, host.drive || "",
         host.physics?.baked || false, host.stunt_sim || null] : null]);
@@ -2459,6 +2537,8 @@ export class Stage {
       return msg;
     }
     if (size.y > 1.0 || Math.max(size.x, size.z) > 1.6) return null;   // too big to carry
+    // A seat someone sits on is not picked up from under them (they would hang a frame behind it in the air).
+    if (this.state.actors.some((x) => x.mount_id === o.id && PERSON_KINDS.has(x.kind))) return null;
     const p = [(box.min.x + box.max.x) / 2, (box.min.z + box.max.z) / 2];
     let best = null;
     const under = underId && this.state.actors.find((x) => x.id === underId && PERSON_KINDS.has(x.kind) && !x.mount_id);
@@ -2579,6 +2659,15 @@ export class Stage {
           if (rig === "biped" && g.userData.joints && !air) this._bodyMotion(g, a, moving, speed, cycle);
         }
       }
+      // Sitting on the floor (setPose "sit_floor"): the clay folds down where it stands; the lifelike body follows
+      // (people/avatars.mjs sitBody).
+      // Only while they hold still: a person with movement keys never sits sliding along the keyed path (setPose
+      // refuses sit_floor then; keys added afterwards make them stand on their path until the keys hold still again).
+      if (a.pose === "sit_floor" && !a.mount_id && rig === "biped" && g.userData.limbs && !this._keysMove(this._actorKeys(a))) {
+        Gait.release(g);
+        for (const jn of ["spine", "neck", "head"]) g.userData.joints?.[jn]?.rotation.set(0, 0, 0);
+        g.position.y = this._heightAt(a, this.frame) - applyPose(g, "sit_floor", (a.height_m || 1.8) * (a.scale || 1));
+      }
       if (g.userData.flames) this._animateFire(g, a);
       if (g.userData.mixer) g.userData.mixer.setTime(this.frame / (this.state.shot?.fps || 24));
       if (g.userData.horseRig) this._driveHorse(g, a, speed, dist);
@@ -2620,7 +2709,7 @@ export class Stage {
       if (this._letGoAt(a)) continue;   // let go of a mount gone under: swimming (the free pass posed them)
       if (this._boatRider?.(a, g, host, hg)) continue;   // aboard a boat: its motion, the seat's pose, the stroke
       const m = MOUNTS[host.kind] || { pose: "sit", seat: [0, (host.height_m || 1) * 0.6, 0] };
-      let k = (host.scale || 1) * (m.scaleWithHeight ? (host.height_m || m.refHeight) / m.refHeight : 1);
+      let k = this._seatScale(host);
       let sp = m.seat;
       const seats = SEATS[host.kind];
       if (seats) {   // vehicles: the rider's chosen seat (driver by default)
@@ -2825,7 +2914,7 @@ export class Stage {
 
   /** Jump to the first ("start") or last ("end") camera key. Kept for the Start/End buttons. */
   setKey(key) {
-    const keys = this._camKeys();
+    const keys = this._camKeysView();   // read-only: jumping (First / Last, opening a scene) never stores a key
     this.key = key;
     this.setFrame(key === "end" ? keys[keys.length - 1].frame : keys[0].frame);
   }
@@ -2892,7 +2981,7 @@ export class Stage {
   /** Key frames for the timeline: camera, and the selected object if any. */
   keyInfo() {
     const a = this.state.actors.find((x) => x.id === this.selected);
-    return { camera: this._camKeys().map((k) => k.frame), object: a ? this._actorKeys(a).map((k) => k.frame) : [],
+    return { camera: this._camKeysView().map((k) => k.frame), object: a ? this._actorKeys(a).map((k) => k.frame) : [],
       objectName: a?.name || null, last: this._lastFrame() };
   }
 
@@ -2990,6 +3079,62 @@ export class Stage {
     const L = this.state.lighting || {};
     const hour = p.sunElevation === null ? 12.5 : hourForElevation(p.sunElevation, p.side, L.day_of_year ?? 300, L.latitude ?? 34.05);
     this.setTimeOfDay(hour, { preset: key, overcast: !!p.overcast });
+  }
+
+  /** The scene dimmer in stops (state.lighting.exposure_stops, 0 = as lit). See setExposure. */
+  exposure() {
+    return exposureStopsOf(this.state?.lighting?.exposure_stops) ?? 0;   // clamped; true / "1e3" / NaN read as 0
+  }
+
+  /**
+   * "Lights down": a scene dimmer in photographic stops, EXPOSURE_MIN..EXPOSURE_MAX (-6..+2; -1 = half the light,
+   * 0 = as lit). It scales every light in the set (sun, sky fill, film lights, practicals, headlights, fire) and a
+   * plain-colour sky by 2^stops when the Color view and captures render; emissive surfaces (neon, screens) keep their
+   * glow, like real practicals. Stored as state.lighting.exposure_stops (saved with the scene); one undo step when it
+   * changes (through onChange). Plain decimal strings are taken ("-1.5"); anything else ("1e3", true, NaN), or out of
+   * range, is refused and changes nothing. Returns {ok: true, stops, changed} or {ok: false, error}. A saved value out
+   * of range or not a number is clamped / dropped on load() (exposureStopsOf), and exposure() reads it clamped.
+   */
+  setExposure(stops) {
+    const n = typeof stops === "number" ? stops : typeof stops === "string" && /^\s*[+-]?\d+(\.\d+)?\s*$/.test(stops) ? Number(stops) : NaN;
+    if (!Number.isFinite(n)) return { ok: false, error: `stops must be a number (got '${stops}')` };
+    if (n < EXPOSURE_MIN || n > EXPOSURE_MAX) return { ok: false, error: `stops must be between ${EXPOSURE_MIN} and ${EXPOSURE_MAX} (got ${n})` };
+    const v = Math.round(n * 100) / 100;
+    if (v === this.exposure()) return { ok: true, stops: v, changed: false };
+    const L = (this.state.lighting ||= clone(DEFAULT_SCENE.lighting));
+    if (v === 0) delete L.exposure_stops; else L.exposure_stops = v;
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+    return { ok: true, stops: v, changed: true };
+  }
+
+  /**
+   * The dimmer's light factor for a render: 2^stops in the viewport (any view mode, the shot-camera picture-in-picture
+   * too); in a capture, Color only and never below CAPTURE_EXPOSURE_MIN stops; the guide passes of a capture
+   * (clay, depth, wire...) are not dimmed.
+   */
+  _exposureFactor({ mode = this.view, forCapture = false } = {}) {
+    let stops = this.exposure();
+    if (forCapture) {
+      if (mode !== "color") return 1;
+      stops = Math.max(stops, CAPTURE_EXPOSURE_MIN);
+    }
+    return Math.pow(2, stops);
+  }
+
+  /** Run a render with the scene dimmer applied (every light and a plain-colour background scaled, then put back).
+   *  opts {mode, forCapture}: see _exposureFactor (the default is the viewport's). */
+  _withExposure(fn, opts = {}) {
+    const k = this._exposureFactor(opts);
+    if (k === 1 || !this.scene) return fn();
+    const lights = [];
+    this.scene.traverse((o) => { if (o.isLight) { lights.push([o, o.intensity]); o.intensity *= k; } });
+    const bg = this.scene.background, dim = bg?.isColor ? bg.clone().multiplyScalar(k) : null;
+    if (dim) this.scene.background = dim;
+    try { return fn(); } finally {
+      for (const [o, i] of lights) o.intensity = i;
+      if (dim && this.scene.background === dim) this.scene.background = bg;
+    }
   }
 
   setNorth(deg) {
@@ -5401,6 +5546,7 @@ export class Stage {
 
   /** Start the undo history at the current scene (a freshly opened workflow or preset: Undo never goes past it). */
   resetHistory() {
+    this._sceneEpoch = (this._sceneEpoch || 0) + 1;   // another scene / workflow: older snapshots no longer restore
     this._hist = [JSON.stringify(this.state)];
     this._redo = [];
     this._lastRec = 0;
@@ -5676,6 +5822,226 @@ export class Stage {
     this.select(id);
     this.onChange(this.toJSON());
     return label;
+  }
+
+  /** How a mount's seat (humans.mjs MOUNTS, in metres at the library size) scales with this prop: its scale, and its
+   *  height against the library's (a 1.2 m tall chair has a higher seat); a horse by its own refHeight rule. */
+  _seatScale(host) {
+    const m = MOUNTS[host.kind];
+    if (m?.scaleWithHeight) return (host.scale || 1) * ((host.height_m || m.refHeight) / m.refHeight);
+    const ref = m ? LIBRARY[host.kind]?.height : null;
+    return (host.scale || 1) * (ref && host.height_m > 0 ? host.height_m / ref : 1);
+  }
+
+  /** Can a person sit on this object with setPose("sit")? Chairs, benches, sofas, armchairs, and the other
+   *  non-vehicle seats in MOUNTS (rock, table, cube); a custom (imported or recipe) static prop only when named. */
+  _canSitOn(host, named = false, sitter = null) {
+    if (!host || PERSON_KINDS.has(host.kind) || SEATS[host.kind] || RIDEABLE.has(host.kind)) return false;
+    if (this._seatMoving(host, sitter)) return false;   // carried, mounted / riding, or on the sitter: never a seat
+    if (SITTABLE.has(host.kind) || (MOUNTS[host.kind]?.pose === "sit" && LIBRARY[host.kind]?.rig === "static")) return true;
+    return named && host.kind === "custom" && (host.recipe?.rig || "static") === "static";
+  }
+
+  /** Why this object can't be a seat because it moves with someone (or null): it is carried (carry_id: it rides in a
+   *  carrier's hands, placed after the sitters, so a sitter would lag a frame behind and float), it is mounted / riding
+   *  on something (mount_id), or it is (through a chain of mounts / carries) on the sitter themself (a cycle). */
+  _seatMoving(host, sitter = null) {
+    const by = (id) => this.state.actors.find((x) => x.id === id);
+    const nm = (o) => o?.name || o?.id;
+    const seen = new Set();
+    for (let o = host; o && (o.mount_id || o.carry_id) && !seen.has(o.id); o = by(o.mount_id || o.carry_id)) {
+      seen.add(o.id);
+      if (sitter && (o.mount_id === sitter.id || o.carry_id === sitter.id)) return `'${nm(host)}' is on '${nm(sitter)}' (a seat can't ride on the person sitting on it)`;
+    }
+    if (host.carry_id) return `'${nm(host)}' is being carried by '${nm(by(host.carry_id)) || host.carry_id}'`;
+    if (host.mount_id) return `'${nm(host)}' is mounted on '${nm(by(host.mount_id)) || host.mount_id}' (it moves with it)`;
+    return null;
+  }
+
+  /** The seat top's height above the prop's base (metres): MOUNTS seat height scaled with the prop (_seatScale). */
+  _seatHeight(host) {
+    const m = MOUNTS[host.kind] || { seat: [0, (host.height_m || 1) * 0.6, 0] };
+    return m.seat[1] * (MOUNTS[host.kind] ? this._seatScale(host) : 1);
+  }
+
+  /** The seat top's height above the FLOOR (world Y, metres) at this frame: the prop's own height in the world (a chair
+   *  stacked on cubes 1 m up stands at y 1) plus its seat height, less the floor under it (the set's walkable floor,
+   *  else 0). This, not the height above the prop's base, is what the max-seat-height check reads. */
+  _seatHeightFromFloor(host, frame = this.frame) {
+    const p = this._actorPosAt(host, frame);
+    const floorAt = this.setFx?.floorAt;
+    const floor = floorAt ? Math.max(0, Number(floorAt(p[0], p[2])) || 0) : 0;
+    return Math.max(0, this._heightAt(host, frame) + this._seatHeight(host) - floor);
+  }
+
+  /** The highest seat this person can take with setPose (metres above the floor). */
+  _maxSeatHeight(a) {
+    return Math.max(MAX_SEAT_MIN_M, MAX_SEAT_FRAC * (a.height_m || 1.8) * (a.scale || 1));
+  }
+
+  /** Do these position keys move (two keys at different spots)? A hold (every key at one spot) does not. */
+  _keysMove(keys) {
+    if (!Array.isArray(keys) || keys.length < 2) return false;
+    const p0 = keys[0]?.position || [];
+    return keys.some((k) => (k.position || []).some((v, c) => Math.abs(v - (p0[c] ?? 0)) > 1e-4));
+  }
+
+  /** Movement keys of a person in any shot (their own keys, or a shot's by_shot blocking), or null: the shot ids /
+   *  "base" that move. sit_floor is one pose for every shot, so a move in any of them would slide the sitter. */
+  _movesInAnyShot(a) {
+    const out = [];
+    if (this._keysMove(a.keys)) out.push("base");
+    for (const [sid, b] of Object.entries(a.by_shot || {})) if (this._keysMove(b?.keys)) out.push(sid);
+    return out.length ? out : null;
+  }
+
+  /** Who else already sits on this seat (one person per seat with setPose), or null. */
+  _seatTakenBy(host, a) {
+    return this.state.actors.find((x) => x.id !== a.id && x.mount_id === host.id && PERSON_KINDS.has(x.kind)) || null;
+  }
+
+  /**
+   * Where and how a person sits at this frame, or null: {pose: "sit", on, seat: [x, y, z] (the seat top, world),
+   * yaw} on a chair / bench / sofa they are mounted on (after any timed mount_at), or {pose: "sit_floor", seat: [x,
+   * floor y, z], yaw} on the floor. Read by the lifelike body (people/avatars.mjs) so it follows the clay's seat.
+   */
+  _sitSpec(a, frame = this.frame) {
+    if (!a || !PERSON_KINDS.has(a.kind)) return null;
+    if (a.mount_id) {
+      if (a.mount_at > frame) return null;   // still walking up / hopping on
+      const host = this.state.actors.find((x) => x.id === a.mount_id), hg = host && this.actorMeshes.get(host.id);
+      if (!hg || !this._canSitOn(host, true, a) || (a.pose && a.pose !== "sit")) return null;
+      const m = MOUNTS[host.kind] || { seat: [0, (host.height_m || 1) * 0.6, 0] }, k = this._seatScale(host);
+      const w = new THREE.Vector3(m.seat[0] * k, m.seat[1] * k, m.seat[2] * k).applyAxisAngle(new THREE.Vector3(0, 1, 0), hg.rotation.y);
+      return { pose: "sit", on: host.id, seat: [hg.position.x + w.x, hg.position.y + w.y, hg.position.z + w.z], yaw: hg.rotation.y };
+    }
+    if (a.pose === "sit_floor") {
+      if (this._keysMove(this._actorKeys(a))) return null;   // never a seated body sliding along a keyed path
+      const p = this._actorPosAt(a, frame);
+      return { pose: "sit_floor", seat: [p[0], this._heightAt(a, frame), p[2]], yaw: this._headingAt(a, frame) };
+    }
+    return null;
+  }
+
+  /**
+   * Sit or stand a person (a stage API for tools; web/stage/STAGE_API.md). pose: "sit" (on a chair, bench, sofa...:
+   * opts.on = its id, else the nearest free one within 1.5 m of where they are at the playhead, real seats (chair,
+   * bench, sofa, armchair) ahead of a table / cube / rock; one person per seat; a seat higher than _maxSeatHeight is
+   * refused; the seat height comes from the prop), "sit_floor" (down on the floor where they are) or "stand" (up
+   * again: off the seat, or up from the floor). The person's own movement keys (a.keys, by_shot) are never touched:
+   * standing up puts them back on their keyed path. One undo step when something changes. Returns
+   * {ok: true, pose, on?, changed} or {ok: false, error}.
+   */
+  setPose(id, pose, opts = {}) {
+    const a = this.state.actors.find((x) => x.id === id);
+    if (!a) return { ok: false, error: `no object '${id}'` };
+    if (!PERSON_KINDS.has(a.kind)) return { ok: false, error: `'${a.name || id}' is not a person` };
+    if (typeof pose !== "string" || !SIT_POSES.includes(pose)) return { ok: false, error: `unknown pose '${pose}' (sit, sit_floor or stand)` };
+    if (opts != null && (typeof opts !== "object" || Array.isArray(opts))) return { ok: false, error: "opts must be an object like {on}" };
+    if (a.carry_id) return { ok: false, error: `'${a.name || id}' is being carried` };
+    const name = (o) => o.name || o.id;
+    const commit = () => { this.setFrame(this.frame); this.onChange(this.toJSON()); };
+    const offSeat = () => {   // off the seat, keys kept (the mount never moved them); the clay stands up
+      delete a.mount_id; delete a.mount_at; delete a.seat;
+      const g = this.actorMeshes.get(a.id);
+      if (g) try { applyPose(g, "stand"); } catch { /* a body with no clay rig */ }
+    };
+    if (pose === "sit") {
+      let host = null;
+      const maxH = this._maxSeatHeight(a);
+      if (opts?.on != null) {
+        host = this.state.actors.find((x) => x.id === opts.on);
+        if (!host) return { ok: false, error: `no object '${opts.on}'` };
+        const moving = host.id === a.id ? null : this._seatMoving(host, a);
+        if (moving) return { ok: false, error: `can't sit on ${moving}` };
+        if (host.id === a.id || !this._canSitOn(host, true, a)) return { ok: false, error: `can't sit on '${name(host)}' (a chair, bench, sofa, armchair, rock, table, cube or a static prop)` };
+        const by = this._seatTakenBy(host, a);
+        if (by) return { ok: false, error: `'${name(host)}' is taken by '${name(by)}'` };
+        const h = this._seatHeightFromFloor(host);
+        if (h > maxH) return { ok: false, error: `'${name(host)}' is too high to sit on (seat ${h.toFixed(2)} m above the floor, at most ${maxH.toFixed(2)} m for '${name(a)}')` };
+      } else {
+        const p = this._actorPosAt(a, this.frame);
+        let best = null;
+        for (const o of this.state.actors) {
+          if (o.id === a.id || !this._canSitOn(o, false, a) || this._seatTakenBy(o, a) || this._seatHeightFromFloor(o) > maxH) continue;
+          const q = this._actorPosAt(o, this.frame), d = Math.hypot(q[0] - p[0], q[2] - p[2]);
+          if (d > 1.5) continue;
+          const rank = REAL_SEATS.has(o.kind) ? 0 : 1;   // a chair 1.2 m away beats a table 0.5 m away
+          if (!best || rank < best.rank || (rank === best.rank && d < best.d)) best = { o, d, rank };
+        }
+        host = best?.o || null;
+        if (!host) return { ok: false, error: `nothing to sit on within 1.5 m of '${name(a)}' (none free and low enough): pass {on: id}, or use 'sit_floor'` };
+      }
+      if (a.mount_id === host.id && (a.pose || "sit") === "sit" && !a.mount_at) return { ok: true, pose, on: host.id, changed: false };
+      this.mount(a.id, host.id, "sit");
+      return { ok: true, pose, on: host.id, changed: true };
+    }
+    if (pose === "sit_floor") {
+      // The movement check comes first: a floor sitter saved with movement keys walks the path upright, so
+      // "already sitting on the floor" would be a false success.
+      const moves = this._movesInAnyShot(a);
+      if (moves) return { ok: false, error: `'${name(a)}' has movement keys (${moves.join(", ")}): sit_floor would slide them along the path; remove the movement keys first, or sit them on a seat` };
+      if (!a.mount_id && a.pose === "sit_floor") return { ok: true, pose, changed: false };
+      if (a.mount_id) offSeat();   // off the seat, down on the floor on their own keyed path (beside the seat)
+      a.pose = "sit_floor";
+      commit();
+      return { ok: true, pose, changed: true };
+    }
+    // stand
+    if (a.mount_id) { offSeat(); delete a.pose; commit(); return { ok: true, pose, changed: true }; }
+    if (a.pose === "sit_floor") { delete a.pose; commit(); return { ok: true, pose, changed: true }; }
+    return { ok: true, pose, changed: false };
+  }
+
+  /** A copy of the whole scene (a string) for a tool to put back later with restoreSnapshot (Ask's own Undo). It is
+   *  stamped with the scene that is open now (the stage's scene epoch, which resetHistory moves on whenever another
+   *  scene or workflow is opened, and the shots' scene ids), so it can't be put back over a different scene. */
+  snapshot() {
+    return JSON.stringify({ soundstage_snapshot: SNAPSHOT_VERSION, epoch: this._sceneEpoch || 0, scene_ids: sceneIdsOf(this.state), scene: this.state });
+  }
+
+  /**
+   * Put back a scene from snapshot() (a stage API for tools; web/stage/STAGE_API.md). It is an edit like any other:
+   * one undo step, so the person can Undo the restore. The snapshot is checked whole BEFORE anything is touched: it
+   * must be a string from snapshot(), taken in the scene that is open now (same scene epoch and scene ids), and its
+   * scene must be complete (validSnapshotScene: actors, camera, shot timing, shots and their camera keys, active shot).
+   * Returns {ok: true, changed} or {ok: false, error}; a refusal changes nothing (state, undo, meshes).
+   */
+  restoreSnapshot(snap) {
+    if (typeof snap !== "string") return { ok: false, error: "snapshot must be the string stage.snapshot() returned" };
+    let env;
+    try { env = JSON.parse(snap); } catch { return { ok: false, error: "not a snapshot (bad JSON)" }; }
+    if (!env || typeof env !== "object" || Array.isArray(env) || env.soundstage_snapshot !== SNAPSHOT_VERSION || !("scene" in env)) {
+      return { ok: false, error: "not a snapshot (pass the string stage.snapshot() returned)" };
+    }
+    if (env.epoch !== (this._sceneEpoch || 0)) return { ok: false, error: "snapshot is from another scene (a different scene or workflow was opened since): not restored" };
+    const st = env.scene;
+    const bad = validSnapshotScene(st);
+    if (bad) return { ok: false, error: `not a snapshot (${bad})` };
+    const now = sceneIdsOf(this.state), was = sceneIdsOf(st);
+    if (now.length && was.length && !was.some((x) => now.includes(x))) return { ok: false, error: `snapshot is from another scene (${was.join(", ")}, the open one is ${now.join(", ")}): not restored` };
+    if (JSON.stringify(st) === JSON.stringify(this.state)) return { ok: true, changed: false };
+    cleanExposure(st.lighting);
+    const prev = this.state;
+    try {
+      this.live?.finish?.();
+      this.state = st;
+      this._rebake?.cancel?.();
+      this._bakeSig = inputSig(this.state.actors);
+      if (this.camera && this.fw) this.camera.aspect = this.fw / this.fh;
+      this._buildSet();
+      this._applySun?.();
+      this.setFrame(this.frame);
+    } catch (e) {   // a scene the set could not be built from: put the open one back, nothing recorded
+      this.state = prev;
+      this._bakeSig = inputSig(this.state.actors);
+      try { this._buildSet(); this._applySun?.(); this.setFrame(this.frame); } catch { /* as it was */ }
+      return { ok: false, error: `snapshot could not be restored (${e?.message || e}): nothing changed` };
+    }
+    this.onChange(this.toJSON());
+    this.onShots?.();
+    this.onSelect?.(this.selectedInfo?.());
+    return { ok: true, changed: true };
   }
 
   /** Put the selected character (or `riderId`) on another object: horse, bike, car, bench… */
@@ -6528,6 +6894,7 @@ export class Stage {
     if (this.viewCam) { this.viewCam.aspect = this.fw / this.fh; this.viewCam.updateProjectionMatrix(); }
     this._snap = null;
     if (!this.state.lighting) this.state.lighting = clone(DEFAULT_SCENE.lighting);
+    cleanExposure(this.state.lighting);   // the dimmer clamped to its range, a non-number dropped (agent ops come in here too)
     if (!this.state.environment) this.state.environment = { set: "plaza", weather: "none", density: 0.5, water_level: 2.5 };
     this._buildSet();
     this._applySun();
@@ -6538,7 +6905,14 @@ export class Stage {
   }
 
   toJSON() {
-    return clone(this.state);
+    const out = clone(this.state);
+    // The flat camera_keys field mirrors the shot ON SCREEN in the saved copy (older readers such as the look compiler
+    // read it): the active shot's own keys, or for a shot with no keys yet the one key it films from (the scene camera
+    // at frame 0, what _camKeysView plays), never another shot's keys left in the live flat field. The live state is
+    // not written here, so Play stays read-only.
+    const sh = Array.isArray(out.shots) && out.shots.length ? (out.shots.find((x) => x.id === out.active_shot) || out.shots[0]) : null;
+    if (sh) out.camera_keys = sh.camera_keys?.length ? clone(sh.camera_keys) : [{ frame: 0, ...clone(out.camera || DEFAULT_SCENE.camera) }];
+    return out;
   }
 
   resize() {
@@ -6677,7 +7051,7 @@ export class Stage {
     this._inRender = true;
     // Hair and lash cards of the lifelike people keep their cut-out under the pass's override (people/cutout.mjs).
     const putBackCards = swapAvatarCutouts(this, this.scene.overrideMaterial);
-    try { this.renderer.render(this.scene, cam); } finally { putBackCards(); }
+    try { this._withExposure(() => this.renderer.render(this.scene, cam), { mode, forCapture }); } finally { putBackCards(); }   // the scene dimmer
     if (!forCapture && this.highlight) {
       try { this.highlight.render(this.renderer, cam, { hoverId: this._dragging ? null : this._hoverId, selectedId: this.selected }); }
       catch (err) { this.highlight.enabled = false; console.warn("Soundstage outline", err); }

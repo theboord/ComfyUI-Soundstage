@@ -128,13 +128,14 @@ test("getBookContext: spine, core, rules, scene notes and decisions, compact for
   M.setField(b, "sc_2", "core", "Escape, not victory.");
   M.addPlacements(b, [{ text: "no handheld anywhere", scope: "global", category: "camera", confidence: 0.6 },
     { text: "chase: low & fast, no music till the crash", scope: "scene", scene_id: "sc_2", line: 1, category: "camera", confidence: 0.85 }]);
-  M.recordDecision(b, { command: "make it rain harder", calls: [{ tool: "weather" }], results: [{ ok: true }], sceneId: "sc_2" });
+  M.recordDecision(b, { command: "make it rain harder", calls: [{ tool: "weather", args: { weather: "rain" } }], results: [{ ok: true }], sceneId: "sc_2" });
   const ctx = M.getBookContext(b, s, "sc_2");
   assert.match(ctx.text, /^Spine: A woman takes back/);
   assert.match(ctx.text, /This scene's core: Escape, not victory\./);
   assert.match(ctx.text, /Rule: no handheld anywhere/);
   assert.match(ctx.text, /Note \[camera\]: chase: low & fast/);
-  assert.match(ctx.text, /Decided earlier: make it rain harder/);
+  assert.match(ctx.text, /Decided earlier: Weather: rain/);
+  assert.doesNotMatch(ctx.text, /make it rain harder/, "the typed sentence is not kept");
   assert.ok(ctx.text.length <= 900);
   assert.equal(M.getBookContext(b, s, "sc_3").notes.length, 0);
 });
@@ -191,4 +192,191 @@ test("print binder and Markdown: cover, contents, a sheet set per scene, sources
   assert.match(md, /\| 2A \| Wide crane \| 28 mm/);
   assert.match(md, /## About this book/);
   assert.ok(!/undefined|\[object/.test(md + html));
+});
+
+// ---------------------------------------------------------------- decisions keep the change, not the chat
+const TYPED = "please make Mara walk slowly to the window and then use a 50mm lens on shot two";
+const hasTyped = (b) => JSON.stringify(b).toLowerCase().includes(TYPED.toLowerCase());
+
+test("recordDecision stores the structured change and a short summary, never the raw typed sentence", () => {
+  const b = M.emptyBook(script());
+  const n = M.recordDecision(b, { command: TYPED, sceneId: "sc_1",
+    calls: [{ tool: "move", args: { target: "mara", near: "window", amount: 0.6, note: TYPED } }, { tool: "lens", args: { mm: 50, shot: "sh_2" } }],
+    results: [{ ok: true }, { ok: true }] });
+  assert.equal(n.text, "Move: target mara, near window, amount 0.6; Lens: 50");
+  assert.deepEqual(n.change, [{ tool: "move", args: { target: "mara", near: "window", amount: 0.6 } }, { tool: "lens", args: { mm: 50 } }]);
+  assert.equal(n.dv, M.DECISION_V);
+  assert.equal(hasTyped(b), false, "nowhere in the book, not even in the args");
+  assert.equal(hasTyped(M.getBookContext(b, script(), "sc_1")), false, "nor in what the Director reads back");
+  // an assistant-written summary is used...
+  const s1 = M.recordDecision(b, { command: TYPED, summary: "Mara crosses to the window; 50mm on shot 2.", calls: [{ tool: "lens", args: { mm: 50 } }], results: [{ ok: true }], ref: "p_0a1b2c3d:turn_7" });
+  assert.equal(s1.text, "Mara crosses to the window; 50mm on shot 2.");
+  assert.equal(s1.ref, "p_0a1b2c3d:turn_7");
+  // ...unless it just repeats the typed sentence (or most of it)
+  const s2 = M.recordDecision(b, { command: TYPED, summary: `User said: ${TYPED}`, calls: [{ tool: "lens", args: { mm: 50 } }], results: [{ ok: true }] });
+  assert.equal(s2.text, "Lens: 50");
+  const s3 = M.recordDecision(b, { command: TYPED, summary: "make Mara walk slowly to the window and then use a 50mm", calls: [{ tool: "lens" }], results: [{ ok: true }] });
+  assert.equal(s3.text, "Lens");
+  assert.equal(hasTyped(b), false);
+  // a failed call is not part of the decision
+  const f = M.recordDecision(b, { command: TYPED, calls: [{ tool: "lens", args: { mm: 35 } }, { tool: "light", args: { type: "key" } }], results: [{ ok: false }, { ok: true }] });
+  assert.deepEqual(f.change.map((c) => c.tool), ["light"]);
+});
+
+test("old decision notes holding the typed sentence are rewritten on load (only recordDecision's own)", () => {
+  const legacy = { id: "n_old", text: TYPED, scope: "scene", scene_id: "sc_1", category: "blocking", source: "chat", by: "chat",
+    why: "decided in the Director chat (move, lens)", at: 1 };
+  const posted = { id: "n_pitch", text: "Ezra never looks Reed in the eye", source: "chat", by: "chat", why: "written by the assistant for this scene", scope: "scene", scene_id: "sc_1" };
+  const mine = { id: "n_mine", text: "keep the lamp off", source: "director", scope: "scene", scene_id: "sc_1" };
+  const stored = { notes: [legacy, posted, mine] };
+  const b = M.normalizeBook(stored, script());
+  assert.equal(b.notes[0].text, "Move; Lens");
+  assert.equal(b.notes[0].id, "n_old", "same id, so Forget still finds it");
+  assert.equal(b.notes[1].text, posted.text, "an assistant-posted note keeps its words");
+  assert.equal(b.notes[2].text, "keep the lamp off");
+  assert.equal(hasTyped(b), false);
+  assert.equal(stored.notes[0].text, TYPED, "the input object is not mutated");
+});
+
+// Fragments of the typed sentence: none of its words-in-a-row may reach the Book (text, change[].args, anywhere).
+const LONG = "could you have Mara drift nervously over to the rain soaked window and then have the old caretaker mutter under his breath about the lighthouse";
+const runs3 = (s) => { const w = s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().split(" "); return w.slice(0, -2).map((_, i) => w.slice(i, i + 3).join(" ")); };
+const quotes = (obj, sentence = LONG) => { const t = ` ${JSON.stringify(obj).toLowerCase().replace(/[^a-z0-9]+/g, " ")} `; return runs3(sentence).filter((r) => t.includes(` ${r} `)); };
+
+test("decisions keep no fragment of the typed sentence: parser clauses, a split across calls, a quoting summary, free-text args", () => {
+  const b = M.emptyBook(script());
+  // the parser pulled clauses out of the long sentence into free-text args (direct.note, gaze.at, add.what, part.value)
+  const n = M.recordDecision(b, { command: LONG, sceneId: "sc_1", calls: [
+    { tool: "move", args: { target: "mara", near: "rain soaked window", dir: "closer" } },
+    { tool: "direct", args: { who: "mara", note: "drift nervously" } },
+    { tool: "direct", args: { who: "caretaker", note: "mutter under his breath about the lighthouse" } },
+    { tool: "gaze", args: { who: "caretaker", at: "the lighthouse", time: 2 } },
+    { tool: "add", args: { what: "old caretaker" } },
+    { tool: "part", args: { part: "door", value: "over to the rain", target: "window" } },
+    { tool: "weather", args: { weather: "rain" } },
+  ], results: Array(7).fill({ ok: true }) });
+  assert.deepEqual(n.change, [
+    { tool: "move", args: { target: "mara", dir: "closer" } }, { tool: "direct", args: { who: "mara" } }, { tool: "direct", args: { who: "caretaker" } },
+    { tool: "gaze", args: { who: "caretaker", time: 2 } }, { tool: "add", args: {} }, { tool: "part", args: { part: "door", target: "window" } },
+    { tool: "weather", args: { weather: "rain" } }]);
+  assert.deepEqual(quotes(n), [], "no three typed words in a row anywhere in the note");
+  // the sentence split across two tool calls (each half under 50%, each kept by the old check)
+  const s = M.recordDecision(b, { command: LONG, calls: [{ tool: "direct", args: { who: "mara", note: LONG.slice(0, 60) } }, { tool: "direct", args: { who: "mara", note: LONG.slice(60) } }], results: [{ ok: true }, { ok: true }] });
+  assert.deepEqual(quotes(s), []);
+  // Ask's summary carrying a partial quote falls back to the change in words; a summary in its own words is kept
+  const q = M.recordDecision(b, { command: LONG, summary: "Mara moves; caretaker will mutter under his breath.", calls: [{ tool: "direct", args: { who: "caretaker" } }], results: [{ ok: true }] });
+  assert.equal(q.text, "Direct: caretaker");
+  const own = M.recordDecision(b, { command: LONG, summary: "Mara to the glass, nervous; caretaker grumbles.", calls: [{ tool: "direct", args: { who: "caretaker" } }], results: [{ ok: true }] });
+  assert.equal(own.text, "Mara to the glass, nervous; caretaker grumbles.");
+  // a direct note, free text by schema, never stays (even short, even paraphrased)
+  const d = M.recordDecision(b, { command: "make her look scared", calls: [{ tool: "direct", args: { who: "mara", note: "terrified" } }], results: [{ ok: true }] });
+  assert.deepEqual(d.change[0].args, { who: "mara" });
+  // a multi-word name (a set name the model may have copied from the sentence) is not one token: dropped
+  assert.deepEqual(M.scrubArgs({ target: "the old caretaker", amount: 2 }, "move"), { amount: 2 });
+  // an unknown tool keeps nothing but its name
+  assert.deepEqual(M.scrubArgs({ mode: "fast", n: 2 }, "made_up_tool"), {});
+  assert.deepEqual(quotes(b), [], "the whole book holds no fragment");
+  assert.deepEqual(quotes(M.getBookContext(b, script(), "sc_1")), []);
+});
+
+test("decisions keep no 3-word run of the typed sentence through underscore-, hyphen- or dot-joined token args", () => {
+  const typed = "make Jane Doe ram the red pickup truck into the gas station and send the rusty old tractor through the barn door";
+  const b = M.emptyBook(script());
+  const n = M.recordDecision(b, { command: typed, sceneId: "sc_1", calls: [
+    { tool: "ram", args: { target: "jane_doe_pickup", victim: "red_pickup_truck", into: "gas-station-pumps" } },
+    { tool: "stunt", args: { target: "red_pickup_truck", stunt: "flip" } },
+    { tool: "select_object", args: { name: "the_red_pickup_truck" } },
+    { tool: "drive", args: { target: "rusty.old.tractor", through: "barn:door", speed: "fast" } },
+    { tool: "move", args: { target: ["sh_2", "red-pickup"], amount: 3 } },
+  ], results: Array(5).fill({ ok: true }) });
+  assert.deepEqual(quotes(n, typed), [], `no three typed words in a row anywhere in the note: ${JSON.stringify(n)}`);
+  assert.deepEqual(quotes(b, typed), []);
+  // what is not a phrase of the sentence stays: one-word values, ids, enums the sentence does not spell out
+  assert.equal(n.change[1].args.stunt, "flip");
+  assert.equal(n.change[3].args.speed, "fast");
+  assert.equal(n.change[4].args.amount, 3);
+  assert.deepEqual(M.scrubArgs({ target: "red_pickup_truck" }, "stunt", typed), {});
+  assert.deepEqual(M.scrubArgs({ target: "gas-station" }, "stunt", typed), {}, "two real words in a row from the sentence");
+  assert.deepEqual(M.scrubArgs({ target: "sh_2", stunt: "dolly_in" }, "stunt", "dolly in on sh 2"), { target: "sh_2", stunt: "dolly_in" }, "glue words and ids pass");
+  assert.deepEqual(M.scrubArgs({ target: "red_pickup_truck" }, "stunt"), { target: "red_pickup_truck" }, "without the sentence there is nothing to compare");
+});
+
+test("v2 decision notes (any short string arg kept) are cut to the allowlist on load", () => {
+  const v2 = { id: "n_v2", text: "Mara will mutter under his breath", change: [{ tool: "direct", args: { who: "mara", note: "mutter under his breath" } }],
+    dv: 2, source: "chat", by: "chat", why: "decided in the Director chat (direct)", scope: "scene", scene_id: "sc_1", ref: "t_1" };
+  const b = M.normalizeBook({ notes: [v2] }, script());
+  assert.deepEqual(b.notes[0].change, [{ tool: "direct", args: { who: "mara" } }]);
+  assert.equal(b.notes[0].text, "Direct: mara");
+  assert.equal(b.notes[0].ref, "t_1");
+  assert.equal(b.notes[0].dv, M.DECISION_V);
+});
+
+test("recordDecision: a Cyrillic or Japanese typed sentence never lands in the Book (Unicode-aware echo check)", () => {
+  const strip = (s) => String(s).normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}\p{M}]+/gu, "");
+  const cases = [
+    { command: "Пусть Мара тихо плачет у окна", partial: "Мара тихо плачет", token: "тихо_плачет" },
+    { command: "マラが窓辺で静かに泣く", partial: "窓辺で静かに泣く", token: "窓辺で静かに" },
+  ];
+  for (const { command, partial, token } of cases) {
+    for (const summary of [command, partial, `Решено: ${partial}`]) {
+      const b = M.emptyBook(script());
+      const n = M.recordDecision(b, { command, summary, calls: [{ tool: "direct", args: { who: token, note: command } }, { tool: "remove", args: { target: token } }], results: [{ ok: true }, { ok: true }] });
+      const stored = JSON.stringify(b.notes);
+      assert.ok(!stored.includes(command), `raw sentence stored: ${n.text}`);
+      assert.ok(!strip(n.text).includes(strip(partial)), `partial quote stored: ${n.text}`);
+      assert.ok(!stored.includes(token), `echoing token kept: ${stored}`);
+    }
+    // a one-word name in the same script is still a token (kept), and a clean summary is kept
+    const b = M.emptyBook(script());
+    const who = command.startsWith("П") ? "Мара" : "マラ";
+    const n = M.recordDecision(b, { command, summary: "Direct", calls: [{ tool: "direct", args: { who } }] });
+    assert.deepEqual(n.change, [{ tool: "direct", args: { who } }]);
+  }
+  assert.deepEqual(M.scrubArgs({ target: "窓辺で静かに" }, "remove", "マラが窓辺で静かに泣く"), {});
+  assert.deepEqual(M.scrubArgs({ target: "тихо_плачет" }, "remove", "Пусть Мара тихо плачет у окна"), {});
+});
+
+test("decision ref: only an opaque projectId:turnId is kept, never the typed sentence or chat text", () => {
+  const b = M.emptyBook(script());
+  const TYPED = "make Mara walk slowly to the window and then use a 50mm";
+  const rec = (ref) => M.recordDecision(b, { command: TYPED, calls: [{ tool: "lens", args: { mm: 50 } }], results: [{ ok: true }], ref });
+  assert.equal(rec("p_0a1b2c3d:t_19").ref, "p_0a1b2c3d:t_19");
+  assert.equal(rec(":t_20").ref, ":t_20", "a project with no id yet: an empty project part");
+  for (const bad of [TYPED, TYPED.slice(0, 80), `p_0a1b2c3d:${TYPED}`, "p_0a1b2c3d:make_Mara_walk_slowly", "p_0a1b2c3d:walk-slowly-to-the-window",
+    "turn_7", "p_XYZ:t_1", "p_0a1b2c3d:", "p_0a1b2c3d:a b", "p_0a1b2c3d:" + "x".repeat(49)]) {
+    const n = rec(bad);
+    assert.equal("ref" in n, false, `ref ${JSON.stringify(bad)} dropped`);
+  }
+  const text = JSON.stringify(b);
+  assert.equal(text.includes(TYPED), false);
+  assert.equal(/walk.slowly/i.test(text), false, "no fragment of the sentence through ref");
+  assert.equal(M.decisionRef("p_0a1b2c3d:t_1"), "p_0a1b2c3d:t_1");
+  assert.equal(M.decisionRef(null), null);
+});
+
+// ------------------------------------------------------------------ round 5, finding 5: refs / summaries squashed
+test("decisionRef rejects the typed sentence with its spaces taken out (NFKC, case, soft hyphens, joiners)", () => {
+  const c = "make it pour with rain";
+  for (const r of [":makeitpourwithrain", ":makeItPourWithRain", ":MAKE-IT-POUR-WITH-RAIN", "p_0a1b2c3d:pourWithRain", "p_0a1b2c3d:itpourwith"]) {
+    assert.equal(M.decisionRef(r, c), null, r);
+  }
+  assert.equal(M.decisionRef(":pourwithrain", "make it pour­with rain"), null, "soft hyphen in the sentence");
+  assert.equal(M.decisionRef(":pourwithrain", "make it pour͏with rain"), null, "combining grapheme joiner");
+  assert.equal(M.decisionRef(":makeitpour", "ｍａｋｅ ｉｔ ｐｏｕｒ"), null, "fullwidth (NFKC)");
+  for (const ok of ["p_0a1b2c3d:turn_42", ":t_9f3a2b1c", "p_0a1b2c3d:42"]) assert.equal(M.decisionRef(ok, c), ok);
+});
+
+test("recordDecision: a summary that is the sentence squashed is not stored; Book text never holds the typed words", () => {
+  const typed = "make it pour with rain outside";
+  for (const summary of ["Done: makeitpourwithrain", "MakeItPourWithRain", "pour­with­rain now", "make it pour with rain outside"]) {
+    const b = M.emptyBook(DEMO_SCRIPT);
+    const n = M.recordDecision(b, { command: typed, summary, calls: [{ tool: "weather", args: { weather: "rain" } }], results: [{ ok: true }] });
+    assert.equal(n.text, "Weather: rain", summary);
+    const all = JSON.stringify(b);
+    assert.equal(all.includes(typed), false);
+    assert.equal(all.toLowerCase().replace(/[^a-z]/g, "").includes("pourwithrain"), false, summary);
+  }
+  const b = M.emptyBook(DEMO_SCRIPT);
+  assert.equal(M.recordDecision(b, { command: typed, summary: "Rain on for the exterior", calls: [{ tool: "weather", args: { weather: "rain" } }] }).text,
+    "Rain on for the exterior", "a summary in Ask's own words stays");
 });
