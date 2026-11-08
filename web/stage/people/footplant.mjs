@@ -45,7 +45,8 @@ export const FOOT = {
   hIn: 0.025, hOut: 0.04,        // sole height over the ground to start / keep a stance
   vIn: 0.3, vOut: 0.45,          // foot bone speed (m/s) to start / keep a stance
   minStance: 3, maxGap: 1,       // frames: shorter stances are dropped, shorter lifts are closed
-  minStanceFast: 2, runSpeed: 2.6, // ... but a stance of 2 frames is kept at this body speed (m/s) and up
+  minStanceFast: 1, runSpeed: 2.6, // ... but a stance of 1 frame is kept at this body speed (m/s) and up (a sprint's touch-down)
+  vFast: 0.45, sprint: 6,        // ... where the contact may move this share of the body's speed (from T.vRun at runSpeed to this at sprint m/s)
   walkMax: 2.0,                  // m/s: under this body speed one foot is always down (no flight phase)
   vRun: 0.15,                    // the contact speed limits widen by this per m/s of body speed (a run's roll)
   ramp: 0.125,                   // s: blend into / out of a plant
@@ -352,10 +353,14 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
     const a = Math.max(0, f - 3), b = Math.min(n - 1, f + 3);
     body[f] = b > a ? Math.hypot(rootP[3 * b] - rootP[3 * a], rootP[3 * b + 2] - rootP[3 * a + 2]) * fps / (b - a) : 0;
   }
-  const vAdd = Array.from(body, (s) => T.vRun * s), fast = Array.from(body, (s) => s >= T.runSpeed);
+  // (at a run's speed the contact may move up to T.vFast of the body's speed: a sprint's foot rolls over its contact
+  // at 2-4 m/s while the swing moves at twice the body's speed; it is down a frame or two, T.minStanceFast)
+  const fast = Array.from(body, (s) => s >= T.runSpeed);
+  const vFrac = Array.from(body, (s) => T.vRun + (T.vFast - T.vRun) * smooth01((s - T.runSpeed) / (T.sprint - T.runSpeed)));
+  const vAdd = Array.from(body, (s, f) => (fast[f] ? Math.max(T.vRun * s, vFrac[f] * s - T.vIn * k) : T.vRun * s));
   // contact speeds (the slowest sole vertex within 1 cm of the lowest: the point the foot rolls over, heel, ball or
   // toe; the ankle bone moves at 2 m/s through a run's stance) and drift units (the clip's own foot moving or turning)
-  const stance = {}, drift = {};
+  const stance = {}, drift = {}, contact = {};
   for (const lr of SIDES) {
     const R = raw[lr], v = new Float64Array(n), d = new Float64Array(n), K = rig[lr].sole.length, W = R.world;
     for (let f = 0; f < n; f++) {
@@ -386,6 +391,12 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
     // (a stance on ground far from the body's own height, a foot over a platform's edge, is refused frame by frame
     // below, with the planted sole's real height, and so is a target the leg can't reach)
     drift[lr] = d;
+    // the clip's own touch-downs at a run's speed, stance or not: the sole at the body's footing and its contact slow (a sprint's foot
+    // is down for one frame or two, too short to plant; the swing clearance must not hold it 3 cm up there)
+    const ct = (contact[lr] = new Uint8Array(n));
+    // (slow: under the stance limit, or at a run's speed under vFrac of the body's speed; a swinging foot moves at
+    // twice the body's)
+    for (let f = 0; f < n; f++) ct[f] = fast[f] && !skip[f] && R.hb[f] < T.hOut * k && v[f] < Math.max(T.vOut * k + vAdd[f], vFrac[f] * body[f]) ? 1 : 0;
   }
   // a step lasts T.stepTime, quicker in a fast turn (the body turning T.stepTwist while one foot is up): a 360 in 1 s
   // steps in 4 frames instead of 7, so the planted foot never twists far before the other comes down
@@ -397,7 +408,7 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
   const stepFrames = (f) => Math.max(T.stepMin, Math.min(base, Math.round(T.stepTwist / Math.max(1e-6, yawRate[f]))));
   const { segs, steps } = scheduleSteps(stance, drift, stepFrames);
   const ramp = Math.max(1, Math.round(T.ramp * fps));
-  const plan = { n, k, fps, state: {}, w: {}, pos: {}, quat: {}, gy: {}, dY: {}, near: {}, liftK: {}, segs, steps, skip, ground, base: raw.l.base };
+  const plan = { n, k, fps, state: {}, w: {}, pos: {}, quat: {}, gy: {}, dY: {}, near: {}, liftK: {}, segs, steps, skip, ground, base: raw.l.base, contact };
   const out = {};
   for (const lr of SIDES) {
     const R = raw[lr], side = rig[lr], K = side.sole.length;
@@ -690,6 +701,16 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
     }
     c = d;
   }
+  // a run's touch-down next to a plant that the stance limits left out (the shot's first frame, a contact a little
+  // faster than the limit): held at that plant, so the touching sole doesn't slide into it or out of it
+  for (const lr of SIDES) {
+    const st = out[lr].st, ct = contact[lr];
+    for (let f = 0; f < n; f++) {
+      if (st[f] || !ct[f] || !fast[f]) continue;
+      const src = f > 0 && st[f - 1] === 1 ? f - 1 : f + 1 < n && st[f + 1] === 1 ? f + 1 : -1;
+      if (src >= 0) holdOf(lr, src, f, f + 1, T.dropOK);
+    }
+  }
   for (const lr of SIDES) {
     const R = raw[lr], { st, w, P, Q } = out[lr];
     const needDrop = (f, x, y, z) => needDropOf(lr, f, x, y, z);
@@ -870,7 +891,8 @@ export function groundFeet({ plan, rig, mesh, bones, holder, frame, saved = null
     const fp = B.foot.getWorldPosition(new THREE.Vector3());
     let margin = 0;
     const nr = plan.near?.[lr];
-    if (nr && Number.isFinite(nr[3 * f])) margin = (plan.liftK?.[lr]?.[f] ?? 1) * Math.min(T.liftMax * plan.k, T.liftPerM * Math.hypot(fp.x - nr[3 * f], fp.z - nr[3 * f + 2]));
+    // (none where the clip's own foot touches down: a run's or a sprint's contact frame stays on the ground)
+    if (nr && Number.isFinite(nr[3 * f]) && !plan.contact?.[lr]?.[f]) margin = (plan.liftK?.[lr]?.[f] ?? 1) * Math.min(T.liftMax * plan.k, T.liftPerM * Math.hypot(fp.x - nr[3 * f], fp.z - nr[3 * f + 2]));
     // Only ground the leg could step onto counts: none over the body's own footing for a foot at rest, up to T.far for
     // one swinging (a kerb, a stair's nosing) or up to the higher of the plants it swings between; a foot standing
     // beside a platform or a ledge is not pushed up onto its top. And the push never folds the leg closer to the hip than T.minLeg of its length.

@@ -113,13 +113,25 @@ test("real Rocketbox walking to a stop and going again, and a U-turn: a foot at 
   }
 });
 
-test("real Rocketbox running 3 / 4 / 6 m/s: running feet are planted too (contact speed, not the ankle's), soles don't slide", { skip: NOT_INSTALLED }, async () => {
-  // e56d6bc: 0 planted frames for one foot at 3 m/s and none at all at 4-6 m/s
-  for (const kind of ["man", "woman"]) for (const [v, planted] of [[3, 30], [4, 20], [6, 20]]) {
-    const a = walkAt(kind, v);
+test("real Rocketbox running 3 / 4 / 6 m/s, sprinting 8 / 10 m/s and accelerating 0 -> 7 m/s: every stride touches down, soles don't slide", { skip: NOT_INSTALLED }, async () => {
+  // e56d6bc: 0 planted frames for one foot at 3 m/s and none at all at 4-6 m/s. 3abc644: at 8-10 m/s neither foot
+  // within 5 mm on 96-111 of 121 frames (the touch-down too short to plant and the swing clearance holding the
+  // touching foot 3 cm up), 0 -> 7 m/s floated 43-46 frames
+  const accel = (kind) => { const keys = []; for (let f = 0; f <= 120; f += 6) { const t = f / 24; keys.push({ frame: f, position: [-10 + 0.7 * t * t, 0, 0] }); } return { id: `acc_${kind}`, kind, height_m: K.heightOf(kind), position: keys[0].position, keys }; };
+  for (const kind of ["man", "woman"]) for (const [v, planted, maxFlight] of [[3, 30, 5], [4, 25, 4], [6, 25, 4], [8, 25, 4], [10, 25, 4], ["0->7", 40, 6]]) {
+    const a = v === "0->7" ? accel(kind) : walkAt(kind, v);
     const st = await K.setup(kind, a);
-    // a run has a flight phase (no foot down) every stride, and a sprint's foot rolls fast over its contact
-    check(K.physical(K.measure(st, a)), `${kind} ${v} m/s`, { float: 121, hover: 0.03, slide: 0.02, drift: 0.02, planted });
+    // FLAW (measured 2026-11-08): from a standing start the clip's crossfade drags the man's trailing foot along the
+    // floor for its first ~10 frames (no plant before it to hold from): the 0 -> 7 m/s case is measured from f12
+    const out = K.measure(st, a), s = K.physical(out, { from: v === "0->7" ? 12 : 0 });
+    // a run has a flight phase (no foot down) every stride, but a short one: at most maxFlight frames in a row with
+    // the lower foot more than 1 cm up, so every stride has a real touch-down
+    let run = 0, flight = 0, at = -1;
+    for (const r of out.rows) { if (Math.min(r.l.h, r.r.h) > 0.01) { if (++run > flight) { flight = run; at = r.f; } } else run = 0; }
+    assert.ok(flight <= maxFlight, `${kind} ${v} m/s: ${flight} frames in a row with no foot within 1 cm (to f${at}): ${K.fmt(s)}`);
+    // FLAW (measured 2026-11-08): through 2-3 m/s (the walk -> run blend: the shot start at 3 m/s, accelerating) the
+    // woman has a 5-6 frame flight
+    check(s, `${kind} ${v} m/s`, { float: 121, hover: 0.03, slide: 0.02, drift: 0.02, drop: 0.026, planted });
   }
 });
 
