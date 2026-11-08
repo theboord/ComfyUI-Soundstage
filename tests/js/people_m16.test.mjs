@@ -11,6 +11,7 @@ import * as A from "../../web/stage/people/avatars.mjs";
 import { Stage } from "../../web/stage/stage.mjs";
 import { buildObject } from "../../web/stage/library.mjs";
 import { Highlighter, outlineMaterials } from "../../web/stage/outline.mjs";
+import { samplePos, sampleQuat } from "../../web/stage/physics.mjs";
 
 /** A stub kit in centimetres like Rocketbox, with a body group and a card group (alpha-tested, mapped). */
 function stubKit(model = "Male_Adult_01") {
@@ -340,6 +341,39 @@ test("obstacles: a prop keyed with a small nudge (a 3 deg turn, a 6 cm raise) is
   const r = run(raise, (st, cg, f) => { cg.position.y = st._heightAt(raise, f); });
   assert.ok(r.top > 0.5, `a crate keyed up 6 cm: the walker's feet reach ${r.top.toFixed(2)} m`);
   assert.ok(r.boxes <= 6, `and its box is rebuilt only as it crosses a grid cell: ${r.boxes}`);
+});
+
+test("obstacles: a prop on baked physics keys (quat and height, no key_y or heading keys) tumbling in place or dropping 1 m with a 90 deg tip doesn't rebuild every frame", () => {
+  // cb57dad: these still counted as parked; every rotation step passed OBS_JUMP, so the box, the list and the
+  // walker's height table were rebuilt every frame (tumble: 49 over 48 frames, drop and tip: 25).
+  const qx = (a) => [Math.sin(a / 2), 0, 0, Math.cos(a / 2)], qz = (a) => [0, 0, Math.sin(a / 2), Math.cos(a / 2)];
+  const run = (crate) => {
+    const walker = { id: "p1", kind: "man", height_m: 1.8, position: [-3, 0, 0], keys: [{ frame: 0, position: [-3, 0, 0] }, { frame: 48, position: [3, 0, 0] }] };
+    const st = bareStage([walker, crate]);
+    clayOf(st, walker);
+    const cg = clayOf(st, crate);
+    let boxes = 0;
+    const orig = THREE.Box3.prototype.setFromObject;
+    THREE.Box3.prototype.setFromObject = function (...x) { boxes++; return orig.apply(this, x); };
+    try {
+      const lists = new Set(), tables = new Set();
+      for (let f = 0; f <= 48; f++) {
+        cg.position.set(...samplePos(crate.keys, f)); cg.quaternion.set(...sampleQuat(crate.keys, f)); cg.updateMatrixWorld(true);   // as setFrame poses a baked prop
+        st.frame = f; st._heightAt(walker, f); st._jumpsInShot(walker);
+        lists.add(st._obstacles()); tables.add(st._yCache.get(walker));
+      }
+      return { boxes, lists: lists.size, tables: tables.size };
+    } finally { THREE.Box3.prototype.setFromObject = orig; }
+  };
+  const frames = [...Array(49).keys()];
+  const tumble = { id: "c1", kind: "crate", position: [0, 0, 0], physics: { baked: true, mode: "dynamic" },
+    keys: frames.map((frame) => ({ frame, position: [0, 0.4, 0], quat: qx((Math.PI * frame) / 24) })) };
+  const a = run(tumble);
+  assert.ok(a.boxes <= 2 && a.lists <= 2 && a.tables <= 2, `tumbling in place over 48 frames: ${JSON.stringify(a)}`);
+  const drop = { id: "c1", kind: "crate", position: [0, 1, 0], physics: { baked: true, mode: "dynamic" },
+    keys: frames.map((frame) => ({ frame, position: [0, Math.max(0, 1 - 0.5 * 9.8 * (frame / 24) ** 2), 0], quat: qz((Math.PI / 2) * Math.min(1, frame / 12)) })) };
+  const b = run(drop);
+  assert.ok(b.boxes <= 2 && b.lists <= 2 && b.tables <= 2, `dropping 1 m with a 90 deg tip over 48 frames: ${JSON.stringify(b)}`);
 });
 
 // ---------------------------------------------------------------- 3: stale attaches

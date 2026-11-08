@@ -292,19 +292,21 @@ const OBS_JUMP = { pos: 0.25, rot: 0.05, scale: 0.1 };
 const KEYED_CELL_CHANGES = 4;
 
 /** _obstacles: do an object's keys move it (so it is not a parked obstacle)? Travel over 5 cm on the ground; and, for a
- *  keyed turn (heading_deg, roll_deg, pitch_deg) or a keyed rise (key_y), the grid the parked boxes sit on decides:
- *  the keyed transform is played frame by frame onto it (obsCell's anchors, OBS_JUMP re-anchors, OBS_TOL cells) and
- *  the prop is moving when it would rebuild more than KEYED_CELL_CHANGES times. So a turntable (7.5 deg a frame, a
- *  re-anchor every frame) or a 40 cm lift (8 cells) is not stood on, and nothing rebuilds per frame; a 3 deg nudge
- *  (3 cells) or a 6 cm raise (1 cell) stays an obstacle (cb57dad used 1 deg / 5 cm of total spread, so those lost collision: feet over the crate 0.80 m -> 0).
+ *  keyed turn (heading_deg, roll_deg, pitch_deg), a keyed rise (key_y) or baked physics keys (quat and height: a
+ *  tumble, a drop), the grid the parked boxes sit on decides: the keyed transform is played frame by frame onto it
+ *  (obsCell's anchors, OBS_JUMP re-anchors, OBS_TOL cells) and the prop is moving when it would rebuild more than
+ *  KEYED_CELL_CHANGES times. So a turntable (7.5 deg a frame, a re-anchor every frame), a 40 cm lift (8 cells), an
+ *  in-place tumble or a baked 1 m drop is not stood on, and nothing rebuilds per frame; a 3 deg nudge (3 cells) or a
+ *  6 cm raise (1 cell) stays an obstacle (cb57dad used 1 deg / 5 cm of total keyed spread, so those lost collision:
+ *  feet over the crate 0.80 m -> 0, and it never read baked quat keys, so a tumble rebuilt every frame).
  *  `pose(f)` gives the keyed transform at frame f as [x, y, z, qx, qy, qz, qw]. */
 function keyedMoving(o, frames, pose) {
   const ks = o.keys;
   if (!(ks?.length > 1)) return false;
   const k0 = ks[0], p0 = k0.position || [0, 0, 0];
   if (ks.some((k) => Math.hypot((k.position?.[0] ?? p0[0]) - p0[0], (k.position?.[2] ?? p0[2]) - p0[2]) > 0.05)) return true;
-  const turns = ks.some((k) => Number.isFinite(k.heading_deg) || Number.isFinite(k.roll_deg) || Number.isFinite(k.pitch_deg));
-  const rises = o.key_y && ks.some((k) => Math.abs((k.position?.[1] ?? p0[1] ?? 0) - (p0[1] ?? 0)) > 1e-4);
+  const turns = ks.some((k) => Array.isArray(k.quat) || Number.isFinite(k.heading_deg) || Number.isFinite(k.roll_deg) || Number.isFinite(k.pitch_deg));
+  const rises = (o.key_y || o.physics?.baked) && ks.some((k) => Math.abs((k.position?.[1] ?? p0[1] ?? 0) - (p0[1] ?? 0)) > 1e-4);
   if (!turns && !rises) return false;
   let at = null, last = null, key = null, changes = 0;
   for (let f = 0; f <= frames; f++) {
@@ -1804,8 +1806,8 @@ export class Stage {
     return kind === "none" ? "none" : STUNTS[kind].label;
   }
 
-  /** keyedMoving for an actor, its keyed transform played as setFrame poses it (path, keyed height, heading and the
-   *  body's keyed roll / pitch). Cached on the object's signature. */
+  /** keyedMoving for an actor, its keyed transform played as setFrame poses it (baked keys: samplePos /
+   *  sampleQuat, as setFrame; otherwise path, keyed height, heading and the body's keyed roll / pitch). Cached on the object's signature. */
   _keyedMoving(o, sig) {
     if (!(o.keys?.length > 1)) return false;
     const last = this._lastFrame(), full = `${sig}|${last}|${this.state.shot?.fps || 24}|${!!o.physics?.baked}`;
@@ -1813,6 +1815,7 @@ export class Stage {
     if (hit?.sig === full) return hit.moving;
     const keys = this._actorKeys(o), e = new THREE.Euler(0, 0, 0, "YXZ"), q = new THREE.Quaternion();
     const pose = (f) => {
+      if (o.physics?.baked) { const p = samplePos(keys, f), r = sampleQuat(keys, f) || [0, 0, 0, 1]; return [...p, ...r]; }
       const p = this._actorPosAt(o, f);
       e.set((channelAt(keys, f, (k) => k.pitch_deg) || 0) * DEG, this._headingAt(o, f), (channelAt(keys, f, (k) => k.roll_deg) || 0) * DEG);
       q.setFromEuler(e);
