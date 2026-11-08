@@ -3,6 +3,18 @@
 Soundstage is updated continuously on `main`. Newest first. Times are US Pacific.
 Each entry links to the code; every milestone ships with tests.
 
+## 2026-11-08
+
+**Last pass: a QA close() test that passed on the old code; what stays open (private branch `private/stage-next`, 00:20 by this machine's clock). No more rounds after this one.**
+
+- **Still wrong (read first):** checked with Node and Python tests only, with stand-in browsers, not with a real Chrome, the App or ComfyUI. **Known limits, left open:**
+  - **No full-suite run on a quiet machine (item 1).** Other `node --test` processes (10 when this round started) and other agents' runs kept going; load averages were 61 to 64 when the JS run below started and 122 when the Python run ended. Every count below is under that load.
+  - **Known flake: `shaders_browser` "Depth and outline shaders compile..."** (`tests/js/shaders_browser.test.mjs`, a real Chrome with SwiftShader WebGL). It timed out under heavy full-suite load in the reviewer's run; it passes alone, 3 / 3. Not changed.
+  - **Open, waiting on Mike (item 4): the leftover temp folders and the old worktrees.** Nothing was deleted by this entry. Latest counts: `ss-shaders-*` 152, `ssqa-*` 305, `ss-tc-*` 553. Mike has to approve deleting them. The fixes 56749e3 and 4b58008 also have to reach `wt-buoyancy` / `wt-projectid`, or those worktrees be retired; until then runs from them keep adding folders.
+  - The limits listed in the entry below (SIGKILL'd harness leaks its profile and browser; the `mkdtempSync` / `rmSync` guard checks names only) still stand.
+- **QA Chrome `close()` test gap (item 6, `tests/js/qa_browser_cleanup.test.mjs`):** with `close()` in `tools/qa/lib.mjs` put back to the old code (`chrome.kill()` on the main pid, delete the profile at once, then `release()`), all 8 tests still passed. The DevTools stand-in (`fakeCdpChrome`) can now start a helper process in its process group that writes into the profile 4 s after start and keeps running. New test: `await b.close()`, wait past the late write, then assert the helper is dead and the profile is still gone. Checked: with the old `close()` it fails ("the stand-in's helper was stopped by close()"; with a helper that exited after its write it failed on "the profile folder ... stays deleted"), and 8 / 9 pass; on HEAD 9 / 9 pass, 3 runs in a row. `lib.mjs` was restored after the check (no change to it in this entry).
+- **Tests:** JS (`node --test tests/js/*.test.mjs`, 1 full run): 1638 tests, 1636 passed, 0 failed, 1 skipped, 1 todo (the `tryit_edges` TODO, printed under "failing tests" as before). None of the listed flakes failed this run. Python (`python3 -m pytest tests -q`): 1807 passed, 25 skipped.
+
 ## 2026-11-07
 
 **Review of the final round: an un-awaited QA Chrome close() left its whole profile, the signal tests did not check helper processes, a take-check test that failed alone, a load-sensitive shader timeout test; what stays open (private branch `private/stage-next`, 23:45 by this machine's clock)**
