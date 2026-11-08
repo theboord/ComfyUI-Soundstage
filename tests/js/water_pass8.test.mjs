@@ -136,3 +136,38 @@ test("a person's mass or density changes how fast they sink: heavier sinks faste
     assert.ok(ys.every((y, f) => Math.abs(y - base[f]) < 0.02), `${JSON.stringify(physics)}: the default sink`);
   }
 });
+
+// ------------------------------------------------------------------ 4. A boat pinning a swimmer
+// Before: a speedboat driven into the corner where a man treads water threw him 3.30 m in one frame (f143) and put his
+// head through the 7.8 m inner wall (z 8.31); two boats closing in on him moved him 1.32 m from f0 to f1; a sunk car's
+// driver snapped 1.64 m back into it. A swimmer the water moves never goes faster than a strong sprint, and stays inside.
+test("a boat or a sinking car never throws a swimmer: bounded per frame, the whole body inside the tank walls", () => {
+  const cases = {
+    cornerPin: [keyed("s", "speedboat", [[0, [0, 0, 0]], [150, [4.6, 0, 4.6]], [240, [4.6, 0, 4.6]]], { rotation_deg: 45, key_y: false }), keyed("m", "man", [[0, [7.2, 0, 7.2]], [240, [7.2, 0, 7.2]]], { key_y: false })],
+    twoBoats: [keyed("s", "speedboat", [[0, [-5, 0, 0]], [120, [-1.3, 0, 0]], [240, [-1.3, 0, 0]]], { key_y: false }), keyed("t", "speedboat", [[0, [5, 0, 0]], [120, [1.3, 0, 0]], [240, [1.3, 0, 0]]], { key_y: false }), keyed("m", "man", [[0, [0, 0, 0]], [240, [0, 0, 0]]], { key_y: false })],
+    sunkCar: [keyed("s", "car", [[0, [0, 0, 0]], [96, [0, 0, 0]]], { key_y: false }), { ...man("m", 0), mount_id: "s" }],
+  };
+  for (const [name, acts] of Object.entries(cases)) {
+    const N = name === "sunkCar" ? 721 : 241;
+    const st = tank(acts, { frames: N, keepSet: true }), g = st.actorMeshes.get("m"), a = st.state.actors.find((x) => x.id === "m");
+    let prev = null, maxStep = 0, at = -1, out = 0, path = 0, pat = -1, last = null;
+    for (let f = 0; f < N; f++) {
+      st.setFrame(f);
+      if (!g.userData.swimOn) { prev = null; last = null; continue; }
+      // the swim path (where the water moves him: the plan's own positions) and the posed hips
+      const plan = st._swimCache.get(st._letGoAt(a)?.actor || a).plan, q = plan.pos[f];
+      if (last) { const d = Math.hypot(q[0] - last[0], q[2] - last[2]); if (d > path) { path = d; pat = f; } }
+      last = q;
+      const p = wp(g.userData.joints.l_hip);
+      if (prev) { const d = Math.hypot(p.x - prev.x, p.z - prev.z); if (d > maxStep) { maxStep = d; at = f; } }
+      prev = p;
+      g.updateMatrixWorld(true);
+      const box = new THREE.Box3();
+      g.traverse((o) => { if (o.isMesh && o.visible && !o.material?.transparent && !o.userData.avatar) box.expandByObject(o); });
+      if (Math.max(-box.min.x, box.max.x, -box.min.z, box.max.z) > 7.8 + 0.02) out++;
+    }
+    assert.ok(path <= 2 / 24 + 1e-6, `${name}: the swim path never faster than 2 m/s (biggest step ${path.toFixed(3)} m at f${pat})`);
+    assert.ok(maxStep < 0.25, `${name}: the hips never thrown (biggest step ${maxStep.toFixed(3)} m at f${at}; lying down at a wall moves them most)`);
+    assert.equal(out, 0, `${name}: the body inside the walls (${out} frames through)`);
+  }
+});

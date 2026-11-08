@@ -2304,6 +2304,7 @@ export class Stage {
         Gait.release(g);
         sw.out = Swim.applySwim(g, sw.plan, this.frame, sw.ctx);
         if (sw.plan.entries) this._swimEntry(g, sw.plan, this.frame);   // walked in, or let go of a mount: no pop
+        this._swimInWalls(g, a);
         swimNow.push({ a, g, plan: sw.plan, ctx: sw.ctx, out: sw.out });
       } else if (g.userData.swimOn) Swim.unswim(g);
       if (sw) {
@@ -4002,6 +4003,24 @@ export class Stage {
     if (out.length) plan.entries = out; else delete plan.entries;
   }
 
+  /** A swimmer's whole body inside the pool's or the tank's walls (was: lying along the surface at the wall the head
+   *  went 0.5 m through the 7.8 m inner wall, z 8.31): near a wall the body's envelope (from the feet along its long
+   *  axis to the reach of the hands overhead, 1.27 of the height, 0.35 m round it: steady through the stroke, where the
+   *  posed clay's own box jumps 0.28 m as the arms shoot forward) is moved back in, 2 cm to spare. From this frame's
+   *  root and orientation only, so the same on any play order. */
+  _swimInWalls(g, a) {
+    const w = this.water;
+    if (!w || w.position.y < 0.3 || this.setFx?.underwater) return;
+    const gp = w.geometry.parameters, lx = gp.width / 2, lz = gp.height / 2, cx = w.position.x, cz = w.position.z;
+    const h = (a.height_m || 1.8) * (a.scale || 1), p = g.position;
+    const ax = new THREE.Vector3(0, 1.27 * h, 0).applyQuaternion(g.quaternion), r = 0.35 * h / 1.8;
+    const box = { min: { x: Math.min(p.x, p.x + ax.x) - r, z: Math.min(p.z, p.z + ax.z) - r }, max: { x: Math.max(p.x, p.x + ax.x) + r, z: Math.max(p.z, p.z + ax.z) + r } };
+    const m = 0.02;
+    const push = (lo, hi, a0, a1) => (a1 - a0 > hi - lo - 2 * m ? 0 : a0 < lo + m ? lo + m - a0 : a1 > hi - m ? hi - m - a1 : 0);
+    const dx = push(cx - lx, cx + lx, box.min.x, box.max.x), dz = push(cz - lz, cz + lz, box.min.z, box.max.z);
+    if (dx || dz) { p.x += dx; p.z += dz; g.updateMatrixWorld(true); }
+  }
+
   /** A swimmer's entry ease at this frame (plan.entries, _swimEntries), after the swim posed them. */
   _swimEntry(g, plan, frame) {
     for (const e of plan.entries || []) {
@@ -4320,6 +4339,18 @@ export class Stage {
       const [kx, kz] = keyed[f];
       pos[f][0] = Math.max(Math.min(wx0, kx), Math.min(Math.max(wx1, kx), pos[f][0]));
       pos[f][2] = Math.max(Math.min(wz0, kz), Math.min(Math.max(wz1, kz), pos[f][2]));
+    }
+    // ...and never faster than a strong sprint (2 m/s, or their own keys' speed when that is faster): a way round that
+    // jumps to the other side of a boat pinning them in a corner, the first frame beside two boats closing in, a sunk
+    // car no longer in the way are swum to, not jumped to (was: 3.30 m in one frame at f143, 1.32 m from f0 to f1,
+    // 1.64 m back into a sunk car). In order, a pure function of the keys; between two points in the water it stays in.
+    for (let f = 1; f < pos.length; f++) {
+      if (!mode[f] || !mode[f - 1] || support[f] != null || support[f - 1] != null) continue;
+      const off = Math.abs(pos[f - 1][0] - keyed[f - 1][0]) > 1e-9 || Math.abs(pos[f - 1][2] - keyed[f - 1][1]) > 1e-9;
+      if (!moved[f] && !off) continue;
+      const cap = Math.max(vmax, Math.hypot(keyed[f][0] - keyed[f - 1][0], keyed[f][1] - keyed[f - 1][1]));
+      const dx = pos[f][0] - pos[f - 1][0], dz = pos[f][2] - pos[f - 1][2], d = Math.hypot(dx, dz);
+      if (d > cap) { pos[f][0] = pos[f - 1][0] + dx * cap / d; pos[f][2] = pos[f - 1][2] + dz * cap / d; moved[f] = true; }
     }
   }
 
