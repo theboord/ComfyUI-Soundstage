@@ -541,3 +541,45 @@ test("the pill: page B Save As Q under P and confirms Replace; page A's next Sav
   await A.save();                                                     // page A still holds P's graph carrying X
   assert.notEqual((await man(ufs, "P")).id, f, "A's P graph must not be filed under the id minted for Q");
 });
+
+// ------------------------------------------------------------------ round 5, finding 2: tab state never outlives its tab
+test("the pill: a project tab opened from the pill, closed, then an older Alpha.json dragged in at the same path is a copy", async () => {
+  globalThis.window ||= { addEventListener() {} };
+  const { ProjectController } = await import("../../web/project/projectbar.mjs");
+  const ufs = fakeApi();
+  const old = await new ProjectStore({ api: ufs }).save("Alpha", WF());          // an export made back then
+  const exported = JSON.parse(JSON.stringify(old.workflow));
+  const live = await new ProjectStore({ api: ufs }).save("Alpha", { ...WF(), nodes: [{ ...WF().nodes[0], widgets_values: ['{"v":"live"}'] }] }, { replace: true });
+  const liveBody = ufs.files.get("workflows/Alpha.json").body;
+  const asked = [];
+  for (const listsOpen of [false, true]) {
+    asked.length = 0;
+    const wfs = { activeWorkflow: null, ...(listsOpen ? { openWorkflows: [] } : {}) };
+    const app = { graph: {}, extensionManager: { workflow: wfs, dialog: {
+      prompt: async ({ title }) => { asked.push(title); return "Alpha"; },
+      confirm: async ({ title }) => { asked.push(title); return false; } } } };
+    app.graph.serialize = () => { const { serialize, ...g } = app.graph; return JSON.parse(JSON.stringify(g)); };   // eslint-disable-line no-unused-vars
+    const openTab = (graph) => {                                                // ComfyUI: a new temporary tab at workflows/Alpha.json
+      const w = { path: "workflows/Alpha.json", isTemporary: true };
+      if (listsOpen) wfs.openWorkflows = [...wfs.openWorkflows.filter((x) => x !== wfs.activeWorkflow), w];
+      wfs.activeWorkflow = w;
+      const ser = app.graph.serialize;
+      app.graph = { ...JSON.parse(JSON.stringify(graph)), serialize: ser };
+    };
+    app.loadGraphData = async (g) => openTab(g);
+    const ctl = new ProjectController({ app, api: ufs });
+    clearInterval(ctl._timer); ctl.render = () => {}; ctl.say = () => {};
+    await ctl.open("Alpha");                                                    // bound: opened here as the project
+    assert.equal(ctl._isCopy(), false);
+    assert.equal(ctl.projectId(), live.id);
+    openTab(exported);                                                          // closed; the old export dragged in
+    assert.equal(ctl._isCopy(), true, `listsOpen=${listsOpen}: before any tick`);
+    await ctl.tick();
+    assert.equal(ctl._isCopy(), true, `listsOpen=${listsOpen}: the dragged-in export inherits nothing`);
+    assert.equal(ctl.projectId(), null);
+    await ctl.save();                                                           // asks; Replace declined
+    assert.deepEqual(asked, ["Save project", "Replace project?"]);
+    assert.equal(ufs.files.get("workflows/Alpha.json").body, liveBody, "the live project is untouched");
+    assert.equal((await man(ufs, "Alpha")).id, live.id, "and keeps its id");
+  }
+});

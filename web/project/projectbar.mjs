@@ -82,7 +82,10 @@ export class ProjectController {
     if (t?.collected) return true;
     const w = this.app.extensionManager?.workflow?.activeWorkflow;
     const name = projectNameOf(wf);
-    if (!w || !name || (t && t.boundName === name)) return false;
+    if (!w || !name) return false;
+    // bound only for the very workflow object this controller opened or saved as the project: a record left by a
+    // closed tab at the same path (tick() drops it, this is the belt-and-braces check) never binds a new tab
+    if (t && t.boundName === name && (!t.wfObj || t.wfObj === w)) return false;
     return String(w.path || "") !== ProjectStore.workflowPath(name) || w.isTemporary === true;
   }
 
@@ -120,7 +123,10 @@ export class ProjectController {
     const wf = this.serialize();
     return { id: projectIdOf(wf), name: projectNameOf(wf) || this._cur()?.name || null, ...(this._isCopy(this._cur(), wf) ? { copy: true } : {}) };
   }
-  _cur() { return this.tabs.get(this._key()); }
+  _cur() {
+    const t = this.tabs.get(this._key()), w = this.app.extensionManager?.workflow?.activeWorkflow;
+    return t && w && t.wfObj && t.wfObj !== w ? undefined : t;   // another tab's record at this path: not this tab's
+  }
 
   serialize() {
     try { return this.app.graph?.serialize?.() || null; } catch { return null; }
@@ -130,9 +136,15 @@ export class ProjectController {
   async tick() {
     const wf = this.serialize();
     const key = this._key();
+    const wfObj = this.app.extensionManager?.workflow?.activeWorkflow || null;
+    this._prune();
     let t = this.tabs.get(key);
+    // this.tabs is keyed by path, and ComfyUI reuses a path: a project tab opened from the pill and closed, then an
+    // older exported <name>.json dragged in (a temporary workflow at workflows/<name>.json). The new tab must not
+    // inherit the closed one's bound state (boundName, confirmed id), so a record belongs to one workflow object.
+    if (t && wfObj && t.wfObj && t.wfObj !== wfObj) { this.tabs.delete(key); t = null; }
     if (!t) {
-      t = { name: projectNameOf(wf), savedAt: null, savedSig: null, autosavedAt: null, sig: null, clock: new AutosaveClock(), error: null };
+      t = { name: projectNameOf(wf), savedAt: null, savedSig: null, autosavedAt: null, sig: null, clock: new AutosaveClock(), error: null, wfObj };
       if (t.name) { t.savedAt = wf?.extra?.ss_project?.saved_at || null; t.savedSig = t.savedAt ? workflowSig(wf) : null; }
       this.tabs.set(key, t);
     }
@@ -150,6 +162,15 @@ export class ProjectController {
       if (t.checkKey !== `${name}|${projectIdOf(wf)}` || now - (t.checkedAt || 0) > 15_000) { try { await this.project(); } catch { /* next tick */ } }
     }
     this.render();
+  }
+
+  /** Drop the state of tabs ComfyUI no longer has open (when its workflow store lists them), so a closed tab's bound
+   *  project never carries over to a later tab at the same path. */
+  _prune() {
+    const open = this.app.extensionManager?.workflow?.openWorkflows;
+    if (!Array.isArray(open)) return;
+    const live = new Set(open);
+    for (const [k, t] of this.tabs) if (t.wfObj && !live.has(t.wfObj)) this.tabs.delete(k);
   }
 
   /** Make sure the open workflow has a project name (an unnamed one becomes "Untitled <date>"). */
@@ -225,6 +246,9 @@ export class ProjectController {
     const t = this._cur();
     if (t) t.collected = false;          // openCollected sets it again after loading
     if (t && name) { t.name = name; t.boundName = name; }   // opened here as that project (openCollected unbinds it)
+    // tick() above checked the id before the tab was bound (a freshly loaded tab is temporary, so it read as a copy):
+    // check again now, so projectId() answers at once instead of after the next 15 s check
+    if (t && name) { try { await this.project(); } catch { /* next tick */ } }
   }
 
   async open(name) {
