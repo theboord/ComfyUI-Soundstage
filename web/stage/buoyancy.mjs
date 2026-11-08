@@ -480,8 +480,13 @@ export function personTrack({ mode, keyY, over, level, floor = 0, fps = 24, heig
     const yEnd = from != null ? from : null;
     const y0 = under ? ky + hipY : mode === "cant" ? (yEnd != null && up >= fs ? yEnd : struggleHips) : yEnd != null ? Math.min(yEnd, level - 0.55 * k) : level - 0.55 * k;
     const sink = sinkTrack({ y0, floorHips, fps, n: Math.max(1, m - fs), height, exhale: mode === "cant" ? 1.5 : 3.5, rho0: mode === "cant" ? 1010 : 1000 });   // the struggle has emptied the lungs
-    const tip = Math.round(0.5 * fps);   // touched down: crumples onto the back before the hips go down
-    let landed = -1;
+    // The tip onto the back starts as the feet near the bottom and is done just after they touch, ~1 s in all, the
+    // pose cross-fading from limp to lying the whole way (was: stood upright on the bottom ~0.7 s, then tipped in
+    // 0.5 s, still tipping when a 10 s shot ended): a slow sink to rest.
+    let landJ = -1;
+    for (let j = 0; j < sink.y.length; j++) if (sink.y[j] <= floorHips + 1e-6) { landJ = j; break; }
+    const iLand = landJ >= 0 ? fs + landJ : Infinity;
+    const tipA = iLand - Math.round(1.0 * fps), tipB = iLand + Math.round(0.1 * fps);
     for (let i = up; i < m; i++) {
       const fr = f0 + i, t = (i - up) / fps;
       if (i < fs) {   // the struggle: the head bobs 3-10 cm at ~0.8 Hz with irregular dips under
@@ -491,13 +496,12 @@ export function personTrack({ mode, keyY, over, level, floor = 0, fps = 24, heig
         continue;
       }
       const j = i - fs, y = sink.y[j];
-      if (landed < 0 && y <= floorHips + 1e-6) landed = i;
-      // On the bottom: the pose tips over onto the back (the swim plan cross-fades it over +-6 frames) while the hips go
-      // down with it; the stage keeps the clay's lowest point on the floor (swim.mjs), so the legs never go through.
-      const lying = landed >= 0 && i >= landed + tip;
-      const lie = landed >= 0 ? sstep(landed + tip - 6, landed + tip + 6, i) : 0;
+      // Near and on the bottom: the pose tips over onto the back (a weighted cross-fade, swim.mjs) while the hips go down
+      // with it; the stage keeps the clay's lowest point on the floor (swim.mjs), so the legs never go through.
+      const lie = landJ >= 0 ? sstep(tipA, tipB, i) : 0;   // (never reaching the bottom in the shot: no tip)
       const slip = mode === "cant" && !under ? sstep(0, 2 * fps, j) : 1;   // the arms stop, the head goes under
-      styles[fr] = lying ? "limp_floor" : slip < 0.5 && up < fs ? "struggle" : "limp";
+      const base = slip < 0.5 && up < fs ? "struggle" : "limp";
+      styles[fr] = lie <= 0 ? base : lie >= 1 ? "limp_floor" : { [base]: 1 - lie, limp_floor: lie };
       hipsY[fr] = y + (floor + 0.14 * k - y) * lie; hipsW[fr] = 1;
       modes[fr] = y + 0.75 * k > level ? "surface" : "under";
     }

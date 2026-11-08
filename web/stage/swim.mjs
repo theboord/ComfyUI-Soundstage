@@ -261,7 +261,10 @@ export function planSwim({ pos, yaw, mode, fps = 24, height = 1.8, style = null,
   const raw0 = [];
   for (let f = 0; f < n; f++) {
     const m = mode[f] || "under";
-    const sw = styles?.[f] ? { weights: { [styles[f]]: 1 }, main: styles[f] } : styleWeights(m, speed[f], style === "stroke" ? "flutter" : style);
+    // (a track style is a name, or weights {name: w} for a slow cross-fade of its own: the tip onto the back on the bottom)
+    const ts = styles?.[f];
+    const sw = ts ? (typeof ts === "object" ? { weights: { ...ts }, main: Object.entries(ts).sort((p, q) => q[1] - p[1])[0][0] } : { weights: { [ts]: 1 }, main: ts })
+      : styleWeights(m, speed[f], style === "stroke" ? "flutter" : style);
     raw0.push(sw);
   }
   for (let f = 0; f < n; f++) {
@@ -707,7 +710,9 @@ export function keepAboveFloor(g, floor) {
     const e = o.matrixWorld.elements, P = o.geometry.attributes.position;
     for (let i = 0; i < P.count; i++) { const y = e[1] * P.getX(i) + e[5] * P.getY(i) + e[9] * P.getZ(i) + e[13]; if (y < lo) lo = y; }
   });
-  if (lo < floor + 0.005) { g.position.y += floor + 0.005 - lo; g.updateMatrixWorld(true); }
+  let dy = lo < floor + 0.005 ? floor + 0.005 - lo : 0;
+  if (g.position.y + dy < floor) dy = floor - g.position.y;   // nor the root under the floor (was: -0.005 while tipping)
+  if (dy > 0) { g.position.y += dy; g.updateMatrixWorld(true); }
 }
 function collectMats(g) {
   const set = new Set();

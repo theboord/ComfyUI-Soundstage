@@ -1118,3 +1118,28 @@ test("a swimmer keeps out of a floating table or crate; a person placed on the l
     }
   }
 });
+
+// Seventh pass: in the browser the can't-swim woman's root dipped to y -0.005 at f236 (through the tank floor), and she
+// stood upright on the bottom for ~0.7 s (f212-228) before tipping, the tip still unfinished at f240. The tip onto the
+// back now starts as the feet near the bottom and is done just after they touch (~1 s, a weighted cross-fade of the
+// pose), and the floor lift keeps the root on the floor too.
+test("can't swim settling on the bottom: a slow sink to rest, no standing on the floor, the root never through it (was: root -0.005, upright ~0.7 s, the tip unfinished at f240)", () => {
+  const woman = (name, seed) => ({ id: "w", name, seed, kind: "woman", height_m: 1.65, position: [2, 4.5, 0], keys: [{ frame: 0, position: [2, 4.5, 0] }], rotation_deg: 0, swim: "cant", key_y: true });
+  const up = new THREE.Vector3();
+  for (const [name, seed] of [["Woman 1", "woman|Woman 1"], ["Woman 2", "woman|Woman 2"], ["Jane Doe", undefined]]) {
+    const st = tank([woman(name, seed)], { frames: 241 }), g = st.actorMeshes.get("w");
+    let landed = -1, upright = 0, lowRoot = Infinity, lrf = 0, upY = 1;
+    for (let f = 0; f < 241; f++) {
+      st.setFrame(f);
+      if (g.position.y < lowRoot) { lowRoot = g.position.y; lrf = f; }
+      const lo = lowest(g);
+      upY = up.set(0, 1, 0).applyQuaternion(g.quaternion).y;
+      if (landed < 0 && lo < 0.03) landed = f;
+      if (landed >= 0 && upY > 0.95) upright++;
+    }
+    assert.ok(lowRoot >= -1e-9, `${name}: the root never under the floor (lowest ${lowRoot.toFixed(4)} at f${lrf})`);
+    assert.ok(landed > 0, `${name}: she reaches the bottom in the shot`);
+    assert.ok(upright <= 6, `${name}: no standing upright on the bottom (${upright} frames upright after touching at f${landed})`);
+    if (landed <= 216) assert.ok(upY < 0.3, `${name}: lying back by f240 (touched at f${landed}; up ${upY.toFixed(2)})`);
+  }
+});
