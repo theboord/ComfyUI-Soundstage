@@ -11,6 +11,7 @@
 // ride-along host), not just the keyed spline.
 
 import { applyRig, RIGS, RIG_LIMITS, rigMotion } from "../stage/camrig.mjs";
+import { cameraCurveAt, curveVersion, CAM_CURVE } from "../stage/camcurve.mjs";   // the smooth camera curve (version 2)
 
 const SENSOR_W_MM = 36;
 const PEOPLE = new Set(["man", "woman", "child"]);
@@ -66,6 +67,8 @@ export function sample(keys, frame, field, ease = true) {
 
 export function cameraAt(shot, frame) {
   const keys = shot.camera_keys?.length ? shot.camera_keys : [{ frame: 0, position: [0, 1.7, -8], target: [0, 1.2, 0], focal_mm: 35 }];
+  // The smooth curve (version 2, as Stage._cameraAt): shots marked cam_curve 2; older shots keep the curve below.
+  if (curveVersion(shot) === CAM_CURVE) return cameraCurveAt(keys, frame, { even: shot.cam_speed === "even" });
   const { i, j, u } = segment(keys, frame);
   const fa = keys[i].focal_mm, fb = keys[j].focal_mm;
   return { position: sample(keys, frame, "position"), target: sample(keys, frame, "target"),
@@ -111,7 +114,7 @@ export function cameraTrack(ctx, shot, { space = "world", noise = true } = {}) {
   const rig = shot.rig?.type && shot.rig.type !== "free" && shot.rig.amount !== 0 ? shot.rig : null;
   let memo = TRACKS.get(scene);
   if (!memo) TRACKS.set(scene, (memo = new Map()));
-  const id = JSON.stringify([shot.id, space, noise, rig, shot.camera_keys]);
+  const id = JSON.stringify([shot.id, space, noise, rig, shot.camera_keys, shot.cam_curve || 1, shot.cam_speed || ""]);
   if (memo.has(id)) return memo.get(id);
   const last = lastFrame(scene), fps = fpsOf(scene);
   const keyed = [];

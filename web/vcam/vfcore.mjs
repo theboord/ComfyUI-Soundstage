@@ -372,7 +372,7 @@ export function takeToKeys(take, opts = {}) {
   const fps = st.fps || 24, startFrame = Math.round(st.startFrame || 0);
   const strength = st.strength ?? (st.stabilize ? SMOOTH_STABILIZE : SMOOTH_LIGHT);
   const samples = take.samples || [];
-  const res = stabilize(samples, { strength, horizonLock: !!st.horizonLock, fps, startFrame, scale: 1, anchor: null, focusDistance: 5, keyTolerance: 0.012 });
+  const res = stabilize(samples, { strength, horizonLock: !!st.horizonLock, fps, startFrame, scale: 1, anchor: null, focusDistance: 5, keyTolerance: 0.012, curve: st.curve });
   let frames = res.frames;
   if (Number.isFinite(st.lastFrame)) frames = frames.filter((f) => f.frame <= st.lastFrame);
   if (!frames.length) return { keys: [], frames: [], info: { ...res.info, keys: 0 } };

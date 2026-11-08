@@ -71,7 +71,7 @@ Which rules run on which event:
 Cards are ranked error > warning > tour > tip, and at most two show at once.
 
 Geometry mirrors the stage:
-- Catmull-Rom key interpolation (a parity test runs against `Stage._sample`).
+- Catmull-Rom key interpolation (a parity test runs against `Stage._sample`); a shot on the smooth camera curve (`cam_curve: 2`) is judged on that curve (`web/stage/camcurve.mjs`, parity tested in `tests/js/camcurve.test.mjs`).
 - The 36 mm sensor with the frame aspect from `stage.fw/fh`.
 - Set camera areas and object footprints from `soundstage/agent/catalog.py`.
 

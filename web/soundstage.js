@@ -2244,7 +2244,7 @@ function createStageWidget(node, inputName) {
     if (!id && !rigKeys) return;
     if (rigKeys) { stage.setCameraKeys(rigKeys); status.textContent = `Snapped to ${lastRig?.kind || "rig move"}.`; afterTimeChange(); return; }
     const take = await fetchTake(api, id);
-    const res = takeToCamera(take, { anchor: anchorFromCamera(stage._cameraAt(0)), fps: stage.toJSON().shot.fps,
+    const res = takeToCamera(take, { anchor: anchorFromCamera(stage._cameraAt(0)), fps: stage.toJSON().shot.fps, curve: stage.activeShot()?.cam_curve,
       overrides: { strength: +strength.input.value } });
     stage.setCameraKeys(res.keys);
     lastRig = res.rig;

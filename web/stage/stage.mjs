@@ -48,6 +48,7 @@ import { installParts } from "./objparts.mjs";
 import * as VehicleParts from "./vehicleparts.mjs";
 import * as LightRig from "./lightrig.mjs";
 import { horse as HorseParts, prop as PropParts } from "./rigparts.mjs";
+import { cameraCurveAt, curveVersion, CAM_CURVE } from "./camcurve.mjs";   // the smooth camera curve (version 2)
 import { keysHash } from "./people/avatarcore.mjs";   // a cheap signature of a person's keys (_jumpsInShot)
 import { upgradeHuman, avatarsAt, avatarsReady, loadingCount, setShown as setAvatarShown, AVATAR_WAIT_MS } from "./people/avatars.mjs";   // lifelike people over the clay (people overhaul M1)
 import { swapAvatarCutouts, idMaterial } from "./people/cutout.mjs";   // hair / lash cards keep their cut-out in Depth, Clay, Wire and ID
@@ -1230,6 +1231,10 @@ export class Stage {
     const n = shots.filter((x) => x.setup === setup).length + 1;
     const shot = { id: `shot_${Date.now().toString(36)}`, name: n > 1 ? `${label} ${n}` : label, setup,
       camera_keys: [{ frame: 0, ...clone(cam) }] };
+    // A new setup plays the camera curve of the shot it starts from (keys copied onto it, as the Cut's duplicate does,
+    // then move the same); it moves onto the smooth curve once its camera is keyed (_editCamera).
+    const from = this.activeShot?.();
+    if (curveVersion(from) === CAM_CURVE) { shot.cam_curve = CAM_CURVE; if (from.cam_speed) shot.cam_speed = from.cam_speed; }
     shots.push(shot);
     this.state.active_shot = shot.id;
     this.setFrame(this.frame);
@@ -1337,13 +1342,21 @@ export class Stage {
    */
   _cameraAt(frame, { local = false } = {}) {
     const keys = this._camKeys();
-    const { i, j, u } = Stage._segment(keys, frame);
-    const fa = keys[i].focal_mm, fb = keys[j].focal_mm;
-    const cam = {
-      position: Stage._sample(keys, frame, "position"),
-      target: Stage._sample(keys, frame, "target"),
-      focal_mm: fa + (fb - fa) * (i === j ? 0 : u * u * (3 - 2 * u)),
-    };
+    const shot = this.activeShot?.();
+    let cam;
+    if (curveVersion(shot) === CAM_CURVE) {
+      // Curve version 2 (camcurve.mjs): Hermite tangents from the key times, no overshoot, holds from rest, focal in log
+      // space, optional even speed. Shots saved before it play the old curve below until their camera is re-keyed.
+      cam = cameraCurveAt(keys, frame, { even: shot.cam_speed === "even" });
+    } else {
+      const { i, j, u } = Stage._segment(keys, frame);
+      const fa = keys[i].focal_mm, fb = keys[j].focal_mm;
+      cam = {
+        position: Stage._sample(keys, frame, "position"),
+        target: Stage._sample(keys, frame, "target"),
+        focal_mm: fa + (fb - fa) * (i === j ? 0 : u * u * (3 - 2 * u)),
+      };
+    }
     // Lens channels a phone viewfinder take records, as the shot's own lens_keys (web/vcam/vfcore.mjs lensAt mirrors this):
     // focus eases in diopters like a focus ring, the T-stop in stops, roll linearly. Shots without them add nothing.
     const lk = this.activeShot?.()?.lens_keys;
@@ -1396,7 +1409,7 @@ export class Stage {
     const last = this._lastFrame(), fps = this.state.shot?.fps || 24;
     const host = this._followActor?.();
     const keys = this._camKeys();
-    const sig = JSON.stringify([shot.id, keys, shot.lens_keys || null, shot.parts || null, shot.sensor || null, rig, last, fps,
+    const sig = JSON.stringify([shot.id, keys, shot.cam_curve || 1, shot.cam_speed || "", shot.lens_keys || null, shot.parts || null, shot.sensor || null, rig, last, fps,
       shot.camera_follow || "", host ? [host.keys, host.position, host.rotation_deg || 0, host.kind, host.drive || "",
         host.physics?.baked || false, host.stunt_sim || null] : null]);
     if (this._rigCache?.sig !== sig) {
@@ -1541,7 +1554,7 @@ export class Stage {
     for (const [preset, name, setup] of plan) {
       const q = CAR_SHOTS[preset];
       const id = `car_${preset}_${Date.now().toString(36)}`;
-      shots.push({ id, name, setup, camera_follow: host.id,
+      shots.push({ id, name, setup, camera_follow: host.id, cam_curve: CAM_CURVE,
         camera_keys: [{ frame: 0, position: q.position.map((v) => v * s), target: q.target.map((v) => v * s), focal_mm: q.focal_mm }] });
       names.push(name);
       if (names.length === 1) this.state.active_shot = id;
@@ -2301,6 +2314,7 @@ export class Stage {
   /** Camera key at the playhead, created on first edit (auto-key, like Blender). */
   _editCamera() {
     const keys = this._camKeys();
+    this._markCameraCurve();   // re-keying a shot's camera moves it onto the smooth curve (camcurve.mjs)
     let k = keys.find((x) => x.frame === this.frame);
     if (!k) {
       k = { frame: this.frame, ...clone(this._cameraAt(this.frame)) };
@@ -2310,6 +2324,35 @@ export class Stage {
       keys.sort((a, b) => a.frame - b.frame);
     }
     return k;
+  }
+
+  /** The active shot is being re-keyed: from now on it plays camera curve version 2. A shot saved before the smooth
+   *  curve keeps the old one until this happens, so opening an old project moves no camera. */
+  _markCameraCurve(shot = this.activeShot?.()) {
+    if (shot && shot.cam_curve !== CAM_CURVE) { shot.cam_curve = CAM_CURVE; this._rigCache = null; }
+  }
+
+  /**
+   * Stage API for tools: the active shot's camera curve. "smooth" (version 2: no speed jumps at keys), "even" (version 2
+   * at one even speed along the path, by arc length; interior key times and holds are ignored), or "legacy" (the old
+   * curve, as shots saved before version 2 play). Returns {ok, curve} or {ok: false, error}. One undo step.
+   */
+  setCameraCurve(mode) {
+    const shot = this.activeShot?.();
+    if (!shot) return { ok: false, error: "no active shot" };
+    if (!["smooth", "even", "legacy"].includes(mode)) return { ok: false, error: `curve must be smooth, even or legacy (got '${mode}')` };
+    if (mode === "legacy") { delete shot.cam_curve; delete shot.cam_speed; }
+    else { shot.cam_curve = CAM_CURVE; if (mode === "even") shot.cam_speed = "even"; else delete shot.cam_speed; }
+    this._rigCache = null;
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+    return { ok: true, curve: mode };
+  }
+
+  /** The active shot's camera curve: "smooth", "even" or "legacy". */
+  cameraCurve() {
+    const shot = this.activeShot?.();
+    return curveVersion(shot) !== CAM_CURVE ? "legacy" : shot.cam_speed === "even" ? "even" : "smooth";
   }
 
   /** Object key at the playhead (auto-key). */
@@ -2343,7 +2386,7 @@ export class Stage {
   /** Delete keys at the playhead (never the last remaining key). */
   deleteKeyHere() {
     const keys = this._camKeys();
-    if (keys.length > 1) this.activeShot().camera_keys = keys.filter((k) => k.frame !== this.frame);
+    if (keys.length > 1 && keys.some((k) => k.frame === this.frame)) { this.activeShot().camera_keys = keys.filter((k) => k.frame !== this.frame); this._markCameraCurve(); }
     const a = this.state.actors.find((x) => x.id === this.selected);
     if (a) {
       const ak = this._actorKeys(a);
@@ -2728,6 +2771,7 @@ export class Stage {
   /** Replace the active shot's camera keys (e.g. a stabilized virtual-camera take). */
   setCameraKeys(keys) {
     if (!keys?.length) return;
+    // Keeps the shot's curve version: keys handed in were fitted (or copied) for the curve the shot plays now.
     this.activeShot().camera_keys = keys.map((k) => ({ frame: k.frame, position: [...k.position], target: [...k.target],
       focal_mm: k.focal_mm ?? this._cameraAt(this.frame).focal_mm }));
     this.setFrame(this.frame);

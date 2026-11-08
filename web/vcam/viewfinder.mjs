@@ -416,7 +416,7 @@ async function stopRecording() {
   const { fps, frames } = shotInfo();
   const take = { name: `take ${S.takes}`, device: DEVICE, mode: "viewfinder", samples,
     settings: { space: "set", startFrame: 0, fps, lastFrame: frames - 1, stabilize: S.stab, horizonLock: S.level } };
-  const { keys, lensKeys, info } = takeToKeys(take);
+  const { keys, lensKeys, info } = takeToKeys(take, { curve: shot().cam_curve });   // fitted to the curve the shot plays
   const prev = { keys: JSON.parse(JSON.stringify(shot().camera_keys || [])), rig: JSON.parse(JSON.stringify(shot().rig || null)),
     lens: JSON.parse(JSON.stringify(shot().lens_keys || null)) };
   S.review = { id: null, name: `Take ${S.takes}`, keys, lensKeys, info, prev, t0: performance.now(), frames: info.frames };

@@ -286,7 +286,19 @@ toward a light (2.5 Hz) fit of the same samples.
 Key positions and targets are therefore solved by least squares, with first and last keys pinned to the
 take, so that the playback hugs the path. The reducer picks the smallest evenly spaced key set that fits,
 because uniform Catmull-Rom kinks when neighbouring segments differ in length. It then splits only the
-segments that still stick out.
+segments that still stick out. A shot on the smooth camera curve (`cam_curve: 2`, see below) is fitted with that
+curve's own linear part (`camcurve.mjs` `linearWeights`) and its error measured on the real curve, so the keys play
+back on the curve the shot uses (`reduceKeys({curve})`; the App passes the active shot's `cam_curve`).
+
+**The smooth camera curve.** Shots carry a curve version. Version 2 (`web/stage/camcurve.mjs`) plays camera keys as a
+cubic Hermite curve whose tangents come from the key times, so speed carries straight through a key however unevenly
+the keys are spaced; an overshoot limiter keeps it from swinging past a key; a hold (two keys with the same value)
+starts and ends at rest; only the first and last keys ease; the focal length moves in log space, so a zoom keeps its
+rate through a key. `cam_speed: "even"` re-times the path by arc length to one even speed between a short ease-in and
+ease-out (interior key times and holds are then ignored). New setups follow the shot they start from, and any shot
+whose camera is re-keyed on the stage moves to version 2; shots saved before it keep the old uniform Catmull-Rom
+until then, so opening an old project moves no camera. `stage.setCameraCurve("smooth" | "even" | "legacy")` sets it.
+Actor paths keep their curve.
 
 Measured on synthetic takes (25 seeds; tremor, sensor noise, footstep bob, overshoot bumps), strength 1:
 

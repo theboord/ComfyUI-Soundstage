@@ -14,6 +14,8 @@
 // Conventions: metres, Y up, camera looks down its local -Z (WebXR / three.js).
 // samples: [{t (seconds), position:[x,y,z], quaternion:[x,y,z,w], focal_mm?}] at any rate.
 
+import { cameraCurveAt, linearWeights, CAM_CURVE } from "../stage/camcurve.mjs";   // the smooth camera curve (version 2)
+
 const DEFAULTS = {
   strength: 0.6,       // 0 = raw, 1 = silky Steadicam
   horizonLock: false,  // zero roll
@@ -26,6 +28,7 @@ const DEFAULTS = {
   startFrame: 0,
   keyTolerance: 0.015, // metres; the stage's playback of the keys stays within this of the frames (see reduceKeys)
   maxKeys: 96,
+  curve: 1,            // the camera curve the keys will play on: the shot's cam_curve (2 = web/stage/camcurve.mjs)
 };
 
 // Speeds at which the filter is fully "fast" (lightest smoothing).
@@ -291,7 +294,7 @@ export function stabilize(samples, opts = {}) {
     fr.focal_mm = Math.round(fr.focal_mm * 100) / 100;
   }
 
-  const { keys, maxError } = reduceKeys(frames, { tolerance: o.keyTolerance, maxKeys: o.maxKeys, focusDistance: o.focusDistance });
+  const { keys, maxError } = reduceKeys(frames, { tolerance: o.keyTolerance, maxKeys: o.maxKeys, focusDistance: o.focusDistance, curve: o.curve });
   return {
     frames,
     keys,
@@ -328,8 +331,10 @@ function sampleField(keys, frame, field, ease = true) {
   return cr(Pk(i - 1), Pk(i), Pk(j), Pk(j + 1), w);
 }
 
-/** The stage's camera at `frame` given camera keys (same maths as Stage._cameraAt). */
-export function stageCameraAt(keys, frame) {
+/** The stage's camera at `frame` given camera keys (same maths as Stage._cameraAt). curve: the shot's cam_curve
+ *  (2 = the smooth curve, web/stage/camcurve.mjs; anything else = the old Catmull-Rom curve below). */
+export function stageCameraAt(keys, frame, curve = 1) {
+  if (curve === CAM_CURVE) return cameraCurveAt(keys, frame);
   const { i, j, u } = segment(keys, frame);
   const fa = keys[i].focal_mm, fb = keys[j].focal_mm;
   return {
@@ -346,8 +351,11 @@ const toKey = (fr) => ({
   focal_mm: fr.focal_mm,
 });
 
-/** Sparse weights of each key in Stage._sample(keys, frame, field) (it is linear in the key values). */
-function stageWeights(keyFrames, frame) {
+/** Sparse weights of each key in Stage._sample(keys, frame, field) (it is linear in the key values). On the smooth
+ *  curve (2), the Hermite weights of its linear part (camcurve.mjs linearWeights: no overshoot limiter, no holds); the
+ *  fit's error is then measured on the real curve (stageCameraAt), so keys are added where the limiter matters. */
+function stageWeights(keyFrames, frame, curve = 1) {
+  if (curve === CAM_CURVE) return linearWeights(keyFrames, frame);
   const keys = keyFrames.map((f) => ({ frame: f }));
   const { i, j, u } = segment(keys, frame);
   if (i === j) return [[i, 1]];
@@ -388,7 +396,8 @@ function solveDense(M, B) {
  *   - along the path: `tolerance` + `slip` of that frame's travel (a third of a frame early/late
  *     is invisible, while 1 cm is less than a frame of travel in a fast move).
  */
-export function reduceKeys(frames, { tolerance = 0.015, maxKeys = 96, focusDistance = 5, minSpacing = 3, slip = 0.35 } = {}) {
+export function reduceKeys(frames, { tolerance = 0.015, maxKeys = 96, focusDistance = 5, minSpacing = 3, slip = 0.35, curve = 1 } = {}) {
+  curve = curve === CAM_CURVE ? CAM_CURVE : 1;
   const n = frames.length;
   if (n <= 2) return { keys: frames.map(toKey), maxError: 0 };
   const tTol = Math.max(1, focusDistance) * tolerance * 1.5;
@@ -410,7 +419,7 @@ export function reduceKeys(frames, { tolerance = 0.015, maxKeys = 96, focusDista
     const K = idx.length, kf = idx.map((i) => fr[i]);
     const M = Array.from({ length: K }, () => new Array(K).fill(0)), B = Array.from({ length: K }, () => new Array(6).fill(0));
     for (let r = 0; r < n; r++) {
-      const W = stageWeights(kf, fr[r]), y = [...frames[r].position, ...frames[r].target];
+      const W = stageWeights(kf, fr[r], curve), y = [...frames[r].position, ...frames[r].target];
       for (const [a, wa] of W) {
         for (const [b, wb] of W) M[a][b] += wa * wb;
         for (let d = 0; d < 6; d++) B[a][d] += wa * y[d];
@@ -426,7 +435,7 @@ export function reduceKeys(frames, { tolerance = 0.015, maxKeys = 96, focusDista
     const r4 = (v) => Math.round(v * 1e4) / 1e4;
     const ks = idx.map((i, a) => ({ frame: fr[i], position: X[a].slice(0, 3).map(r4), target: X[a].slice(3).map(r4), focal_mm: frames[i].focal_mm }));
     const es = frames.map((f, r) => {
-      const c = stageCameraAt(ks, f.frame);
+      const c = stageCameraAt(ks, f.frame, curve);
       return Math.max(split(sub(c.position, f.position), steps[r][0], tolerance), split(sub(c.target, f.target), steps[r][1], tTol), Math.abs(c.focal_mm - f.focal_mm) / fTol);
     });
     return { idx, keys: ks, errs: es, worst: Math.max(...es) };
@@ -518,7 +527,7 @@ export function suggestRig(samplesOrFrames, opts = {}) {
   const mk = (type, label, confidence, build) => {
     const snapped = frames.map((fr, i) => build(fr, i));
     for (const s of snapped) { s.target = add(s.position, scl(forwardOf(s.quaternion), o.focusDistance)); s.focal_mm = frames[0].focal_mm; }
-    const { keys } = reduceKeys(snapped, { tolerance: o.keyTolerance, maxKeys: o.maxKeys, focusDistance: o.focusDistance });
+    const { keys } = reduceKeys(snapped, { tolerance: o.keyTolerance, maxKeys: o.maxKeys, focusDistance: o.focusDistance, curve: o.curve });
     return { type, label, confidence: Math.round(confidence * 100) / 100, question: `This looks like a ${label}. Snap it?`, snapped: { frames: snapped, keys } };
   };
   const slerpBy = (prog) => (i) => qslerp(qs[0], qs[qs.length - 1], prog[i]);

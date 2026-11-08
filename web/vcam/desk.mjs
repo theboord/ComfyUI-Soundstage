@@ -126,7 +126,7 @@ export function attachViewfinder({ api, stage, host, seek = null, play = null, s
     let take;
     try { const r = await api.fetchApi(`/soundstage/vcam/take?id=${encodeURIComponent(m.id)}`); take = await r.json(); } catch { return; }
     if (!take?.samples?.length) return;
-    const { keys, lensKeys, info } = takeToKeys(take);
+    const { keys, lensKeys, info } = takeToKeys(take, { curve: stage.activeShot()?.cam_curve });   // fitted to the shot's curve
     if (keys.length < 2) return;
     const sh = stage.activeShot();
     applied = { id: m.id, prev: { keys: clone(sh.camera_keys), rig: clone(sh.rig), lens: clone(sh.lens_keys) } };

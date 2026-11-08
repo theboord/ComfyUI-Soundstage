@@ -54,10 +54,11 @@ export function anchorFromCamera(cam) {
  * `overrides` wins (e.g. a Strength slider in the stage UI re-stabilizes the same take).
  * rig = an optional suggestion ("dolly-in", "pan left"...) with a snapped alternative. Never applied here.
  */
-export function takeToCamera(take, { anchor = null, startFrame = 0, fps = 24, focusDistance = 5, overrides = {}, suggest = true } = {}) {
+export function takeToCamera(take, { anchor = null, startFrame = 0, fps = 24, focusDistance = 5, overrides = {}, suggest = true, curve = 1 } = {}) {
   // A phone-viewfinder take is already on the set (it was shot through the shot camera), with lens channels: keep it there.
-  if (take?.settings?.space === "set") return { ...takeToKeys(take, overrides), rig: null };
-  const opts = { ...(take.settings || {}), ...overrides, anchor, startFrame, fps, focusDistance };
+  // curve: the shot's cam_curve, so the keys are fitted to the curve they will play on (web/stage/camcurve.mjs).
+  if (take?.settings?.space === "set") return { ...takeToKeys(take, { ...overrides, curve }), rig: null };
+  const opts = { ...(take.settings || {}), ...overrides, anchor, startFrame, fps, focusDistance, curve };
   const result = stabilize(take.samples || [], opts);
   const rig = suggest ? suggestRig(result.frames, opts) : null;
   return { ...result, rig };
