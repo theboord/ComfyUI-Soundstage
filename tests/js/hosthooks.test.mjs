@@ -310,3 +310,32 @@ test("book Forget names its project (host.project()); a server ok:false (a copy 
     assert.match(r.error, /Big\.json/);
   } finally { book.dispose(); }
 });
+
+test("book.forgetDecision on a decision the 40-entry cap dropped from the open Book still runs the server scrub (review finding 3)", async () => {
+  const posts = [];
+  let removed = 3;
+  const api = { fetchApi: async (path, init) => {
+    if (init?.method === "POST") posts.push([path, JSON.parse(init.body)]);
+    return path === "/soundstage/book/forget" ? { ok: true, status: 200, json: async () => ({ ok: true, removed }) } : { status: 200, json: async () => ({ ok: true }) };
+  }, addEventListener() {} };
+  const props = {};
+  const script = { title: "Test", scenes: [{ id: "sc_1", number: 1, heading: "INT. ROOM - DAY", elements: [], characters: [] }], characters: [] };
+  const book = mountBook({ api, stage: null, host: { getScript: () => script, liveScene: () => "sc_1", props: () => props,
+    project: () => ({ id: "p_aaaaaaaa", name: "Film" }) } });
+  try {
+    const first = book.recordDecision({ command: "make it rain", ref: "p_aaaaaaaa:turn_0001", calls: [{ tool: "weather", args: { kind: "rain" } }], results: [{ ok: true }] });
+    for (let i = 0; i < 41; i++) book.recordDecision({ command: `fog ${i}`, calls: [{ tool: "weather", args: { kind: "fog" } }], results: [{ ok: true }] });
+    assert.equal(book.book.notes.some((x) => x.id === first.id), false, "aged out of the open Book by the cap");
+    posts.length = 0;
+    assert.deepEqual(await book.forgetDecision(first.id), { ok: true, in_book: false, copies: 3 });
+    assert.deepEqual(posts.map((p) => p[0]), ["/soundstage/book/forget"], "no book save, only the server scrub");
+    assert.deepEqual(posts[0][1].ids, [first.id]);
+    assert.deepEqual(posts[0][1].project, { id: "p_aaaaaaaa", name: "Film" });
+    assert.equal((await book.forgetDecision("p_aaaaaaaa:turn_0001")).copies, 3, "by ref too");
+    removed = 0;                                                   // nothing left anywhere: not ok, says so
+    const r = await book.forgetDecision(first.id);
+    assert.equal(r.ok, false);
+    assert.equal(r.in_book, false);
+    assert.match(r.error, /no note .* and no stored copy/);
+  } finally { book.dispose(); }
+});

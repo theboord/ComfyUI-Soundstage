@@ -310,7 +310,10 @@ export function mountBook({ topBar = null, before = null, api, stage, host = {} 
      *  trash). `id` is the note's id or the `ref` it was recorded with (every decision note with that ref goes). Only
      *  decision notes (source "chat"): the director's own notes are never removed this way.
      *  Resolves {ok: true, copies} (copies: how many older stored copies were removed) once the server has answered both;
-     *  {ok: false, error} when there is no such note, it is not a decision, or the book save failed (the note is then put
+     *  A note NOT in the open Book (dropped by the 40-decision cap, forgotten in another tab): the server scrub still runs
+     *  -> {ok: true, in_book: false, copies} when it removed stored copies, {ok: false, in_book: false, copies: 0, error:
+     *  "no note ... and no stored copy"} when there was nothing to remove, {ok: false, in_book: false, error} when it failed.
+     *  {ok: false, error} when it is not a decision, or the book save failed (the note is then put
      *  back, so the book and the server still agree); or {ok: false, removed: true, error} when the book was saved
      *  without it but the older copies could not be cleaned (call scrubDecision(id) to try that part again).
      *  ok:true covers ONLY server-side files (books/, workflows/, projects/ incl. autosaves and trash, and collected copies in
@@ -320,7 +323,15 @@ export function mountBook({ topBar = null, before = null, api, stage, host = {} 
     forgetDecision: async (id) => {
       const key = String(id ?? "");
       const hits = book.notes.map((x, i) => [x, i]).filter(([x]) => x.id === key || (x.ref != null && x.ref === key));
-      if (!hits.length) return { ok: false, error: `no note '${key}' in the book` };
+      if (!hits.length) {
+        // Not in the open Book: dropped by the 40-decision cap (model.mjs recordDecision), forgotten in another tab, or
+        // never there. Older stored copies may still hold it, so the server scrub still runs.
+        if (!key) return { ok: false, in_book: false, copies: 0, error: "no note '' in the book" };
+        const sc = await scrub([key]);
+        if (sc.error) return { ok: false, in_book: false, error: `no note '${key}' in the book; the server could not clean stored copies: ${sc.error}` };
+        return sc.copies ? { ok: true, in_book: false, copies: sc.copies }
+          : { ok: false, in_book: false, copies: 0, error: `no note '${key}' in the book, and no stored copy on the server` };
+      }
       if (hits.some(([x]) => x.source !== "chat")) return { ok: false, error: `note '${key}' is not a decision from the chat` };
       const refresh = () => { if (view.open) view.render(); try { H.onNotes?.(); } catch { /* */ } };
       for (const [x] of hits) removeNote(book, x.id);
