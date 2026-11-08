@@ -123,3 +123,28 @@ def test_a_crate_beside_her_that_the_scan_shows_is_dropped_on_the_old_block_rout
                           scan_on=False, has_relief=True, wardrobe_ref=False, tag="t", sub="s", notes=notes)
     sp = scene["video2stage"]["set_path"]
     assert sp["dropped"] == ["Crate beside"] and sp["worded"] == ["Crate"], notes
+
+
+# ------------------------------------------------------------------------------------------------ 4 wardrobe
+def test_the_first_listed_top_can_be_the_tied_one():
+    ap = W.parse("hoodie tied around the waist, black dress")
+    assert ap["top"] == "dress" and ap["top_color"] == W.COLORS["black"] and ap.get("under") is None
+    ap = W.parse("grey hoodie tied around her waist over a white tee, jeans")
+    assert (ap["top"], ap["top_color"], ap["bottom"]) == ("tshirt", W.COLORS["white"], "jeans")
+
+
+def test_tied_or_around_elsewhere_is_not_a_tied_garment():
+    ap = W.parse("white tee, grey hoodie with tied drawstrings")
+    assert ap["top"] == "hoodie" and ap["top_color"] == W.COLORS["grey"] and ap["under"] == "tshirt"
+    ap = W.parse("white tee, denim jacket draped around her shoulders")
+    assert ap["top"] == "jacket" and ap["under"] == "tshirt"
+    ap = W.parse("white tee, red hoodie knotted at the waist, jeans")   # still carried, not worn
+    assert ap["top"] == "tshirt" and ap["top_color"] == W.COLORS["white"]
+
+
+def test_the_words_keep_a_named_bottom_under_a_dress():
+    ap = W.parse("black coat over a red dress with black leggings")
+    assert (ap["top"], ap["under"], ap["bottom"]) == ("coat", "dress", "trousers")
+    assert W.words(ap) == "a black coat over a red dress and black leggings"
+    # no bottom named: the dress is the skirt and the words stay as they were
+    assert W.words(W.parse("light blue denim jacket over a black dress")) == "a denim jacket over a black dress"

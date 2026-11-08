@@ -98,8 +98,12 @@ def _colour_of(before: list[str], garment: str) -> str | None:
 # the blazer), and the one under it is kept as `under` (a dress under a jacket also becomes the clay's skirt).
 LAYER = {"tank": 0, "tshirt": 0, "shirt": 0, "dress": 0, "sweater": 1, "hoodie": 1, "uniform": 1, "jacket": 2,
          "suit": 2, "coat": 3}
-# "a hoodie tied around the waist" / "jacket tied at the hips": carried, not worn over the top
-TIED = ("tied", "waist", "hips", "around", "slung")
+# "a hoodie tied around the waist" / "jacket knotted at her hips": carried, not worn over the top. Only this phrase,
+# right after that garment (before the next garment or barrier), marks it: "hoodie with tied drawstrings" and "jacket
+# draped around her shoulders" are worn.
+TIED = re.compile(r"\b(?:tied|knotted|slung)\s+(?:a?round|at|on)\s+(?:the\s+|her\s+|his\s+|their\s+)?(?:waist|hips?)\b")
+# Bottom words the clay folds into another garment: the Look words keep the model's own noun
+BOTTOM_NOUNS = {"leggings", "joggers", "sweatpants", "chinos", "slacks", "cargos", "cutoffs"}
 
 
 def parse(text: str) -> dict:
@@ -142,6 +146,8 @@ def parse(text: str) -> dict:
         if pat:
             g[f"{slot}_pattern"] = "plaid" if pat in ("tartan", "checked", "checkered", "gingham") else pat
         if slot == "bottom":
+            if w in BOTTOM_NOUNS:
+                g["bottom_noun"] = w
             ap.update(g)
             continue
         if "sleeveless" in before:
@@ -151,7 +157,12 @@ def parse(text: str) -> dict:
             g["sleeves"] = "short"
         if w in ("croptop",) or "cropped" in before:
             g["length"] = "cropped"
-        g["tied"] = bool(tops) and any(x in TIED for x in words[i + 1:i + 4])
+        after = []
+        for x in words[i + 1:i + 8]:
+            if x == SEP or x in TOPS or x in BOTTOMS:
+                break
+            after.append(x)
+        g["tied"] = bool(TIED.search(" ".join(after)))
         tops.append(g)
     worn = [g for g in tops if not g["tied"]] or tops[:1]
     if worn:
@@ -232,6 +243,8 @@ def words(ap: dict, raw: str = "") -> str:
         if not g or (slot == "bottom" and ap.get("under") == "dress" and g == "skirt"):
             continue
         noun = {"tshirt": "T-shirt", "tank": "crop top" if ap.get("length") == "cropped" else "tank top"}.get(g, g)
+        if slot == "bottom" and ap.get("bottom_noun"):
+            noun = ap["bottom_noun"]
         bits = []
         if slot == "top" and ap.get("sleeves") == "short":
             bits.append("short-sleeve")
@@ -248,9 +261,10 @@ def words(ap: dict, raw: str = "") -> str:
     if ap.get("under") == "dress" and ap.get("top") and ap["top"] != "dress":
         col = names.get(ap.get("under_color"))
         art = lambda p: ("an " if p[0] in "aeiou" else "a ") + p   # noqa: E731
-        return f"{art(parts[0])} over {art(((col + ' ') if col else '') + 'dress')}"
-    return " and ".join((("an " if p[0] in "aeiou" else "a ") + p) if not p.endswith(("jeans", "trousers", "shorts")) else p
-                        for p in parts)
+        over = f"{art(parts[0])} over {art(((col + ' ') if col else '') + 'dress')}"
+        return over + (f" and {parts[1]}" if len(parts) > 1 else "")   # a bottom named under the dress is kept
+    plural = ("jeans", "trousers", "shorts", *BOTTOM_NOUNS)
+    return " and ".join((("an " if p[0] in "aeiou" else "a ") + p) if not p.endswith(plural) else p for p in parts)
 
 
 # ---------------------------------------------------------------------------------------------------------- build
