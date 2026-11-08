@@ -294,6 +294,36 @@ export function planSwim({ pos, yaw, mode, fps = 24, height = 1.8, style = null,
 }
 
 /**
+ * Ease the hips across a change between swimming under at the keyed depth and swimming at the surface (keys rising to
+ * the surface, or going back under): the hips start where they were on the side they leave and ease to the other over
+ * `blend` frames (was: a 0.6 m pop at the hips in one frame). Frames the water track already places (hipsW > 0) are
+ * left alone. A pure function of the plan (the same whatever order the frames are drawn in). Returns the plan.
+ */
+export function easeDepthHandoffs(plan, { hipY, surface, blend = Math.max(1, Math.round(0.8 * (plan.fps || 24))) }) {
+  const n = plan.n, mode = plan.mode, k = plan.height / 1.8;
+  const own = plan.hipsW ? plan.hipsW.slice() : new Array(n).fill(0);
+  const surfaceHips = (f) => lerp(surface - 0.12 * k, surface - 0.52 * k, plan.weights[f].tread || 0);
+  let Y = null, W = null;
+  for (let f = 1; f < n; f++) {
+    const was = mode[f - 1], now = mode[f];
+    if (!was || !now || was === now || own[f] > 0) continue;
+    if (!Y) { Y = plan.hipsY ? plan.hipsY.slice() : new Array(n).fill(null); W = own.slice(); }
+    // where the hips really were at f - 1: that side's own hips, or the water track's ease still finishing there
+    const side = was === "surface" ? surfaceHips(f - 1) : plan.pos[f - 1][1] + hipY;
+    const at = own[f - 1] > 0 && plan.hipsY?.[f - 1] != null ? lerp(side, plan.hipsY[f - 1], own[f - 1]) : side;
+    for (let i = 0; i < blend; i++) {
+      const fr = f + i;
+      if (fr >= n || mode[fr] !== now || own[fr] > 0) break;
+      // left the surface: held where they were; left the keyed depth: still following the keys from there
+      Y[fr] = was === "surface" ? at : at + plan.pos[fr][1] - plan.pos[f - 1][1];
+      W[fr] = 1 - sstep(0, 1, i / blend);
+    }
+  }
+  if (Y) { plan.hipsY = Y; plan.hipsW = W; }
+  return plan;
+}
+
+/**
  * The pose at frame f as numbers (tests read it; applySwim puts it on the figure). Angles in radians on the clay
  * figure's joints: hip/knee/shoulder/elbow .x (flexion: hip and shoulder negative, knee positive, elbow negative), .z
  * (abduction: away from the body is -side), the shoe's extra pitch (+ = toes pointed), the fin blade's bend, the body's

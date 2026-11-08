@@ -3828,6 +3828,19 @@ export class Stage {
     const hipY = (g?.userData?.joints?.l_hip?.position.y || 0.53 * h / (g?.scale?.y || 1)) * (g?.scale?.y || 1);
     const pos = [], yaw = [], mode = [], keyY = [], over = [], support = [], below = [], at0On = [];
     const standH = (a.height_m || LIBRARY[a.kind]?.height || 1.8) * (a.scale || 1);
+    // Keyed under the surface at frame f (an underwater stroke holds its keyed depth): the head under, and off the
+    // floor (over 0.35 m: at the floor they are "placed in the water" and swim at the surface) - judged on the keys either
+    // side as well as the curve between them, so a curve sagging under 0.35 m between two keys at 0.6 m (after a
+    // dive-in from 4.5 m) doesn't surface them for a second and a half and drop them back (a 1.1 m pop at the hips).
+    const kSorted = keys.map((k) => [k.frame ?? 0, k.position?.[1] || 0]).sort((p, q) => p[0] - q[0]);
+    const kUnderAt = (f, y) => {
+      if (pool == null || y + h >= pool) return false;
+      if (y > 0.35) return true;
+      let lo = null, hi = null;
+      for (const k of kSorted) { if (k[0] <= f) lo = k; if (k[0] >= f && hi == null) hi = k; }
+      return !!lo && !!hi && lo[1] > 0.35 && hi[1] > 0.35;
+    };
+    const kUnder = [];
     let any = false, under = 0;
     for (let f = 0; f <= last; f++) {
       const p = this._actorPosAt(a, f), ky = p[1] || 0;   // the keyed height (a diver's hover below replaces p[1])
@@ -3839,11 +3852,11 @@ export class Stage {
         if (smode === "dive") {   // scuba, neutrally trimmed: hovers at its keyed depth (on the floor: mid-water)
           const y = (p[1] || 0) > 0.35 ? Math.min(p[1], pool - hipY - 0.45) : Math.max(0.4, Math.min(pool - hipY - 0.45, pool * 0.35));
           p[1] = y; m = "under";
-        } else m = UNDER.includes(smode) && (p[1] || 0) > 0.35 && (p[1] || 0) + h < pool ? "under" : "surface";
+        } else m = UNDER.includes(smode) && kUnderAt(f, p[1] || 0) ? "under" : "surface";
       }
       if (m) { any = true; if (m === "under" && (reef || UNDER.includes(smode))) under++; }
       pos.push([p[0], p[1] || 0, p[2]]); yaw.push(this._headingAt(a, f)); mode.push(m);
-      keyY.push(ky); over.push(!reef && !!m);
+      keyY.push(ky); over.push(!reef && !!m); kUnder.push(!reef && pool != null && kUnderAt(f, ky));
       // keyed up there: what is under the keyed feet; keyed at 0 (how placeInFrame and a live drag key a person: the
       // feet follow the floor): anything walkable over the water there, a dock or a deck, from 3 m above the surface
       let sup = null, bel = 0.05;
@@ -3873,7 +3886,7 @@ export class Stage {
       // In a pool: standing on a dock or a deck, the drop in (timed by the keys), the kick up, and the modes that
       // aren't a stroke (back float, can't swim, sink slowly). The underwater modes and dive get the drop in only.
       if (!reef) {
-        track = Buoy.personTrack({ mode: smode, keyY, over, level: pool, floor: 0, fps, height: h, hipY, seed: Swim.seedOf(a.id), standHeight: standH, support, below });
+        track = Buoy.personTrack({ mode: smode, keyY, over, level: pool, floor: 0, fps, height: h, hipY, seed: Swim.seedOf(a.id), standHeight: standH, support, below, keyedUnder: kUnder });
         // ground: water they can stand in (auto / can't swim), a dock or a deck under them, or a keyed hold before a
         // jump: off the swim plan, on their keys (the gait walks them)
         for (let f = 0; f <= last; f++) if (track.modes[f]) mode[f] = track.modes[f]; else if (track.ground[f]) mode[f] = null;
@@ -3884,6 +3897,8 @@ export class Stage {
       }
       plan = Swim.planSwim({ pos, yaw, mode, fps, height: h, style, seed: Swim.seedOf(a.id), gear,
         styles: track?.styles || null, hipsY: track?.hipsY || null, hipsW: track?.hipsW || null });
+      // keys rising to the surface or going back under: the hips ease across, no pop (swim.mjs)
+      if (!reef) Swim.easeDepthHandoffs(plan, { hipY, surface: pool });
       plan.id = a.id;
       plan.swimMode = smode;
       plan.ctx = { surface: reef ? fx.surface : pool, current: reef ? fx.currentAt : null, caustics: reef, floorAt: reef ? fx.floorAt : null, floor: reef ? null : 0 };

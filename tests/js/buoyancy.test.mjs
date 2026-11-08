@@ -745,3 +745,35 @@ test("walking on and off the lake's dock: keyed at 0 they wade under it, keyed o
   const st3 = tank([boat, at0("d", [[0, [-0.45, 0, -0.8]], [48, [4, 0, -0.8]]])]), s3 = stepsOf(st3, "d", 121);
   for (let f = 21; f < 121; f++) assert.ok(Math.abs(s3.lo[f] - s3.lo[f - 1]) < 0.3, `off the deck f${f}: falls, no pop (${s3.lo[f - 1].toFixed(2)} -> ${s3.lo[f].toFixed(2)})`);
 });
+
+// Fifth pass: after 28ad716 an underwater stroke dropped in and keyed under handed back to its keys and then popped at
+// the hips: keys at 0.6 m moving sideways (the curve between the 4.5 m and 0.6 m keys sags under the 0.35 m "on the
+// floor" mark) surfaced at f50 (hips 1.25 -> 2.36) and went back under at f84 (2.41 -> 1.26); keys at 0.3 m were picked
+// up mid-fall and dropped (1.22 -> 2.15 at f50); keys rising to the surface 1.58 -> 2.15 at f102; under, surface and
+// under again 0.64 m at f111. The parent's worst was 0.26 m (the plunge itself).
+test("an underwater stroke dropped in: moving sideways under, rising to the surface, going back under, keys near the floor: the hips never pop", () => {
+  const cases = {
+    "under, moving sideways x -3 -> 5 at 0.6 m": [[0, [-5, 4.5, 0]], [24, [-3, 0.6, 0]], [144, [5, 0.6, 0]]],
+    "under, then the keys rise to the surface": [[0, [0, 4.5, 0]], [24, [0, 0.6, 0]], [96, [0, 0.6, 0]], [144, [0, 2.4, 0]]],
+    "keys at 0.3 m (at the floor: swims at the surface)": [[0, [0, 4.5, 0]], [24, [0, 0.3, 0]], [144, [0, 0.3, 0]]],
+    "under, surface, under again": [[0, [0, 4.5, 0]], [24, [0, 0.6, 0]], [60, [0, 0.6, 0]], [72, [0, 1.5, 0]], [100, [0, 1.5, 0]], [112, [0, 0.6, 0]]],
+    "under, moving sideways and diagonally": [[0, [-5, 4.5, -2]], [24, [-3, 0.7, -1]], [90, [2, 0.5, 2]], [144, [5, 0.8, 0]]],
+  };
+  for (const swim of ["flutter", "frog", "stroke"]) for (const [what, keys] of Object.entries(cases)) {
+    const st = tank([keyed("u", "man", keys, { swim })], { frames: 145 });
+    const h = [];
+    for (let f = 0; f < 145; f++) { st.setFrame(f); h.push(hipsY(st, "u")); }
+    let worst = 0, at = 0;
+    for (let f = 1; f < 145; f++) { const d = Math.abs(h[f] - h[f - 1]); if (d > worst) { worst = d; at = f; } }
+    assert.ok(worst < 0.3, `${swim}, ${what}: worst hip step ${worst.toFixed(2)} m at f${at}`);
+    let late = 0;
+    for (let f = 37; f < 145; f++) late = Math.max(late, Math.abs(h[f] - h[f - 1]));
+    assert.ok(late < 0.12, `${swim}, ${what}: after the plunge the hips move smoothly (worst ${late.toFixed(3)} m a frame)`);
+    for (const f of [83, 50, 102, 111, 9, 140]) { st.setFrame(f); assert.ok(Math.abs(hipsY(st, "u") - h[f]) < 1e-9, `${swim}, ${what} f${f}: the same scrubbed out of order`); }
+  }
+  // the sideways swim really is under the whole way, not at the surface for f50-82
+  const st = tank([keyed("u", "man", cases["under, moving sideways x -3 -> 5 at 0.6 m"], { swim: "flutter" })], { frames: 145 });
+  const plan = st._swimPlan(st.state.actors[0], st.actorMeshes.get("u"));
+  for (let f = 40; f < 145; f++) assert.equal(plan.mode[f], "under", `f${f}: under at the keyed depth`);
+  for (const f of [60, 100, 140]) { st.setFrame(f); assert.ok(headY(st, "u") < LEVEL, `f${f}: the head under the surface`); }
+});

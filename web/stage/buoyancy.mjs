@@ -337,7 +337,7 @@ export function plungeTrack({ ky, v0 = 0, level, floor = 0, fps = 24, n, height 
  * up there from the start of the shot, at the last frame before the keys start to go down (a hold, then a step off:
  * held[f] and ground[f] until then); keys that never go down drop at once.
  */
-export function personTrack({ mode, keyY, over, level, floor = 0, fps = 24, height = 1.8, hipY = 0.95, seed = 1, standHeight = height, support = null, below = null }) {
+export function personTrack({ mode, keyY, over, level, floor = 0, fps = 24, height = 1.8, hipY = 0.95, seed = 1, standHeight = height, support = null, below = null, keyedUnder = null }) {
   const n = keyY.length, k = height / 1.8;
   const styles = new Array(n).fill(null), hipsY = new Array(n).fill(null), hipsW = new Array(n).fill(0), modes = new Array(n).fill(null);
   const ground = new Array(n).fill(false), supported = new Array(n).fill(false), held = new Array(n).fill(false), standY = new Array(n).fill(null);
@@ -388,7 +388,16 @@ export function personTrack({ mode, keyY, over, level, floor = 0, fps = 24, heig
     // plunge (and, keyed under only later, the kick up and the surface until then), then hands back to the keyed depth
     // (kUnder: the run-relative frame the keys are first under the surface; -1 if they never are in this run).
     let kUnder = -1;
-    if (keyedDepth && !diver && ky > level + 0.05) for (let i = 1; i < m && kUnder < 0; i++) { const y = keyY[f0 + i]; if (y > floor + 0.35 && y + height < level) kUnder = i; }
+    // Keyed under for good, not the keys passing down through the depth on their way to the floor (keys at 0.3 m, just
+    // under the 0.35 m "on the floor" mark: they were picked up for a frame or two mid-fall, eased to, then dropped,
+    // a 0.9 m pop at the hips): under for at least the blend, or to the end of the run.
+    const isUnder = (j) => (keyedUnder ? !!keyedUnder[j] : keyY[j] > floor + 0.35 && keyY[j] + height < level);
+    if (keyedDepth && !diver && ky > level + 0.05) for (let i = 1; i < m && kUnder < 0; i++) {
+      if (!isUnder(f0 + i)) continue;
+      let q = i;
+      while (q < m && q - i < blend && isUnder(f0 + q)) q++;
+      if (q - i >= blend || q === m) kUnder = i;
+    }
     if (ky > level + 0.05) {   // a drop: feet first through the surface, the plunge, then back up
       const v0 = f0 > 0 ? (keyY[f0] - keyY[f0 - 1]) * fps : 0;   // the keyed (or baked) speed
       const pl = plungeTrack({ ky, v0, level, floor, fps, n: m, height, clear: shallow ? 0.02 : 0.3 * k });
