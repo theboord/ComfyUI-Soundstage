@@ -287,18 +287,36 @@ const OBS_LRU = 8, HEIGHT_LRU = 4;
  *  relative scale) is an edit (a drag, a console move, a rescale), not per-frame motion: the grid is re-anchored there. */
 const OBS_JUMP = { pos: 0.25, rot: 0.05, scale: 0.1 };
 
-/** _obstacles: do an object's keys move it (so it is not a parked obstacle)? Travel over 5 cm on the ground, and also a
- *  keyed turn (heading_deg, roll_deg, pitch_deg over 1 degree: a turntable) or a keyed rise (key_y, over 5 cm: a lift).
- *  Those used to count as parked: every rotation step passed OBS_JUMP, so the grid re-anchored and the box and every
- *  person's whole-shot height table were rebuilt every frame. Like a travelling prop, it is now not stood on. */
-function keyedMoving(o) {
+/** _obstacles: how many times a keyed prop may change grid cell over the shot (box, list and every person's height
+ *  table rebuilt each time) and still count as parked, an obstacle people stand on and walk round. */
+const KEYED_CELL_CHANGES = 4;
+
+/** _obstacles: do an object's keys move it (so it is not a parked obstacle)? Travel over 5 cm on the ground; and, for a
+ *  keyed turn (heading_deg, roll_deg, pitch_deg) or a keyed rise (key_y), the grid the parked boxes sit on decides:
+ *  the keyed transform is played frame by frame onto it (obsCell's anchors, OBS_JUMP re-anchors, OBS_TOL cells) and
+ *  the prop is moving when it would rebuild more than KEYED_CELL_CHANGES times. So a turntable (7.5 deg a frame, a
+ *  re-anchor every frame) or a 40 cm lift (8 cells) is not stood on, and nothing rebuilds per frame; a 3 deg nudge
+ *  (3 cells) or a 6 cm raise (1 cell) stays an obstacle (cb57dad used 1 deg / 5 cm of total spread, so those lost collision: feet over the crate 0.80 m -> 0).
+ *  `pose(f)` gives the keyed transform at frame f as [x, y, z, qx, qy, qz, qw]. */
+function keyedMoving(o, frames, pose) {
   const ks = o.keys;
   if (!(ks?.length > 1)) return false;
   const k0 = ks[0], p0 = k0.position || [0, 0, 0];
-  const spread = (get) => { const v = ks.map(get).filter(Number.isFinite); return v.length > 1 ? Math.max(...v) - Math.min(...v) : 0; };
-  return ks.some((k) => Math.hypot((k.position?.[0] ?? p0[0]) - p0[0], (k.position?.[2] ?? p0[2]) - p0[2]) > 0.05)
-    || (o.key_y && spread((k) => k.position?.[1] || 0) > 0.05)
-    || spread((k) => k.heading_deg) > 1 || spread((k) => k.roll_deg) > 1 || spread((k) => k.pitch_deg) > 1;
+  if (ks.some((k) => Math.hypot((k.position?.[0] ?? p0[0]) - p0[0], (k.position?.[2] ?? p0[2]) - p0[2]) > 0.05)) return true;
+  const turns = ks.some((k) => Number.isFinite(k.heading_deg) || Number.isFinite(k.roll_deg) || Number.isFinite(k.pitch_deg));
+  const rises = o.key_y && ks.some((k) => Math.abs((k.position?.[1] ?? p0[1] ?? 0) - (p0[1] ?? 0)) > 1e-4);
+  if (!turns && !rises) return false;
+  let at = null, last = null, key = null, changes = 0;
+  for (let f = 0; f <= frames; f++) {
+    let now = pose(f);
+    if (at && at[3] * now[3] + at[4] * now[4] + at[5] * now[5] + at[6] * now[6] < 0) now = now.map((v, k) => (k >= 3 ? -v : v));
+    if (!at || now.some((v, k) => Math.abs(v - last[k]) > (k < 3 ? OBS_JUMP.pos : OBS_JUMP.rot))) at = now;
+    last = now;
+    const cell = `${at.join(",")}:${now.map((v, k) => Math.round((v - at[k]) / (k < 3 ? OBS_TOL.pos : OBS_TOL.rot)) || 0).join(",")}`;
+    if (key !== null && cell !== key && ++changes > KEYED_CELL_CHANGES) return true;
+    key = cell;
+  }
+  return false;
 }
 
 /** A parked clay group's transform on a grid anchored at the transform it was first seen at (or last moved to by an
@@ -1786,6 +1804,25 @@ export class Stage {
     return kind === "none" ? "none" : STUNTS[kind].label;
   }
 
+  /** keyedMoving for an actor, its keyed transform played as setFrame poses it (path, keyed height, heading and the
+   *  body's keyed roll / pitch). Cached on the object's signature. */
+  _keyedMoving(o, sig) {
+    if (!(o.keys?.length > 1)) return false;
+    const last = this._lastFrame(), full = `${sig}|${last}|${this.state.shot?.fps || 24}|${!!o.physics?.baked}`;
+    const cache = (this._kmCache ||= new WeakMap()), hit = cache.get(o);
+    if (hit?.sig === full) return hit.moving;
+    const keys = this._actorKeys(o), e = new THREE.Euler(0, 0, 0, "YXZ"), q = new THREE.Quaternion();
+    const pose = (f) => {
+      const p = this._actorPosAt(o, f);
+      e.set((channelAt(keys, f, (k) => k.pitch_deg) || 0) * DEG, this._headingAt(o, f), (channelAt(keys, f, (k) => k.roll_deg) || 0) * DEG);
+      q.setFromEuler(e);
+      return [p[0], this._heightAt(o, f), p[2], q.x, q.y, q.z, q.w];
+    };
+    const moving = keyedMoving(o, last, pose);
+    cache.set(o, { sig: full, moving });
+    return moving;
+  }
+
   /** Static things a person can stand on / must clear: world boxes of parked, non-person actors. */
   _obstacles() {
     // The signature (no JSON: it runs per person per frame) covers what the boxes are made from: each object's fields
@@ -1795,7 +1832,7 @@ export class Stage {
     const parked = [];
     for (const o of this.state.actors) {
       parts.push(`${o.id}:${o.kind}:${keysHash([{ k: o.keys?.length > 1 ? o.keys : null, p: o.keys?.[0]?.position || o.position, r: o.rotation_deg, s: o.scale, h: o.height_m, c: o.carry_id, m: o.mount_id, y: o.key_y, l: o.physics?.lift }])}`);
-      if (PERSON_KINDS.has(o.kind) || o.mount_id || o.carry_id || keyedMoving(o)) continue;
+      if (PERSON_KINDS.has(o.kind) || o.mount_id || o.carry_id || this._keyedMoving(o, parts[parts.length - 1])) continue;
       const g = this.actorMeshes.get(o.id);
       if (!g) continue;
       // The transform on a grid (5 cm, ~1 degree, 1 %) anchored where the group was first seen, or where an edit last

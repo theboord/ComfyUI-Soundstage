@@ -317,6 +317,31 @@ test("obstacles: a parked prop whose keys spin it 360 deg or raise it 40 cm does
   assert.ok(r.boxes <= 2 && r.lists <= 2 && r.tables <= 2, `rising 40 cm over 48 frames: ${JSON.stringify(r)}`);
 });
 
+test("obstacles: a prop keyed with a small nudge (a 3 deg turn, a 6 cm raise) is still an obstacle: the walker steps up onto it (cb57dad: feet 0)", () => {
+  // keyedMoving counted any keyed turn over 1 deg or rise over 5 cm as moving, so the crate stopped colliding.
+  const run = (crate, pose) => {
+    const walker = { id: "p1", kind: "man", height_m: 1.8, position: [-3, 0, 0], keys: [{ frame: 0, position: [-3, 0, 0] }, { frame: 48, position: [3, 0, 0] }] };
+    const st = bareStage([walker, crate]);
+    clayOf(st, walker);
+    const cg = clayOf(st, crate);
+    let top = 0, boxes = 0;
+    const orig = THREE.Box3.prototype.setFromObject;
+    THREE.Box3.prototype.setFromObject = function (...x) { boxes++; return orig.apply(this, x); };
+    try {
+      for (let f = 0; f <= 48; f++) { pose(st, cg, f); cg.updateMatrixWorld(true); st.frame = f; top = Math.max(top, st._heightAt(walker, f)); }
+    } finally { THREE.Box3.prototype.setFromObject = orig; }
+    return { top, boxes };
+  };
+  const turn = { id: "c1", kind: "crate", position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0], heading_deg: 0 }, { frame: 48, position: [0, 0, 0], heading_deg: 3 }] };
+  const t = run(turn, (st, cg, f) => { cg.rotation.set(0, st._headingAt(turn, f), 0); });
+  assert.ok(t.top > 0.5, `a crate keyed through a 3 deg turn: the walker's feet reach ${t.top.toFixed(2)} m`);
+  assert.ok(t.boxes <= 6, `and its box is rebuilt only as it crosses a grid cell: ${t.boxes}`);
+  const raise = { id: "c1", kind: "crate", key_y: true, position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0] }, { frame: 48, position: [0, 0.06, 0] }] };
+  const r = run(raise, (st, cg, f) => { cg.position.y = st._heightAt(raise, f); });
+  assert.ok(r.top > 0.5, `a crate keyed up 6 cm: the walker's feet reach ${r.top.toFixed(2)} m`);
+  assert.ok(r.boxes <= 6, `and its box is rebuilt only as it crosses a grid cell: ${r.boxes}`);
+});
+
 // ---------------------------------------------------------------- 3: stale attaches
 test("upgradeHuman: rebuilds and a model change while the kit loads give one clone per person, on the latest group", async () => {
   const people = Array.from({ length: 4 }, (_, i) => person(`p${i}`, i));
