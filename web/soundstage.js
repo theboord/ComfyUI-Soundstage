@@ -735,24 +735,27 @@ function createStageWidget(node, inputName) {
     ?.widgets?.find((x) => x.name === "step");
   const shotName = (id) => (stage.toJSON().shots || []).find((s) => s.id === id)?.name || id;
 
+  const cutFps = () => stage.toJSON().shot?.fps || 24;   // the rate sent to the join; gaps are measured at it
+  const oneVideoGuard = (raw, fps) => checkOneVideo(raw, findOneVideoHook(CutModule, CutTimeline), { fps });
   async function flattenCut() {
     // Decide on the RAW saved cut (gaps, upper picture tracks, detached audio...) before flattening: refuse in plain
     // words and change nothing when the join can't honour it; a cut whose only extra is gaps joins with black + silence.
-    const raw = loadCut();
-    const support = checkOneVideo(raw, findOneVideoHook(CutModule, CutTimeline));
+    const raw = loadCut(), fps = cutFps();
+    const support = oneVideoGuard(raw, fps);
     if (support.message) { cutOut.textContent = support.message; status.textContent = support.message; return; }
     const saved = savedRenders();
-    // a clip pinned to a take (Edit from the timeline) joins its pinned file
-    const clips = oneVideoClips(raw, { shotName, shotFile: (e) => flattenClip(e, saved[e.shot_id] || {}, BEST) });
+    // a clip pinned to a take (Edit from the timeline) joins its pinned file; a gap it can't measure refuses, never drops
+    let clips;
+    try { clips = oneVideoClips(raw, { fps, shotName, shotFile: (e) => flattenClip(e, saved[e.shot_id] || {}, BEST) }); }
+    catch (err) { cutOut.textContent = err.message; status.textContent = err.message; return; }
     if (!clips.some((c) => !c.gap)) { cutOut.textContent = "The cut is empty: add shots to the strip first."; return; }
     const gapCount = clips.filter((c) => c.gap).length, skipped = oneVideoLeftOut(raw);
     oneBtn.disabled = true;
     const shotClips = clips.length - gapCount;
     cutOut.textContent = `Joining ${shotClips} clips${gapCount ? ` and ${gapCount} gap${gapCount === 1 ? "" : "s"} (black, silent)` : ""}…`;
     try {
-      const sc = stage.toJSON();
       const res = await api.fetchApi("/soundstage/cut/render_video", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: node.title && node.title !== "Soundstage · 3D Stage" ? node.title : "cut", fps: sc.shot?.fps || 24, clips }) });
+        body: JSON.stringify({ name: node.title && node.title !== "Soundstage · 3D Stage" ? node.title : "cut", fps, clips }) });
       const j = await res.json().catch(() => ({ error: `server answered ${res.status}` }));
       if (!res.ok || j.error) throw new Error(j.error || `server answered ${res.status}`);
       const url = viewURL(j);
