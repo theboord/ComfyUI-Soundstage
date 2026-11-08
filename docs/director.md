@@ -125,24 +125,36 @@ When a chat command changes the set, the Book keeps a decision note on the scene
 `web/book/model.mjs`). Later commands read it back as "Decided earlier: ...".
 
 - **What is kept:** the decision, not the chat. The note's `text` is a short summary the assistant wrote (`summary`),
-  or, without one, the change in words, such as `Weather: rain; Lens: mm 50, shot sh_2`. `change` holds the calls as
-  `[{tool, args}]`, keeping only short argument values (numbers, true/false, text up to 60 characters).
-- **What is not kept:** the user's typed sentence (`command`). It is used only to skip undo and play. A summary or an
-  argument that repeats it, or most of it, is dropped.
+  or, without one, the change in words, such as `Weather: rain; Lens: 50`. `change` holds the calls as
+  `[{tool, args}]`. Only the argument keys listed for that tool in `DECISION_ARGS` are kept: numbers, enum values and
+  one-word ids or names (`sh_2`, `mara`). A tool not in the list keeps no arguments.
+- **What is not kept:** the user's typed sentence (`command`), or any piece of it. Free-text arguments (`note`,
+  `text`, `what`, `at`, `value`, a description) and names of more than one word are always dropped. A summary that
+  shares three words in a row with the sentence (two of them real words, not "to the") is dropped too. The sentence
+  is used only to skip undo and play and to check the summary.
 - **Older notes:** decision notes written before 2026-11-07 held the typed sentence. On load they are rewritten to
-  the tools they changed (for example `Move; Lens`) and keep their id. The new text reaches the server copy on the
-  Book's next save.
+  the tools they changed (for example `Move; Lens`) and keep their id. Notes from the first 2026-11-07 version
+  (`dv: 2`) are cut to the allowed arguments and their text is written again from the change. The new text reaches
+  the server copy on the Book's next save.
 - **Link id:** `recordDecision({..., ref})` stores the chat turn's id as `ref`. `forgetDecision(ref)` removes every
   decision note with that ref.
 - **Forget:** `await book.forgetDecision(id)` removes the note from the open Book and the workflow
-  (`node.properties.ss_book`), and saves the Book. It then calls `POST /soundstage/book/forget {ids}`. That call
-  removes the note from every stored copy on the server:
-  - the books folder (`user/default/soundstage/books/*.json`)
+  (`node.properties.ss_book`), and saves the Book. It then calls `POST /soundstage/book/forget {ids, project: {id,
+  name}}`. That call removes the note from every stored copy of that project on the server:
+  - the books folder (`user/default/soundstage/books/*.json`, and leftover `*.json.tmp`)
   - the user's `workflows/*.json`
   - `projects/**`: manifests, the 20 autosaves and the trash
 
-  A file is rewritten only if its text holds the id. The answer lists the files changed and any file whose text
-  still mentions the id, for example inside a string.
+  A file belongs to the project when it carries the same project id, or no id and the same project name. Another
+  project's copy is left alone, even when it holds the same note id (a Duplicate) or the same ref, and is listed in
+  `other_projects`. A file is rewritten only if its text holds the id. `ok` is `false`, with an `error` line, when a
+  copy was not cleaned: a file over 64 MB (`skipped`), a file that names no project (`skipped`), or a file whose text
+  still mentions the id, for example inside a string (`still_mentions`). Without a project only the open book is
+  cleaned, and the answer says so.
+- **A note not in the open Book** (another tab's, or one already removed locally): `await book.scrubDecision(id)`
+  cleans the server copies of the open project. `forgetDecision` refuses an id it cannot find in the open Book.
+- **Written back:** a second tab with the same project open, or ComfyUI's canvas undo to a step before the Forget,
+  still holds the note. Its next Save or autosave writes it back to the server. Forget again after closing it.
 
 **Copies that Forget does not reach** (Soundstage does not change ComfyUI itself):
 

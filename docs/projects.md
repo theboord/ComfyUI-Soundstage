@@ -108,18 +108,28 @@ Each saved project has an id, `p_` and 8 lowercase hex digits (for example `p_3f
 know which project a memory belongs to, so it must not move to a different project by accident.
 
 - **Where:** `projects/<name>/project.json` (`id`) and the workflow's `extra.ss_project.id`. Save writes both.
-- **When it is kept:** Save keeps the project's id only when the workflow being saved carries that same id. Any other
-  save gets a fresh id: Save As to a new name, a project saved before ids existed, a workflow saved over another
-  project, or a workflow saved under a name whose `projects/<name>/` folder was left behind after its workflow was
-  deleted from ComfyUI's sidebar.
+- **When it is kept:** Save keeps the project's id when the workflow being saved carries that same id. It also keeps
+  it when the workflow carries no id but is the project's own earlier state: it names the same project, and
+  `workflows/<name>.json` still holds the id. That covers a second tab opened before the first Save, canvas undo back
+  past the first Save, and a restored autosave from before it. Any other save gets a fresh id: Save As to a new name,
+  a project saved before ids existed, a workflow that carries another id or names another project, or a workflow
+  saved under a name whose `projects/<name>/` folder was left behind after its workflow was deleted from ComfyUI's
+  sidebar.
 - **Library:** Duplicate gives the copy a fresh id (in both files). Rename, Trash and Untrash keep it.
 - **Old projects:** a project saved before ids existed has none (`id: null` in the list) until its next Save.
   Opening, listing or autosaving it never writes one.
 - **Reading it:**
-  - In the page: `window.__ssProject.projectId()` gives the open workflow's id, or `null` (not saved yet, or an old
-    project not saved since). It only reads.
-  - From `web/project/store.mjs`: `projectIdOf(workflow)`, or `await store.projectId(name)`, which reads
-    `project.json`.
+  - In the page: `window.__ssProject.projectId()` gives the open workflow's id only once it is confirmed against
+    the saved `project.json` of the same name, else `null`. It is `null` when the project is not saved yet, is an old
+    project not saved since, was renamed in the library while the tab stayed open, or is a collected or exported copy
+    whose `project.json` is not here. A Save, an Open, and a check every 15 s confirm it. It only reads.
+  - `await window.__ssProject.project()` reads `project.json` now: `{id, name, graph_id, manifest_id, confirmed}`.
+  - `window.__ssProject.current()` gives `{id, name}` as the graph says, unconfirmed. Forget uses it to pick the
+    project whose copies it cleans.
+  - From `web/project/store.mjs`: `projectIdOf(workflow)` (the graph's id, unconfirmed), `await
+    store.confirmProjectId(workflow)`, or `await store.projectId(name)`, which reads `project.json`.
+- **Not told apart:** a copy made with ComfyUI's own Save As or Duplicate, and a render dragged back in, carry the
+  source project's name and id, so they confirm as that project.
   - On the server: `GET /soundstage/project/list`, where each project has an `id` (`null` for an old project).
 
 ## Autosave

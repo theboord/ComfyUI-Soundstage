@@ -5,6 +5,48 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-07
 
+**Review fixes: Forget scoped to one project, Book args allowlisted, project id stable and confirmed (private branch `private/project-id`, 20:36 by this machine's clock)**
+
+- **Still wrong (read first):** checked with Node and pytest only, not in the browser, the App or a live ComfyUI.
+  - **Forget scope:** a file belongs to the forgetting project by its project id, or by name when it has no id.
+    So an old id-less autosave left in a reused name's folder is cleaned as this project's. A Save As copy made
+    after a decision keeps it: it is another project.
+  - **Unscoped files:** a file that names no project (a plain ComfyUI workflow holding a Book) is reported, not
+    cleaned, so `ok` is `false` until it is removed by hand.
+  - **Written back:** a second open tab, or ComfyUI's canvas undo, can write a forgotten note back on its next save.
+  - **Still not reached:** ComfyUI's queue history, render metadata and browser storage, as before.
+  - **Allowlist limits:** a one-word name (`mara`) taken from the sentence is kept, because it is a reference to
+    something on the set. `DECISION_ARGS` is a hand copy of the Director / parts / Ask schemas: a new tool keeps no
+    args until it is added. Tools whose enums are free text by schema, such as `part.value` (open / 65), lose that
+    value.
+  - **Id confirmation:** ComfyUI's own Save As / Duplicate and a dragged-in render carry the source's name and id,
+    so they confirm as the source project. `projectId()` is `null` for up to one 3 s tick after a graph change.
+  - **Lane:** the Director's call site (`web/agent/director.mjs`, Jon's lane) still passes no `ref`.
+- **Forget is per project (`soundstage/book/store.py` `forget(ids, roots, project)`, `_ident`, `_in_scope`; `routes.py`; `web/book/book.mjs` `projectRef`):**
+  - **The bug:** forgetting ref `t1` in project A used to strip B's note with the same ref, and a Duplicate's twin.
+  - **Now:** only the forgetting project's files are cleaned. Others are listed in `other_projects`. The book
+    save stores `_project`, so `books/current.json` is scoped too.
+  - **Note ids:** decision note ids gain 4 random hex.
+- **Forget says what it missed:** files over 64 MB and project-less files are listed in `skipped`, and copies still
+  holding the id in `still_mentions`. Either one, or an error, makes `ok` false and adds an `error` line, which
+  `scrubDecision` / `forgetDecision` pass on. Leftover `*.json.tmp` files are scanned.
+- **Book args allowlisted (`web/book/model.mjs` `DECISION_ARGS`, `scrubArgs(args, tool)`, `DECISION_V` 3):**
+  - **Kept:** per tool, numbers and one-token enums or ids only.
+  - **Dropped:** free text (`note`, `what`, `at`, `value`) and multi-word names.
+  - **Summary check:** a summary that shares three real words in a row with the sentence is refused.
+  - **Old notes:** v2 notes are cut down on load.
+  - **Tests:** parser clauses, a sentence split over two calls, a quoting summary, and a direct note. None of them
+    leaves a three-word run of the sentence anywhere in the book.
+- **Id stable through the project's own history (`ProjectStore.save` / `_ownHistory`):** a graph without an id that
+  names the project, while `workflows/<name>.json` still holds the id, keeps it. That covers two tabs, undo past
+  the first save, and a restored pre-save autosave.
+- **Id confirmed (`store.confirmProjectId`, `ProjectController.projectId` / `project()` / `current()`):** `projectId()`
+  is `null` unless the saved `project.json` of that name holds the same id. Examples are a library rename with the
+  tab still open, or a collected or exported copy.
+- **Tests:** `tests/test_book.py` (two projects sharing a ref and a duplicated note id; skipped, `.tmp` and
+  string-mention reporting), `tests/js/book.test.mjs`, `tests/js/hosthooks.test.mjs`, `tests/js/project.test.mjs`.
+  Docs: `docs/director.md`, `docs/projects.md`.
+
 **Project id for Ask's memory; the Director's Book keeps decisions, not chat text (private branch `private/project-id`, 20:15 by this machine's clock)**
 
 - **Still wrong (read first):** checked with Node and pytest only, not in the browser, the App or a live ComfyUI. The
