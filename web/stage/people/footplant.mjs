@@ -1,0 +1,494 @@
+// Foot grounding for lifelike people: the stance foot is planted on the ground under it, with two-bone leg IK on the
+// avatar's own skeleton. Measured before this (2026-11-07, try-it demo, real GPU render): planted feet slid 5-9 cm/s,
+// one idle foot hovered 3-5 mm, the idle <-> walk crossfade sank the feet up to 26 mm into the floor, and a turn on
+// the spot swivelled the whole body over sliding feet. All of it came from the Rocketbox clips themselves.
+//
+// How it works (people/avatars.mjs avatarsAt calls it after the clips are posed):
+//   1. footRig(model, mesh), once per avatar in the bind pose: per foot the thigh / calf / foot / toe bones, a few
+//      dozen SOLE vertices (the lowest of each patch of the shoe; real skinned vertices, so the shoe's own thickness
+//      counts, not the bones: the toe bone sits 1.5-7 mm above the sole) and the sole's up axis in the foot bone.
+//   2. clipFloors(...), once per avatar: each clip's own standing sole height (the median of the lowest sole over the
+//      loop), so the body offset follows the clip that plays (walk and run sat up to 2 cm off the idle's floor).
+//   3. planFeet(...), once per person per shot (cached like the gait table): the clip is played frame by frame and
+//      each foot's stance is found from its sole height over the ground under it and its speed (hysteresis, blips
+//      dropped). Each stance is locked to one spot: the foot's pose at mid-stance, turned so the sole lies on the
+//      ground's slope, lowered so its lowest sole vertex touches. A long stance whose foot would twist or drift (a
+//      turn on the spot, a slow shuffle) is broken into real steps: one foot at a time lifts and moves to where the
+//      body will be. Ramps of a few frames blend in and out of every plant (no pop at heel strike or toe off).
+//   4. groundFeet(skin, plan, f), per frame: the pelvis comes down when a planted foot is out of the leg's reach,
+//      then two-bone IK (thigh, calf; the knee stays on the side the clip bends it to) puts each foot on its target
+//      and turns it flat on the ground; a swinging foot is kept above the ground.
+// Everything is a pure function of the keys and the frame: the plan is built from the whole shot at once, and a
+// frame reads only the plan and the clip pose at that frame, so scrubbing in any order gives the same feet.
+// Nothing here reads the clay figure: it works on whatever skeleton drives the visible body.
+import * as THREE from "../../vendor/three.module.min.mjs";
+
+/** Rocketbox Biped leg bones (FBXLoader turns the spaces into underscores). */
+export const LEG_BONES = {
+  l: { thigh: "Bip01_L_Thigh", calf: "Bip01_L_Calf", foot: "Bip01_L_Foot", toe: "Bip01_L_Toe0" },
+  r: { thigh: "Bip01_R_Thigh", calf: "Bip01_R_Calf", foot: "Bip01_R_Foot", toe: "Bip01_R_Toe0" },
+};
+export const PELVIS_ROOT = "Bip01";
+const SIDES = ["l", "r"];
+const UP = new THREE.Vector3(0, 1, 0);
+
+/** Tunables, in metres and seconds for a 1.8 m person (scaled by height). */
+export const FOOT = {
+  hIn: 0.025, hOut: 0.04,        // sole height over the ground to start / keep a stance
+  vIn: 0.3, vOut: 0.45,          // foot bone speed (m/s) to start / keep a stance
+  minStance: 3, maxGap: 1,       // frames: shorter stances are dropped, shorter lifts are closed
+  ramp: 0.125,                   // s: blend into / out of a plant
+  stepDist: 0.2, stepYaw: 0.7,   // a planted foot drifting this far (m) or twisting this much (rad) is one unit
+  stepTime: 0.3, stepLift: 0.05, // a turn step: duration (s), lift (m)
+  far: 0.3,                      // a stance whose ground is this far from the body's height is not planted
+  maxDrop: 0.12,                 // the pelvis comes down at most this much
+  reach: 0.999,                  // of the leg's length, before the pelvis comes down
+};
+
+const smooth01 = (t) => { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); };
+
+/**
+ * Per avatar, in the bind pose (the template as loaded): the leg bones and the sole vertices of each foot. null when
+ * the skeleton has no Biped legs (a stub, another rig): such a body is not grounded.
+ */
+export function footRig(model, mesh, { bones = LEG_BONES } = {}) {
+  if (!mesh?.isSkinnedMesh || !mesh.skeleton) return null;
+  model.updateMatrixWorld(true);
+  const list = mesh.skeleton.bones, idx = (n) => list.findIndex((b) => b.name === n);
+  const geo = mesh.geometry, si = geo.attributes.skinIndex, sw = geo.attributes.skinWeight, n = geo.attributes.position?.count || 0;
+  if (!si || !sw || !n) return null;
+  const out = { bones, root: PELVIS_ROOT };
+  const v = new THREE.Vector3();
+  for (const lr of SIDES) {
+    const B = bones[lr];
+    if (!["thigh", "calf", "foot", "toe"].every((k) => model.getObjectByName(B[k]))) return null;
+    const fi = idx(B.foot), ti = idx(B.toe);
+    if (fi < 0) return null;
+    const foot = model.getObjectByName(B.foot);
+    const fw = foot.getWorldPosition(new THREE.Vector3()), fq = foot.getWorldQuaternion(new THREE.Quaternion());
+    const cand = [];
+    for (let i = 0; i < n; i++) {
+      let w = 0;
+      for (let k = 0; k < 4; k++) { const b = si.getComponent(i, k); if (b === fi || b === ti) w += sw.getComponent(i, k); }
+      if (w < 0.95) continue;   // only vertices the foot and toe carry alone: the leg IK can't move them off the plan
+      mesh.getVertexPosition(i, v).applyMatrix4(mesh.matrixWorld);
+      cand.push([i, v.x, v.y, v.z]);
+    }
+    if (cand.length < 6) return null;
+    const minY = Math.min(...cand.map((c) => c[2]));
+    const low = cand.filter((c) => c[2] < minY + 0.45 * (fw.y - minY));
+    const zs = low.map((c) => c[3]), xs = low.map((c) => c[1]);
+    const z0 = Math.min(...zs), z1 = Math.max(...zs), x0 = Math.min(...xs), x1 = Math.max(...xs);
+    const bins = new Map();
+    for (const c of low) {
+      const bz = Math.min(9, Math.floor(10 * (c[3] - z0) / Math.max(1e-6, z1 - z0))), bx = Math.min(2, Math.floor(3 * (c[1] - x0) / Math.max(1e-6, x1 - x0)));
+      const k = bz * 3 + bx, b = bins.get(k);
+      if (!b || c[2] < b[2]) bins.set(k, c);
+    }
+    const sole = [...bins.values()].sort((a, b) => a[0] - b[0]);
+    const inv = fq.clone().invert();
+    out[lr] = {
+      sole: Int32Array.from(sole.map((c) => c[0])),
+      // the sole's up axis and the foot's forward, in the foot bone's frame (the bind pose stands flat, facing +Z)
+      up: UP.clone().applyQuaternion(inv).normalize(),
+      fwd: new THREE.Vector3(0, 0, 1).applyQuaternion(inv).normalize(),
+      heelZ: z0, toeZ: z1, ankleY: fw.y - minY,
+    };
+  }
+  return out;
+}
+
+/** The skinned world positions of a foot's sole vertices (bones' world matrices must be current). out: Float64Array(3k). */
+export function solePoints(mesh, side, out = new Float64Array(3 * side.sole.length)) {
+  const v = _v0;
+  for (let k = 0; k < side.sole.length; k++) {
+    mesh.getVertexPosition(side.sole[k], v).applyMatrix4(mesh.matrixWorld);
+    out[3 * k] = v.x; out[3 * k + 1] = v.y; out[3 * k + 2] = v.z;
+  }
+  return out;
+}
+const _v0 = new THREE.Vector3(), _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3();
+const _q0 = new THREE.Quaternion(), _q1 = new THREE.Quaternion(), _m0 = new THREE.Matrix4(), _m1 = new THREE.Matrix4();
+
+const median = (a) => { const s = [...a].sort((x, y) => x - y); return s.length ? s[s.length >> 1] : 0; };
+
+/**
+ * Each clip's own standing sole height (avatar units, the model at the origin, unscaled): the median over one loop of
+ * the lowest sole vertex of either foot. The body is lowered by the blend of these by the clip weights, so the walk
+ * and the run stand on the floor too (the idle's floor alone left the run's planted foot 2 cm under it).
+ */
+export function clipFloors(template, clips, rig, { samples = 24 } = {}) {
+  if (!rig) return null;
+  const m = cloneSkinned(template);
+  let mesh = null;
+  m.traverse((o) => { if (o.isSkinnedMesh && !mesh) mesh = o; });
+  if (!mesh) return null;
+  const out = {};
+  for (const [k, c] of Object.entries(clips)) {
+    if (!c?.clip) continue;
+    const mixer = new THREE.AnimationMixer(m);
+    const act = mixer.clipAction(c.clip);
+    act.play();
+    const lows = [];
+    for (let s = 0; s < samples; s++) {
+      mixer.setTime((s / samples) * c.clip.duration);
+      m.updateMatrixWorld(true);
+      let lo = Infinity;
+      for (const lr of SIDES) { const p = solePoints(mesh, rig[lr]); for (let i = 1; i < p.length; i += 3) lo = Math.min(lo, p[i]); }
+      lows.push(lo);
+    }
+    out[k] = median(lows);
+    mixer.stopAllAction();
+    mixer.uncacheRoot(m);
+  }
+  return out;
+}
+let cloneSkinned = (o) => o.clone(true);
+/** avatars.mjs passes SkeletonUtils.clone (a plain clone would share the template's bones). */
+export function setCloner(fn) { cloneSkinned = fn; }
+
+/** The body's floor offset (avatar units) for these clip weights: the clips' own floors blended, else the idle's. */
+export function floorFor(kit, w) {
+  const F = kit?.floors, base = kit?.floor || 0;
+  if (!F || !w) return base;
+  let s = 0, t = 0;
+  for (const k in w) { if (!(w[k] > 0)) continue; s += w[k] * (F[k] ?? base); t += w[k]; }
+  return t > 0 ? s / t : base;
+}
+
+/** Runs of true at least minLen long; gaps of false up to maxGap between two runs closed (cleaned copy). */
+export function cleanRuns(flags, minLen = 3, maxGap = 1) {
+  const f = Array.from(flags, Boolean), n = f.length;
+  for (let i = 0; i < n;) {
+    if (f[i]) { i++; continue; }
+    let j = i; while (j < n && !f[j]) j++;
+    if (i > 0 && j < n && j - i <= maxGap) for (let q = i; q < j; q++) f[q] = true;
+    i = j;
+  }
+  for (let i = 0; i < n;) {
+    if (!f[i]) { i++; continue; }
+    let j = i; while (j < n && f[j]) j++;
+    if (j - i < minLen) for (let q = i; q < j; q++) f[q] = false;
+    i = j;
+  }
+  return f;
+}
+
+/** [start, end) of every run of true. */
+export function runsOf(flags) {
+  const out = [];
+  for (let i = 0; i < flags.length;) {
+    if (!flags[i]) { i++; continue; }
+    let j = i; while (j < flags.length && flags[j]) j++;
+    out.push([i, j]); i = j;
+  }
+  return out;
+}
+
+/** Stance flags from sole heights (m over the ground) and foot speeds (m/s), with hysteresis; skip[f] is never one. */
+export function detectStance(h, v, skip, k = 1, T = FOOT) {
+  const n = h.length, f = new Array(n).fill(false);
+  let on = false;
+  for (let i = 0; i < n; i++) {
+    if (skip?.[i]) { on = false; continue; }
+    on = on ? h[i] < T.hOut * k && v[i] < T.vOut * k : h[i] < T.hIn * k && v[i] < T.vIn * k;
+    f[i] = on;
+  }
+  const c = cleanRuns(f, T.minStance, T.maxGap);
+  for (let i = 0; i < n; i++) if (skip?.[i]) c[i] = false;
+  return c;
+}
+
+/**
+ * Break long stances into segments, each locked to its own anchor frame, with a step between them, when the foot would
+ * drift or twist too far under a body that turns or creeps (drift[f] = cumulative drift units of the clip's own foot
+ * in the world). Both feet together: one foot steps at a time, and only while the other is planted. A stance whose
+ * whole drift stays under 1 unit (every walk and run stance) is one segment anchored at its middle frame.
+ * Returns {l: [{from, to, anchor}], r: [...], steps: {l: [{from, to}], r: [...]}} (from inclusive, to exclusive).
+ */
+export function scheduleSteps(stance, drift, stepFrames) {
+  const segs = { l: [], r: [] }, steps = { l: [], r: [] };
+  const firstReach = (lr, from, end, units) => { for (let f = from; f < end; f++) if (drift[lr][f] - drift[lr][from] >= units) return f; return end - 1; };
+  const runs = { l: runsOf(stance.l), r: runsOf(stance.r) };
+  const long = { l: [], r: [] };
+  for (const lr of SIDES) for (const [i, j] of runs[lr]) {
+    if (drift[lr][j - 1] - drift[lr][i] < 1 || j - i < 2 * stepFrames + 4) segs[lr].push({ from: i, to: j, anchor: (i + j - 1) >> 1 });
+    else long[lr].push([i, j]);
+  }
+  if (!long.l.length && !long.r.length) return { segs, steps };
+  const n = stance.l.length;
+  const cur = { l: null, r: null }, busyUntil = { l: -1, r: -1 };
+  const runAt = (lr, f) => long[lr].find(([i, j]) => f >= i && f < j) || null;
+  for (let f = 0; f < n; f++) {
+    for (const lr of SIDES) {
+      const o = lr === "l" ? "r" : "l", run = runAt(lr, f);
+      if (!run) { if (cur[lr]) { cur[lr].to = f; segs[lr].push(cur[lr]); cur[lr] = null; } continue; }
+      if (!cur[lr] && f === run[0]) cur[lr] = { from: f, to: run[1], anchor: firstReach(lr, f, run[1], 0.5) };
+      if (!cur[lr] || f < busyUntil[lr]) continue;
+      const end = run[1];
+      if (drift[lr][f] - drift[lr][cur[lr].anchor] < 0.5 || f + stepFrames + 2 >= end) continue;
+      // the other foot must be planted for the whole step, and not stepping itself
+      if (busyUntil[o] > f || !stance[o][f] || !stance[o][Math.min(n - 1, f + stepFrames)]) continue;
+      cur[lr].to = f; segs[lr].push(cur[lr]);
+      const land = f + stepFrames;
+      steps[lr].push({ from: f, to: land });
+      cur[lr] = { from: land, to: end, anchor: Math.max(land, firstReach(lr, land, end, 0.5)) };
+      busyUntil[lr] = land;
+    }
+  }
+  for (const lr of SIDES) if (cur[lr]) segs[lr].push(cur[lr]);
+  for (const lr of SIDES) segs[lr].sort((a, b) => a.from - b.from);
+  return { segs, steps };
+}
+
+/** The 0..1 blend weight of a frame `d` frames outside a plant (d = 1 is the frame next to it), over `ramp` frames. */
+export const rampWeight = (d, ramp) => (d <= 0 ? 1 : d > ramp ? 0 : smooth01(1 - d / (ramp + 1)));
+
+/**
+ * The foot plan of one person for one shot. Poses the avatar's clip at every frame (poseRaw(f) places the body and
+ * plays the clip; it returns false for a frame that is not grounded: in the air, lifted, ...), and reads per foot the
+ * sole and the ground. ground(x, z, f) = the walkable height under (x, z) at frame f; baseY(f) = the body's height.
+ * Returns {n, state: {l: Uint8Array, r}, w: {l: Float32Array, r}, pos: {l: Float64Array(3n)}, quat: {l: Float64Array(4n)},
+ * gy: {l: Float64Array(n)}, segs, steps} or null (no rig). state: 0 free, 1 planted, 2 stepping, 3 blending in / out.
+ */
+export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, poseRaw, ground, baseY = () => 0, T = FOOT }) {
+  if (!rig || !mesh || !n) return null;
+  const k = Math.max(0.4, Math.min(1.6, heightM / 1.8));
+  const raw = {}, skip = new Array(n).fill(false);
+  for (const lr of SIDES) {
+    const K = rig[lr].sole.length;
+    raw[lr] = { pos: new Float64Array(3 * n), quat: new Float64Array(4 * n), scale: new Float64Array(n), loc: new Float64Array(3 * K * n), h: new Float64Array(n), gy: new Float64Array(n), yaw: new Float64Array(n), low: new Float64Array(3 * n) };
+  }
+  const pts = {};
+  for (let f = 0; f < n; f++) {
+    if (poseRaw(f) === false) skip[f] = true;
+    for (const lr of SIDES) {
+      const R = raw[lr], side = rig[lr], foot = bones[lr].foot;
+      foot.matrixWorld.decompose(_v1, _q0, _v2);
+      R.pos.set([_v1.x, _v1.y, _v1.z], 3 * f); R.quat.set([_q0.x, _q0.y, _q0.z, _q0.w], 4 * f); R.scale[f] = _v2.x;
+      const p = (pts[lr] = solePoints(mesh, side, pts[lr]));
+      _m0.copy(foot.matrixWorld).invert();
+      let lo = Infinity, li = 0;
+      for (let q = 0; q < side.sole.length; q++) {
+        _v0.set(p[3 * q], p[3 * q + 1], p[3 * q + 2]);
+        if (_v0.y < lo) { lo = _v0.y; li = q; }
+        _v0.applyMatrix4(_m0);
+        R.loc.set([_v0.x, _v0.y, _v0.z], 3 * (side.sole.length * f + q));
+      }
+      R.low.set([p[3 * li], p[3 * li + 1], p[3 * li + 2]], 3 * f);
+      R.gy[f] = ground(_v1.x, _v1.z, f);
+      R.h[f] = lo - ground(p[3 * li], p[3 * li + 2], f);
+      _v3.copy(side.fwd).applyQuaternion(_q0);
+      R.yaw[f] = Math.atan2(_v3.x, _v3.z);
+    }
+  }
+  // speeds (central differences of the foot bone) and drift units (the clip's own foot moving or turning in the world)
+  const stance = {}, drift = {};
+  for (const lr of SIDES) {
+    const R = raw[lr], v = new Float64Array(n), d = new Float64Array(n);
+    for (let f = 0; f < n; f++) {
+      const a = Math.max(0, f - 1), b = Math.min(n - 1, f + 1);
+      v[f] = b > a ? Math.hypot(R.pos[3 * b] - R.pos[3 * a], R.pos[3 * b + 1] - R.pos[3 * a + 1], R.pos[3 * b + 2] - R.pos[3 * a + 2]) * fps / (b - a) : 0;
+      if (f) {
+        const dy = Math.atan2(Math.sin(R.yaw[f] - R.yaw[f - 1]), Math.cos(R.yaw[f] - R.yaw[f - 1]));
+        d[f] = d[f - 1] + Math.hypot(R.pos[3 * f] - R.pos[3 * f - 3], R.pos[3 * f + 2] - R.pos[3 * f - 1]) / (T.stepDist * k) + Math.abs(dy) / T.stepYaw;
+      }
+    }
+    stance[lr] = detectStance(R.h, v, skip, k, T);
+    // a stance on ground far from the body's own height (a foot over a platform's edge) is not planted
+    for (const [i, j] of runsOf(stance[lr])) {
+      const m = (i + j - 1) >> 1;
+      if (Math.abs(R.gy[m] - baseY(m)) > T.far * k) for (let q = i; q < j; q++) stance[lr][q] = false;
+    }
+    drift[lr] = d;
+  }
+  const stepFrames = Math.max(4, Math.round(T.stepTime * fps));
+  const { segs, steps } = scheduleSteps(stance, drift, stepFrames);
+  const ramp = Math.max(1, Math.round(T.ramp * fps));
+  const plan = { n, k, fps, state: {}, w: {}, pos: {}, quat: {}, gy: {}, segs, steps, skip };
+  for (const lr of SIDES) {
+    const R = raw[lr], side = rig[lr], K = side.sole.length;
+    const st = new Uint8Array(n), w = new Float32Array(n), P = new Float64Array(3 * n), Q = new Float64Array(4 * n);
+    // planted frames: each segment's anchor pose, aligned to the ground's slope, lowered onto it frame by frame
+    for (const s of segs[lr]) {
+      const a = s.anchor;
+      _v1.fromArray(R.pos, 3 * a); _q0.fromArray(R.quat, 4 * a);
+      const sc = R.scale[a];
+      // the ground plane under the anchored foot: three sole points (heel, toe, the outer edge)
+      _m0.compose(_v1, _q0, _v2.setScalar(sc));
+      const loc = (q) => _v0.fromArray(R.loc, 3 * (K * a + q)).applyMatrix4(_m0).clone();
+      let hi = 0, ti = 0, si = 0;
+      for (let q = 0; q < K; q++) {
+        const z = R.loc[3 * (K * a + q) + 2], x = Math.abs(R.loc[3 * (K * a + q)]);
+        if (z < R.loc[3 * (K * a + hi) + 2]) hi = q;
+        if (z > R.loc[3 * (K * a + ti) + 2]) ti = q;
+        if (x > Math.abs(R.loc[3 * (K * a + si)])) si = q;
+      }
+      const ph = loc(hi), pt = loc(ti), ps = loc(si);
+      for (const p of [ph, pt, ps]) p.y = ground(p.x, p.z, a);
+      const nrm = new THREE.Vector3().subVectors(pt, ph).cross(new THREE.Vector3().subVectors(ps, ph)).normalize();
+      if (nrm.y < 0) nrm.negate();
+      if (!(nrm.y > 0.5)) nrm.copy(UP);
+      const planeY = (x, z) => ph.y - (nrm.x * (x - ph.x) + nrm.z * (z - ph.z)) / nrm.y;
+      const soleUp = side.up.clone().applyQuaternion(_q0);
+      const qA = new THREE.Quaternion().setFromUnitVectors(soleUp.normalize(), nrm).multiply(_q0);
+      const pA = _v1.clone();
+      for (let f = s.from; f < s.to; f++) {
+        // the lowest sole vertex at this frame's toe bend, with the foot at the anchor: exactly on the ground
+        _m1.compose(pA, qA, _v2.setScalar(R.scale[f]));
+        let gap = Infinity;
+        for (let q = 0; q < K; q++) {
+          _v0.fromArray(R.loc, 3 * (K * f + q)).applyMatrix4(_m1);
+          gap = Math.min(gap, _v0.y - planeY(_v0.x, _v0.z));
+        }
+        st[f] = 1; w[f] = 1;
+        P[3 * f] = pA.x; P[3 * f + 1] = pA.y - gap; P[3 * f + 2] = pA.z;
+        Q.set([qA.x, qA.y, qA.z, qA.w], 4 * f);
+      }
+    }
+    // turn steps: from one anchor to the next, lifted on an arc
+    for (const s of steps[lr]) {
+      const a = s.from - 1, b = s.to;
+      if (a < 0 || b >= n || st[a] !== 1 || st[b] !== 1) continue;
+      for (let f = s.from; f < s.to; f++) {
+        const t = smooth01((f - a) / (b - a));
+        _v1.fromArray(P, 3 * a).lerp(_v0.fromArray(P, 3 * b), t);
+        _v1.y += T.stepLift * k * Math.sin(Math.PI * (f - a) / (b - a));
+        _q0.fromArray(Q, 4 * a).slerp(_q1.fromArray(Q, 4 * b), t);
+        st[f] = 2; w[f] = 1;
+        P.set([_v1.x, _v1.y, _v1.z], 3 * f); Q.set([_q0.x, _q0.y, _q0.z, _q0.w], 4 * f);
+      }
+    }
+    // blend in before a plant and out after it, toward the nearest planted frame
+    for (let f = 0; f < n; f++) {
+      if (st[f] || skip[f]) continue;
+      let best = 0, bd = Infinity;
+      for (let d = 1; d <= ramp; d++) {
+        if (f - d >= 0 && st[f - d] === 1 && d < bd) { bd = d; best = f - d; break; }
+        if (f + d < n && st[f + d] === 1 && d < bd) { bd = d; best = f + d; break; }
+      }
+      // a skipped frame between this one and the plant stops the blend (no plant reaches across a jump)
+      if (bd === Infinity) continue;
+      let blocked = false;
+      for (let q = Math.min(f, best); q <= Math.max(f, best); q++) if (skip[q]) blocked = true;
+      if (blocked) continue;
+      st[f] = 3; w[f] = rampWeight(bd, ramp);
+      P.set(P.subarray(3 * best, 3 * best + 3), 3 * f); Q.set(Q.subarray(4 * best, 4 * best + 4), 4 * f);
+    }
+    plan.state[lr] = st; plan.w[lr] = w; plan.pos[lr] = P; plan.quat[lr] = Q; plan.gy[lr] = R.gy;
+  }
+  return plan;
+}
+
+/** Set a bone's world rotation (its parent's world matrices must be current). */
+function setWorldQuat(bone, qw) {
+  bone.parent.getWorldQuaternion(_q1);
+  bone.quaternion.copy(_q1.invert().multiply(qw));
+  bone.updateMatrixWorld(true);
+}
+
+const _A = new THREE.Vector3(), _B = new THREE.Vector3(), _C = new THREE.Vector3(), _T = new THREE.Vector3(), _P = new THREE.Vector3(), _D = new THREE.Vector3();
+/**
+ * Two-bone IK: turn the thigh and the calf so the foot bone's origin lands on target (a world point), keeping the
+ * knee on the side the pose bends it to (poleHint, a world direction, when the leg is straight), then give the foot
+ * the world rotation footQuat (null: keep its own). The target is clamped to what the leg can reach.
+ */
+export function twoBoneIK(thigh, calf, foot, target, footQuat = null, poleHint = null) {
+  thigh.getWorldPosition(_A); calf.getWorldPosition(_B); foot.getWorldPosition(_C);
+  const a = _A.distanceTo(_B), b = _B.distanceTo(_C);
+  _D.subVectors(target, _A);
+  const d = Math.max(Math.abs(a - b) + 1e-5, Math.min(a + b - 1e-5, _D.length()));
+  if (_D.lengthSq() < 1e-12 || a < 1e-6 || b < 1e-6) return false;
+  _D.normalize();
+  // the side the pose bends the knee to: the knee off the hip-to-foot line as posed, then square to the target line
+  _P.subVectors(_B, _A); _v2.subVectors(_C, _A).normalize(); _P.addScaledVector(_v2, -_P.dot(_v2));
+  if (_P.lengthSq() < 1e-8 * a * a && poleHint) _P.copy(poleHint);
+  _P.addScaledVector(_D, -_P.dot(_D));
+  if (_P.lengthSq() < 1e-12) return false;
+  _P.normalize();
+  const cosA = Math.max(-1, Math.min(1, (a * a + d * d - b * b) / (2 * a * d))), sinA = Math.sqrt(1 - cosA * cosA);
+  // the knee where it has to be: a along the target line, a sin(A) toward the pole
+  _T.copy(_A).addScaledVector(_D, a * cosA).addScaledVector(_P, a * sinA);
+  _q0.setFromUnitVectors(_v0.subVectors(_B, _A).normalize(), _v1.subVectors(_T, _A).normalize());
+  setWorldQuat(thigh, _q0.multiply(thigh.getWorldQuaternion(new THREE.Quaternion())));
+  calf.getWorldPosition(_B); foot.getWorldPosition(_C);
+  _T.copy(_A).addScaledVector(_D, d);
+  _q0.setFromUnitVectors(_v0.subVectors(_C, _B).normalize(), _v1.subVectors(_T, _B).normalize());
+  setWorldQuat(calf, _q0.multiply(calf.getWorldQuaternion(new THREE.Quaternion())));
+  if (footQuat) setWorldQuat(foot, footQuat);
+  return true;
+}
+
+/** Put back the clip's own values groundFeet saved (call before the mixer poses the next frame). */
+export function restoreClipPose(saved) {
+  if (!saved?.length) return;
+  for (const [o, prop, v] of saved) o[prop].copy(v);
+  saved.length = 0;
+}
+
+/** The named leg bones of a posed avatar clone ({l: {thigh, calf, foot, toe}, r, root}), or null. */
+export function legBones(skinBones, rig) {
+  if (!rig) return null;
+  const out = { root: skinBones[rig.root] };
+  for (const lr of SIDES) {
+    const B = rig.bones[lr], o = {};
+    for (const k of ["thigh", "calf", "foot", "toe"]) { o[k] = skinBones[B[k]]; if (!o[k]) return null; }
+    out[lr] = o;
+  }
+  return out.root ? out : null;
+}
+
+/**
+ * Ground the feet of an avatar posed by its clip at frame f (after avatars.drive and placeHolder): the plan's target
+ * per foot, blended with the clip's own foot by the plan's weight; the pelvis lowered when a planted foot is out of
+ * reach; the legs solved; a swinging foot kept above the ground. Returns {drop, feet: {l: w, r: w}} or null.
+ */
+export function groundFeet({ plan, rig, mesh, bones, holder, frame, saved = null, T = FOOT }) {
+  if (!plan || !bones) return null;
+  // The clip's own values of every bone this changes, for restoreClipPose: three's PropertyMixer only writes a bone
+  // when the clip's value differs from what it wrote last, so the same frame posed again would keep these IK values.
+  if (saved) {
+    saved.length = 0;
+    saved.push([bones.root, "position", bones.root.position.clone()]);
+    for (const lr of SIDES) for (const k of ["thigh", "calf", "foot"]) saved.push([bones[lr][k], "quaternion", bones[lr][k].quaternion.clone()]);
+  }
+  const f = Math.max(0, Math.min(plan.n - 1, Math.round(frame)));
+  if (plan.skip[f]) return { drop: 0, feet: { l: 0, r: 0 } };
+  holder.updateMatrixWorld(true);
+  const tgt = {}, fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(holder.getWorldQuaternion(new THREE.Quaternion()));
+  let drop = 0;
+  for (const lr of SIDES) {
+    const w = plan.w[lr][f];
+    if (!(w > 0)) continue;
+    const B = bones[lr];
+    const pos = B.foot.getWorldPosition(new THREE.Vector3()).lerp(_v0.fromArray(plan.pos[lr], 3 * f), w);
+    const quat = B.foot.getWorldQuaternion(new THREE.Quaternion()).slerp(_q0.fromArray(plan.quat[lr], 4 * f), w);
+    tgt[lr] = { pos, quat, w };
+    // out of reach: how far the hips must come down for the leg to reach (weighted, so it eases in and out)
+    const H = B.thigh.getWorldPosition(new THREE.Vector3());
+    const L = (H.distanceTo(B.calf.getWorldPosition(_v1)) + _v1.distanceTo(B.foot.getWorldPosition(_v2))) * T.reach;
+    const hz = Math.hypot(pos.x - H.x, pos.z - H.z), vy = H.y - pos.y;
+    if (hz < L) { const need = vy - Math.sqrt(L * L - hz * hz); if (need > 0) drop = Math.max(drop, need * w); }
+  }
+  drop = Math.min(drop, T.maxDrop * plan.k);
+  if (drop > 1e-6 && bones.root?.parent) {
+    const wp = bones.root.getWorldPosition(new THREE.Vector3());
+    wp.y -= drop;
+    bones.root.position.copy(bones.root.parent.worldToLocal(wp));
+    bones.root.updateMatrixWorld(true);
+  }
+  for (const lr of SIDES) if (tgt[lr]) twoBoneIK(bones[lr].thigh, bones[lr].calf, bones[lr].foot, tgt[lr].pos, tgt[lr].quat, fwd);
+  // a foot not fully planted never goes into the ground (the lowered hips, a crossfade, a ramp up)
+  for (const lr of SIDES) {
+    if ((tgt[lr]?.w ?? 0) >= 1) continue;
+    const p = solePoints(mesh, rig[lr]);
+    let lo = Infinity;
+    for (let i = 1; i < p.length; i += 3) lo = Math.min(lo, p[i]);
+    const under = plan.gy[lr][f] - lo;
+    if (under > 1e-4) {
+      const B = bones[lr], q = B.foot.getWorldQuaternion(new THREE.Quaternion());
+      twoBoneIK(B.thigh, B.calf, B.foot, B.foot.getWorldPosition(new THREE.Vector3()).addScaledVector(UP, under), q, fwd);
+    }
+  }
+  return { drop, feet: { l: tgt.l?.w || 0, r: tgt.r?.w || 0 } };
+}
