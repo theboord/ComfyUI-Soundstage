@@ -777,3 +777,22 @@ test("an underwater stroke dropped in: moving sideways under, rising to the surf
   for (let f = 40; f < 145; f++) assert.equal(plan.mode[f], "under", `f${f}: under at the keyed depth`);
   for (const f of [60, 100, 140]) { st.setFrame(f); assert.ok(headY(st, "u") < LEVEL, `f${f}: the head under the surface`); }
 });
+
+// Fifth pass: a timed mount onto the speedboat (a swimmer keyed at 0, swimming x 4 -> 1, mount_at 60): 2895a92's keyed-
+// at-0 support put them on the deck the frame the path reached its footprint (feet 2.33 -> 3.16 at f53, seven frames
+// before the mount) and the hop then ran from up there, 0.3-0.5 m over the deck until f58.
+test("a timed mount onto the speedboat from the water: swims until the hop, then climbs out from the water (was: popped onto the deck at f53)", () => {
+  const boat = { id: "b", name: "b", kind: "speedboat", position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0] }], rotation_deg: 0 };
+  const sw = { id: "s", name: "s", kind: "man", height_m: 1.8, position: [4, 0, -1], keys: [{ frame: 0, position: [4, 0, -1] }, { frame: 60, position: [1, 0, -1] }], rotation_deg: 0, mount_id: "b", mount_at: 60 };
+  const st = tank([boat, sw]), g = st.actorMeshes.get("s"), hop0 = 60 - 10;
+  const low = [], hip = [];
+  for (let f = 0; f < 90; f++) { st.setFrame(f); low.push(lowest(g)); hip.push(hipsY(st, "s")); if (f < hop0) assert.ok(g.userData.swimOn, `f${f}: still swimming before the hop`); }
+  // (the feet go up and down 0.3 m with the kick; the hips stay at the surface)
+  for (let f = 1; f < hop0; f++) assert.ok(Math.abs(hip[f] - hip[f - 1]) < 0.1, `f${f}: no pop before the hop (hips ${hip[f - 1].toFixed(2)} -> ${hip[f].toFixed(2)})`);
+  assert.ok(Math.max(...low.slice(0, hop0)) < LEVEL, `in the water until the hop (highest feet ${Math.max(...low.slice(0, hop0)).toFixed(2)})`);
+  for (let f = hop0; f <= 60; f++) assert.ok(Math.abs(hip[f] - hip[f - 1]) < 0.2, `f${f}: the hips climb out smoothly (${hip[f - 1].toFixed(2)} -> ${hip[f].toFixed(2)})`);
+  const deck = st._deckAt(1, -1, 6, 70);
+  st.setFrame(70);
+  assert.ok(!g.userData.swimOn && lowest(g) < deck + 0.1, `aboard after the mount, not hovering over the deck (feet ${lowest(g).toFixed(2)}, deck ${deck?.toFixed(2)})`);
+  for (const f of [55, 52, 30, 58]) { st.setFrame(f); assert.ok(Math.abs(lowest(g) - low[f]) < 1e-9, `f${f}: the same scrubbed`); }
+});

@@ -2370,6 +2370,15 @@ export class Stage {
         const t = (this.frame - hopStart) / hopN;
         if (climb) { mountHorse(g, hg, seatPos, t, h, drop); continue; }
         const e = t * t * (3 - 2 * t);
+        if (g.userData.swimOn) {
+          // climbing out of the water (a timed mount onto a boat): upright at the swimmer's hips, then up and in. The
+          // swim pose (lying along the surface) is not carried into the hop, and nothing pops before the hop starts.
+          g.updateMatrixWorld(true);
+          const J = g.userData.joints, hw = J.l_hip.getWorldPosition(new THREE.Vector3()).add(J.r_hip.getWorldPosition(new THREE.Vector3())).multiplyScalar(0.5);
+          Swim.unswim(g);
+          g.rotation.order = "YXZ"; g.rotation.x = 0; g.rotation.z = 0;
+          g.position.set(hw.x, hw.y - J.l_hip.position.y * (g.scale.y || 1), hw.z);
+        }
         if (t < 0.5) applyPose(g, "stand", h);
         const from = g.position.clone(); // standing spot, set by the free-actor pass above
         g.position.lerpVectors(from, seatPos, e);
