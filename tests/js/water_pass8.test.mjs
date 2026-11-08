@@ -209,3 +209,29 @@ test("every swim mode varies per person: duplicates and different people never t
   st.state.actors[0].name = "Man 1"; st.state.actors[1].name = "Man 2"; st.state.actors[2].name = "Bob";
   for (const [x, y] of [["a", "b"], ["a", "c"]]) { const { dh, dl } = apart(st, x, y); assert.ok(dh > 0.01 && dl > 0.05, `${x} vs ${y}: not in step (head ${dh.toFixed(4)}, limbs ${dl.toFixed(4)})`); }
 });
+
+// ------------------------------------------------------------------ 7. The duplicate's seed and the clock
+// Before: the copy's seed was `kind|name|<id>` and the id comes from Date.now(), so its struggle and sink changed with
+// the clock, and the seventh pass's duplicate test failed 1 run in 15 (at 7616d31). The seed is from the original's
+// own seed key and a copy number: the same copy on any clock.
+test("a duplicate's seed doesn't depend on the clock: the same copy, the same water variation, whenever it is made", () => {
+  const woman = { id: "w", name: "Woman 1", seed: "woman|Woman 1", kind: "woman", height_m: 1.65, position: [-2, 4.5, 0], keys: [{ frame: 0, position: [-2, 4.5, 0] }], rotation_deg: 0, swim: "cant", key_y: true };
+  const real = Date.now, seeds = new Set(), apart = new Set();
+  try {
+    for (let k = 0; k < 12; k++) {
+      Date.now = () => 1.78e12 + k * 7919;
+      const st = tank([woman], { frames: 241 });
+      const id = st.duplicate("w"), c = st.state.actors.find((x) => x.id === id);
+      seeds.add(c.seed);
+      let mx = 0;
+      for (let f = 0; f < 241; f += 4) { st.setFrame(f); mx = Math.max(mx, Math.abs(st.actorMeshes.get("w").position.y - st.actorMeshes.get(id).position.y)); }
+      apart.add(mx.toFixed(6));
+      assert.ok(mx > 0.05, `clock ${k}: the copy doesn't sink in step (${mx.toFixed(3)} m apart at most)`);
+      // a second copy gets a seed of its own too
+      const id2 = st.duplicate("w"), c2 = st.state.actors.find((x) => x.id === id2);
+      assert.ok(c2.seed !== c.seed && c2.seed !== woman.seed, `a second copy's own seed (${c2.seed})`);
+    }
+  } finally { Date.now = real; }
+  assert.equal(seeds.size, 1, `one seed whatever the clock (${[...seeds].join(", ")})`);
+  assert.equal(apart.size, 1, "the same motion whatever the clock");
+});

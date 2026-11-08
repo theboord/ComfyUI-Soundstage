@@ -4983,8 +4983,12 @@ export class Stage {
     c.id = nid;
     c.name = `${a.name} copy`;
     // its own water variation (stored, so a reload keeps it): a copied seed made the copy sink, struggle and bob in
-    // step with the original, 0 m apart at every frame
-    c.seed = `${a.kind}|${c.name}|${nid}`;
+    // step with the original, 0 m apart at every frame. From the original's own seed key and a copy number, never the
+    // clock (the id is `kind_<Date.now()>`: the copy's struggle changed with the time it was made)
+    const from = this._seedKey(a);
+    let n = 1;
+    while (this.state.actors.some((x) => x.seed === `${from}|copy ${n}`)) n++;
+    c.seed = `${from}|copy ${n}`;
     delete c.by_shot;   // a shot's own blocking belongs to the original; the copy gets the base keys (below, offset)
     const off = Math.max(1, (a.height_m || 1) * 0.8);
     // The BASE keys, never the active shot's by_shot keys: the copy then moves like the original in every shot
