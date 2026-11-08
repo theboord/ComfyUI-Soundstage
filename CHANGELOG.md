@@ -5,6 +5,46 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-07
 
+**Ask hooks, 2026-11-07 evening: project id, Cut panel, sit / sit on the floor, lights down, read-only Play, local + num_ctx for the model server (private branch `private/ask-hooks`)**
+
+- **Still wrong (read first, known limits):** checked with Node and pytest only (the real Rocketbox man sits in a Node
+  test, measured by bone positions), not looked at in the browser, the App, a render or a live ComfyUI / Ollama.
+  - **The seated lifelike body is measured, not seen:** `sitBody` aims thighs, shins and arms in world space with
+    shortest-arc turns; the test checks hips on the seat, thighs level, shins down, toes forward and hands on the lap,
+    but a twist in a knee or a hand clipping a thigh would only show on screen. Sitting on the floor is knees-up only
+    (no cross-legged), and a keyed (moving) person sitting on the floor slides along their keys seated.
+  - **Only chairs, benches, sofas, armchairs, stools, rocks, tables, cubes (and a named static custom prop) can be sat
+    on with `setPose`;** car seats, horses, bikes and boats keep their own mounts, and those riders stay clay as
+    before. A custom prop's seat is guessed at 0.6 x its height. A seat now also scales with the prop's `height_m`
+    against the library height (a resized chair has a higher seat; scenes at the library size are unchanged).
+  - **Lights down scales lights, not emission:** neon, screens and other emissive surfaces keep their glow; a sky
+    that is a picture (a backdrop plate) is not dimmed. The clay pass is dimmed too. There is no slider for it in the
+    App yet (stage API and Ask's `host.lights` only).
+  - **num_ctx is estimated from characters** (length / 3.5), not counted by the model's tokenizer; a prompt over the
+    cap (`SOUNDSTAGE_ASSISTANT_MAX_CTX`, default 32768) is still capped, and Ollama then drops its oldest part.
+    `local` compares the URL's host name with loopback and this machine's own name only (no DNS): a LAN address of
+    this same machine reads as `false`.
+- **Playing a shot wrote its camera keys (`web/stage/stage.mjs` `_camKeys` via `_cameraAt` / `_rigCameraAt` /
+  `keyInfo`):** a shot with no keys got one stored on its first played frame, and every played frame re-pointed the
+  flat `camera_keys` field at the active shot. Playback, scrubbing and the key strip now read through `_camKeysView()`
+  (never writes); edits still create the first key; the flat field follows the shot on `setActiveShot`
+  (`tests/js/askhooks_play.test.mjs`: the real `setFrame` over every frame leaves the scene byte-identical).
+- **`stage.setPose(id, "sit" | "sit_floor" | "stand", {on})`:** sit on the nearest seat within 1.5 m or a named one
+  (seat height from the prop: chair 0.47 m, sofa 0.54, armchair 0.44, new `MOUNTS` entries), on the floor, or stand;
+  one undo step, refusals change nothing. A person sitting on a chair / bench / sofa or on the floor is no longer sent
+  to the clay: the lifelike body sits (`web/stage/people/avatars.mjs` `sitBody`, `avatarcore.clayReason` ctx.sits).
+  No new clay-only UI (`tests/js/askhooks_sit.test.mjs`).
+- **`stage.setExposure(stops)` (lights down):** a scene dimmer, -6..+2 stops, saved as `lighting.exposure_stops`, one
+  undo step; the prompt's lighting line says the lights are dimmed (`web/stage/lighting.mjs`,
+  `tests/js/askhooks_lights.test.mjs`).
+- **Ask's host (`web/soundstage.js` `mountAsk`, `web/hosthooks.mjs`):** `project()` -> `{name, id}` (id confirmed via
+  `window.__ssProject.project()`, else null), `cut.panel()` -> the live `CutPanel`, `lights` `{get, set, down, reset}`,
+  `stage.setPose` (`tests/js/askhooks_host.test.mjs`).
+- **Model server (`soundstage/assistant.py`):** `status()` has `local` (true on this machine / loopback);
+  `/soundstage/assistant/chat` sets `num_ctx` sized to the prompt (8192 for a ~3,500-token planner prompt; 4096
+  floor; `SOUNDSTAGE_ASSISTANT_MAX_CTX` cap) (`tests/test_assistant.py`).
+- Every call, its return shape and its refusals: `web/stage/STAGE_API.md`.
+
 **Close-out, 2026-11-07: a collected copy is judged by id first (private branch `private/project-id`)**
 
 - **Still wrong (read first, known limits):** checked with Node and pytest only, not in the browser, the App or a live
