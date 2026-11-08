@@ -17,11 +17,11 @@ const realFetch = globalThis.fetch;
 globalThis.fetch = async (input, init) => { const url = typeof input === "string" ? input : input.url; if (url.startsWith("file:")) return new Response(readFileSync(fileURLToPath(url)), { status: 200 }); return realFetch(input, init); };
 
 const LEVEL = 2.5;   // the Water tank's level (environments.mjs)
-function tank(actors, { frames = 121, set = "water_tank", keepSet = false } = {}) {
+function tank(actors, { frames = 121, set = "water_tank", keepSet = false, env = {} } = {}) {
   clearSetCache();
   const st = Object.create(Stage.prototype);
   const changes = [];
-  Object.assign(st, { state: { ...structuredClone(DEFAULT_SCENE), shot: { frames, fps: 24 }, actors: structuredClone(actors), environment: { set } },
+  Object.assign(st, { state: { ...structuredClone(DEFAULT_SCENE), shot: { frames, fps: 24 }, actors: structuredClone(actors), environment: { set, ...env } },
     view: "clay", key: "start", frame: 0, actorMeshes: new Map(), root: new THREE.Group(), scene: new THREE.Scene(),
     camera: new THREE.PerspectiveCamera(40, 1.85, 0.1, 200), render() {}, onChange: (s) => changes.push(s), onInteract() {}, onSelect() {}, _buildLights() {} });
   st.scene.add(st.root); st._buildSet(); if (!keepSet) st._setGroup = undefined; st.live = new LiveEdit(st, liveKinds()); st.setFrame(0);
@@ -631,4 +631,40 @@ test("a person placed or dragged onto the dock or a boat the way the app does it
   assert.ok(!g4.userData.swimOn, "not in the swim pose after the drag");
   assert.equal(after.length, again.length);
   after.forEach((p, i) => assert.ok(p.every((v, j) => Math.abs(v - again[i][j]) < 1e-6), "posed exactly as the saved scene shows them (seated)"));
+});
+
+test("a hop on the dock, a key a little high, and a speedboat deck on a swell keep the person aboard (was: through the dock, to the lake floor, into the sea)", () => {
+  const DOCK = 1.81;
+  // a 0.5 m hop on the dock (8fc04ef: dropped to 0.78 m under the dock top), and a man keyed 0.2 m over it (fell to
+  // the lake floor)
+  const st = tank([keyed("h", "man", [[0, [-6, DOCK, -16]], [12, [-6, DOCK + 0.5, -16]], [24, [-6, DOCK, -16]]]), keyed("a", "man", [[0, [-6.5, DOCK + 0.2, -14]]])], { set: "lake", keepSet: true, frames: 73 });
+  const hop = [];
+  for (let f = 0; f < 73; f++) {
+    st.setFrame(f);
+    for (const id of ["h", "a"]) assert.ok(!st.actorMeshes.get(id).userData.swimOn, `${id} f${f}: not in the water`);
+    hop.push(lowest(st.actorMeshes.get("h")));
+    assert.ok(Math.abs(lowest(st.actorMeshes.get("a")) - DOCK) < 0.08, `keyed 0.2 m high f${f}: stands on the dock (${lowest(st.actorMeshes.get("a")).toFixed(2)})`);
+  }
+  assert.ok(Math.min(...hop) > DOCK - 0.08, `the hop never goes through the dock (lowest ${Math.min(...hop).toFixed(2)})`);
+  assert.ok(hop[12] > DOCK + 0.35, `it goes up (${hop[12].toFixed(2)} at the top)`);
+  assert.ok(Math.abs(hop[40] - DOCK) < 0.08, `and lands back on it (${hop[40].toFixed(2)})`);
+  for (let f = 1; f < 73; f++) assert.ok(Math.abs(hop[f] - hop[f - 1]) < 0.12, `f${f}: a smooth arc (${hop[f - 1].toFixed(2)} -> ${hop[f].toFixed(2)})`);
+  // the speedboat on a long ocean swell (the deck heaves ~1 m): keyed at the deck at f0, or at the deck at mid-shot
+  const boat = { id: "b", name: "b", kind: "speedboat", position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0] }], rotation_deg: 0 };
+  const sea = { set: "open_water", keepSet: true, frames: 241, env: { sea_state: "swell" } };
+  const probe = tank([boat], sea);
+  const decks = Array.from({ length: 241 }, (_, f) => probe._deckAt(0, -1, 8, f));
+  assert.ok(Math.max(...decks) - Math.min(...decks) > 0.5, `the deck really heaves (${Math.min(...decks).toFixed(2)}..${Math.max(...decks).toFixed(2)})`);
+  for (const k of [decks[0], decks[120]]) {
+    const st2 = tank([boat, keyed("d", "man", [[0, [0, k, -1]]])], sea);
+    const g = st2.actorMeshes.get("d");
+    let wet = 0, worst = 0;
+    for (let f = 0; f < 241; f++) {
+      st2.setFrame(f);
+      if (g.userData.swimOn) wet++;
+      worst = Math.max(worst, Math.abs(lowest(g) - st2._deckAt(g.position.x, g.position.z, 8, f)));
+    }
+    assert.equal(wet, 0, `keyed at ${k.toFixed(2)}: never in the sea (${wet} of 241 frames)`);
+    assert.ok(worst < 0.1, `keyed at ${k.toFixed(2)}: the feet ride the deck (worst ${worst.toFixed(2)} m off it)`);
+  }
 });

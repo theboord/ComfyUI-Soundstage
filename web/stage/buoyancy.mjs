@@ -327,16 +327,20 @@ export function plungeTrack({ ky, v0 = 0, level, floor = 0, fps = 24, n, height 
  * frog then kick up to the surface like the others; a diver eases from the bottom of the plunge to the depth the stage
  * holds them at); keyed in the water they are not tracked here (the stage keeps them at their keyed depth).
  * support[f] (optional): the height of a walkable surface under the keyed feet besides the water's floor (a dock, a
- * boat's deck, a platform), or null. Keyed standing on it (feet within -5..+15 cm of it, and it is above the water or
- * shallow enough to stand on) they are on their keys there, off the water: supported[f] and ground[f]. Over the water
+ * boat's deck, a platform), or null. Keyed on it (feet from `below[f]` m under it, default 5 cm, a boat's deck heaving
+ * up past keyed feet: the stage passes 0.9, to 1.5 m over it: a hop, a jump, a key a little high; keyed at the floor,
+ * 0, the way the app places and drags people: onto it), and it is above the water or shallow enough to stand on, they
+ * are off the water there: supported[f] and ground[f], standing at standY[f] = the support plus how far the keys are
+ * above their lowest point in that stretch (so a hop arcs over the dock, a deck's heave carries them up and down, and a
+ * key 0.2 m high stands on it). Over the water
  * with nothing under them, the fall starts where the keyed path leaves its support (the first frame off it) or, keyed
  * up there from the start of the shot, at the last frame before the keys start to go down (a hold, then a step off:
  * held[f] and ground[f] until then); keys that never go down drop at once.
  */
-export function personTrack({ mode, keyY, over, level, floor = 0, fps = 24, height = 1.8, hipY = 0.95, seed = 1, standHeight = height, support = null }) {
+export function personTrack({ mode, keyY, over, level, floor = 0, fps = 24, height = 1.8, hipY = 0.95, seed = 1, standHeight = height, support = null, below = null }) {
   const n = keyY.length, k = height / 1.8;
   const styles = new Array(n).fill(null), hipsY = new Array(n).fill(null), hipsW = new Array(n).fill(0), modes = new Array(n).fill(null);
-  const ground = new Array(n).fill(false), supported = new Array(n).fill(false), held = new Array(n).fill(false);
+  const ground = new Array(n).fill(false), supported = new Array(n).fill(false), held = new Array(n).fill(false), standY = new Array(n).fill(null);
   const diver = mode === "dive" || mode === "hover", keyedDepth = diver || mode === "flutter" || mode === "frog" || mode === "stroke";
   // On a dock, a deck or anything else walkable under the feet: on their keys there, not in the water.
   const wet = over.slice();
@@ -344,9 +348,17 @@ export function personTrack({ mode, keyY, over, level, floor = 0, fps = 24, heig
     const s = support[f];
     if (!over[f] || s == null || !(s > floor + 0.05)) continue;
     const d = keyY[f] <= floor + 0.05 ? 0 : keyY[f] - s;   // keyed at the floor (placed, dragged): onto what is there
-    if (d < -0.05 || d > 0.15) continue;
+    if (d < -(below?.[f] ?? 0.05) || d > 1.5) continue;
     if (s < level - 0.05 && !canStand(level - s, standHeight)) continue;   // a ledge too deep to stand on: they swim
     supported[f] = true; ground[f] = true; wet[f] = false;
+  }
+  // Each stretch on a support: they stand on it, plus the keys' rise over their lowest point there (a hop, a jump).
+  for (let f = 0; f < n;) {
+    if (!supported[f]) { f++; continue; }
+    let e = f, base = Infinity;
+    for (; e < n && supported[e]; e++) if (keyY[e] > floor + 0.05) base = Math.min(base, keyY[e]);
+    for (let i = f; i < e; i++) standY[i] = support[i] + (keyY[i] > floor + 0.05 ? Math.max(0, keyY[i] - base) : 0);
+    f = e;
   }
   const treadHips = level - 0.52 * k, struggleHips = level - 0.6 * k, backHips = level - 0.16 * k;
   const sinks = mode === "cant" || mode === "sink";
@@ -478,5 +490,5 @@ export function personTrack({ mode, keyY, over, level, floor = 0, fps = 24, heig
       modes[fr] = y + 0.75 * k > level ? "surface" : "under";
     }
   }
-  return { styles, hipsY, hipsW, modes, ground, supported, held };
+  return { styles, hipsY, hipsW, modes, ground, supported, held, standY };
 }

@@ -2243,7 +2243,7 @@ export class Stage {
         const gp = rig === "biped" && !air && !a.mocap && g.userData.joints ? this._gaitPlan(a, g) : null;
         if (gp) {
           // over the water on a dock or a deck (keyed at 0 by placeInFrame or a drag, too): the body stands on it
-          const onKeys = this._standOnKeys(a, g, this.frame), baseY = Math.max(this._heightAt(a, this.frame), onKeys ?? -Infinity);
+          const onKeys = this._standOnKeys(a, g, this.frame), baseY = onKeys ?? this._heightAt(a, this.frame);
           Gait.applyHuman(g, gp, this.frame, { yaw: g.rotation.y, baseY, support: (x, z) => Math.max(this._supportAt(x, z, baseY), onKeys ?? -Infinity) });
           if (!gp.speed[Math.min(gp.n - 1, this.frame)] || gp.speed[Math.min(gp.n - 1, this.frame)] < 0.15) this._bodyMotion(g, a, false, 0, 0);
         } else {
@@ -2254,7 +2254,7 @@ export class Stage {
             if (l.part === "knee") l.pivot.rotation.x = 1.1;
             if (l.part === "shoulder") l.pivot.rotation.x = -1.2;
           }
-          g.position.y = Math.max(this._heightAt(a, this.frame), rig === "biped" ? this._standOnKeys(a, g, this.frame) ?? -Infinity : -Infinity) +
+          g.position.y = ((rig === "biped" ? this._standOnKeys(a, g, this.frame) : null) ?? this._heightAt(a, this.frame)) +
             (moving && !air && rig !== "vehicle" ? 0.014 * (a.height_m || 1.8) * Math.abs(Math.sin(cycle)) : 0);
           g.userData.gaitCycle = cycle;
           if (rig === "biped" && g.userData.joints && !air) this._bodyMotion(g, a, moving, speed, cycle);
@@ -3792,7 +3792,7 @@ export class Stage {
     if (c && c.sig === sig && c.g === g) return c.plan;
     const UNDER = ["flutter", "frog", "stroke", "hover", "dive"];
     const hipY = (g?.userData?.joints?.l_hip?.position.y || 0.53 * h / (g?.scale?.y || 1)) * (g?.scale?.y || 1);
-    const pos = [], yaw = [], mode = [], keyY = [], over = [], support = [];
+    const pos = [], yaw = [], mode = [], keyY = [], over = [], support = [], below = [];
     let any = false, under = 0;
     for (let f = 0; f <= last; f++) {
       const p = this._actorPosAt(a, f), ky = p[1] || 0;   // the keyed height (a diver's hover below replaces p[1])
@@ -3811,7 +3811,16 @@ export class Stage {
       keyY.push(ky); over.push(!reef && !!m);
       // keyed up there: what is under the keyed feet; keyed at 0 (how placeInFrame and a live drag key a person: the
       // feet follow the floor): anything walkable over the water there, a dock or a deck, from 3 m above the surface
-      support.push(!reef && m ? (ky > 0.05 ? this._standOnAt(p[0], p[2], ky, f) : this._standOnAt(p[0], p[2], pool, f, 3)) : null);
+      let sup = null, bel = 0.05;
+      if (!reef && m) {
+        if (ky > 0.05) {
+          sup = this._standOnAt(p[0], p[2], ky, f);
+          // a boat's deck on a swell heaves up past the keyed feet (up to 0.9 m): still aboard, carried with it
+          const dk = this._deckAt(p[0], p[2], ky + 0.9, f);
+          if (dk != null && (sup == null || dk >= sup - 1e-6)) { sup = dk; bel = 0.9; }
+        } else sup = this._standOnAt(p[0], p[2], pool, f, 3);
+      }
+      support.push(sup); below.push(bel);
     }
     let plan = null, stand = null;
     if (any) {
@@ -3821,12 +3830,12 @@ export class Stage {
       // In a pool: standing on a dock or a deck, the drop in (timed by the keys), the kick up, and the modes that
       // aren't a stroke (back float, can't swim, sink slowly). The underwater modes and dive get the drop in only.
       if (!reef) {
-        track = Buoy.personTrack({ mode: smode, keyY, over, level: pool, floor: 0, fps, height: h, hipY, seed: Swim.seedOf(a.id), standHeight: (a.height_m || LIBRARY[a.kind]?.height || 1.8) * (a.scale || 1), support });
+        track = Buoy.personTrack({ mode: smode, keyY, over, level: pool, floor: 0, fps, height: h, hipY, seed: Swim.seedOf(a.id), standHeight: (a.height_m || LIBRARY[a.kind]?.height || 1.8) * (a.scale || 1), support, below });
         // ground: water they can stand in (auto / can't swim), a dock or a deck under them, or a keyed hold before a
         // jump: off the swim plan, on their keys (the gait walks them)
         for (let f = 0; f <= last; f++) if (track.modes[f]) mode[f] = track.modes[f]; else if (track.ground[f]) mode[f] = null;
         // the height they stand at on a deck or a dock, or are held at before a jump (the gait's floor there)
-        stand = track.supported.map((v, f) => (v ? support[f] : track.held[f] ? keyY[f] : null));
+        stand = track.supported.map((v, f) => (v ? track.standY[f] : track.held[f] ? keyY[f] : null));
         if (!stand.some((v) => v != null)) stand = null;
         if (!mode.some(Boolean)) { this._swimCache.set(a, { sig, g, plan: null, stand }); return null; }
       }
