@@ -213,3 +213,27 @@ test("a very heavy person still sinks smoothly: capped per frame, and still fast
     }
   }
 });
+
+// ------------------------------------------------------------------ 10. Fast in and out: the ease out never runs into the walk back in
+// At 36c3648, keys 0 -> -12 -> 0 -> -12 at 30 frames each (0.4 m a frame), the ease out of the water was still running
+// when the keys came back in: the walk in started from the walk's pose, the hips 1.709 m in one frame at f42 (1.78 ->
+// 0.95, 0.83 m straight down). Out of the water for less than a hold, half a second's ease and the step down, the
+// swimmer stays at the wall; a longer stretch fits the ease out in before the walk back in.
+test("in and out of the tank fast (0.4 m a frame): no drop where the ease out meets the walk back in", () => {
+  for (const keys of [[[0, [0, 0, 0]], [30, [-12, 0, 0]], [60, [0, 0, 0]], [90, [-12, 0, 0]]], [[0, [0, 0, 0]], [30, [-12, 0, 0]], [60, [0, 0, 0]], [90, [-12, 0, 0]], [120, [0, 0, 0]]]]) {
+    const N = keys.at(-1)[0] + 1, st = tank([keyed("m", "man", keys, { key_y: false })], { frames: N, keepSet: true });
+    let prev = null, dy = 0, dyAt = -1, d = 0, dAt = -1;
+    for (let f = 0; f < N; f++) {
+      st.setFrame(f);
+      const p = hipW(st, "m");
+      if (prev) { if (Math.abs(p.y - prev.y) > dy) { dy = Math.abs(p.y - prev.y); dyAt = f; } if (p.distanceTo(prev) > d) { d = p.distanceTo(prev); dAt = f; } }
+      prev = p;
+    }
+    assert.ok(dy < 0.15, `${N - 1} frames: the hips never drop or rise in a frame (biggest ${dy.toFixed(3)} m at f${dyAt})`);
+    // (the swim follows keys this fast at 9.6 m/s, its stroke's surge on top: 0.4 m a frame and some)
+    assert.ok(d < 0.75, `${N - 1} frames: no jump beyond the keys' own pace (biggest hip step ${d.toFixed(3)} m at f${dAt})`);
+    const want = (st.setFrame(42), poseOf(st, "m"));
+    st.setFrame(N - 1); st.setFrame(0); st.setFrame(42);
+    assert.ok(maxDiff(poseOf(st, "m"), want) < 1e-6, "f42 the same after a scrub");
+  }
+});

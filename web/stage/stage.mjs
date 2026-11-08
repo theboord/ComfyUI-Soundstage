@@ -4025,6 +4025,8 @@ export class Stage {
    * walk cycle ran in 2.5 m of water for a second (was: f75 to f99, walking out 0 to -12). The swim goes on, held at
    * the water's edge where the keys left it (their path clamped inside the walls, the upright body's reach in), for up
    * to a second: the swimmer comes upright and reaches the wall (_swimToWallTrim cuts it to the frame they get there).
+   * Keys that come back into the water before the ease out could finish (a quick in and out) keep them swimming at the
+   * wall the whole time: no ease out runs into the walk back in (was: 1.71 m at f42, 0.4 m a frame in and out).
    * Changes pos and mode in place; returns [{fx, fr, H, until}] (until: the last frame held, so far) or null.
    */
   _swimToWall(pos, mode, over, support, h, fps) {
@@ -4038,7 +4040,9 @@ export class Stage {
       if (!mode[fx - 1] || mode[fx] || over[fx] || support[fx] != null || this._overWater(pos[fx][0], pos[fx][2])) continue;
       let fr = fx;
       while (fr < n && !over[fr]) fr++;
-      const whole = false;
+      // back in before a hold, a half-second ease out and the step down could fit: stay at the wall (_swimExits fits
+      // the ease out into the frames there are before the walk back in)
+      const whole = fr < n && fr - fx < H + 12 + 9;
       const until = whole ? fr - 1 : Math.min(fr - 1, fx + H - 1), keys = pos.slice(fx, until + 1);
       for (let f = fx; f <= until; f++) {
         pos[f] = [THREE.MathUtils.clamp(pos[f][0], x0, x1), pos[f][1], THREE.MathUtils.clamp(pos[f][2], z0, z1)];
@@ -4128,13 +4132,19 @@ export class Stage {
         // the slow start of a smoothstep that kept the walk cycle in the water for 20 frames), and come down to the
         // walk's height over NV frames from the frame they leave the water (was: eased down with the rest over up to
         // 72 frames: 0.79 m over the dry floor at f104, tipped 37 degrees, the head 2.11 m against 1.58 standing)
-        const NV = 8;
-        let fd = n;
+        // (fitted in before the walk back into the water, if it comes back: the walk in starts from the walk's pose)
+        let fs = f + 1;
+        while (fs < plan.n && !plan.mode[fs]) fs++;
+        const avail = fs < plan.n ? fs - f : Infinity;
+        n = Math.max(6, Math.min(n, avail - 9));
+        e.n = e.N = n;
+        let NV = 8, fd = n;
         for (let k = 0; k < n; k++) {
           const wh = Swim.exitEaseH(k, n), q = target(f + k);
           if (!this._overWater(hips[0] + (q[0] - hips[0]) * wh, hips[2] + (q[2] - hips[2]) * wh)) { fd = k; break; }
         }
-        Object.assign(e, { wall: true, fd, NV, N: Math.max(n, fd + NV + 1) });
+        if (fd + NV + 1 > avail) NV = Math.max(2, avail - fd - 1);
+        Object.assign(e, { wall: true, fd, NV, N: Math.min(avail, Math.max(n, fd + NV + 1)) });
       }
       out.push(e);
     };
