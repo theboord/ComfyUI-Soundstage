@@ -214,6 +214,13 @@ way film post works, and downloads it as a zip:
 - What gets mapped: every file reference in `ss_renders` (clay, look, draft, final, final with sound), `ss_chosen`
   (the chosen frame), `ss_ltx` and `ss_shot_cast` (per-shot audio and reference inputs), `ss_cast` (cast and location
   references), and any other `ss_*` property or set model that names a file.
+- The Cut too: the live cut (`ss_cut`), the Script's archived scene Cuts and scene stages (`ss_script`) and the App's
+  timeline (pinned takes, upper picture clips, independent audio). A pinned take goes with its shot, in its rung's
+  folder (`takes/final/`…); cut sound goes in `cut/audio/`, other cut media in `cut/media/`. A file already collected
+  for a shot is copied once.
+- Only ComfyUI files are copied (output / input / temp). A file the Cut names by a raw path (`/Users/…/x.wav`,
+  `C:\…`, `file://…`) or a web address is not copied: it is listed by file name in `MISSING.txt`, in `project.json`
+  (`unsupported`) and in the Collect message.
 - The shot's newest Layer Pack (`output/soundstage_layerpacks/<shot>_<stamp>/`) is copied to `layerpack/` when one
   exists. It is matched on the shot's id, name or code.
 - Missing files go into `MISSING.txt`. They are not an error, and the rest is collected.

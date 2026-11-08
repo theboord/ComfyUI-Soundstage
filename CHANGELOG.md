@@ -5,6 +5,37 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-08
 
+**Cut shell for the new Cut, 2026-11-08 01:49 (private branch `private/ask-hooks`, not pushed): Cut → one video refuses what it can't honour and joins gaps frame-accurately; Collect walks the Cut**
+
+- **Still wrong (read first, known limits):** checked with Node, pytest and a local ffmpeg on invented clips only, not
+  in the browser, the App or a live ComfyUI. The new Cut fields (true gaps, upper picture tracks, `audio_detached`) are
+  not on this machine yet, so the guard and Collect read them by the shapes in the coordination note
+  (`{kind: "gap", in, out}`, `video` / `video_tracks` as arrays of clips or `{clips|events}`), guessed, not seen.
+  - **The rule set is a fallback** until the Cut exports `oneVideoSupport(rawCut) -> {ok, reasons}`; the App looks for
+    it on `web/cut/cut.mjs` and `web/cut/timeline.mjs` only. A hook that throws or answers in another shape is ignored
+    silently (local rules used).
+  - **Still left out, as before, not refused:** transitions, opacity keys, titles, graphics, subtitles and the cut's
+    sound tracks never were in the one-video join; it now names them on the result line ("left out: …, the Cut's
+    Render has them") instead of refusing, so cuts that joined yesterday still join.
+  - **Gaps:** black and silent only; a gap's length is `frames` / `length` / `duration`, else `out - in`. A cut of only
+    gaps is refused by the server. Video and stills are now trimmed by whole frames (was a duration in seconds), so a
+    clip can come out a frame different from before at odd lengths (the old seconds rounding).
+  - **Collect:** "raw path" means a media-file string with a slash, drive letter, `~`, `file:` or `http(s)`; a bare
+    `soundstage/x.mp4` with no `[output]` is reported, not guessed. Cut media with no shot lands in `cut/audio/` or
+    `cut/media/` by extension or key name. The timeline copy in `cut/timeline.json` keeps the original paths (the
+    workflow is relinked on open, as before).
+- **Cut → one video guard** ([web/onevideo.mjs](web/onevideo.mjs), `flattenCut` in [web/soundstage.js](web/soundstage.js)):
+  decided on the raw saved cut before flattening; "This cut has gaps (2) and an upper picture track; one-video export
+  can't include them yet." and nothing changes. `cutEntries`' shot filter is kept for Render missing shots and shot order.
+- **Gaps in the join** ([soundstage/cut/assemble.py](soundstage/cut/assemble.py)): black + silence of the gap's exact
+  length; `timeline()` puts every segment on whole frames and whole 48 kHz samples from its record start; 23.976 /
+  29.97 / 59.94 run at 24000/1001, 30000/1001, 60000/1001.
+- **Collect walks the Cut** ([soundstage/project/collect.py](soundstage/project/collect.py)): `ss_cut`, `ss_script`
+  (scene Cuts, scene stages) and `extras.timeline`, through the same `add()` (dedup, output / input / temp only); raw
+  paths reported by file name in MISSING.txt, `project.json` `unsupported` and the Collect message.
+- Tests: `tests/js/onevideo.test.mjs`, `tests/test_cut_assemble.py` (timeline math, NTSC joins checked with
+  silencedetect), `tests/test_project_collect.py` (invented projects).
+
 **Ask hooks, close-out, 2026-11-08 01:20 (private branch `private/ask-hooks`, not pushed): sit_floor never slides, opening / playing / scrubbing a scene writes no camera keys, num_ctx stays put so Ollama stops reloading the model**
 
 - **Still wrong (read first, known limits):** checked with Node and pytest only (invented test data), not in the

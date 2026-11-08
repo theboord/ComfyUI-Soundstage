@@ -485,6 +485,9 @@ Under the shot strip:
   - A shot with no render yet becomes a black slate of the right length (titled when ffmpeg has `drawtext`), so the cut's timing always holds.
   - Clips without sound get silence.
   - The frame size comes from the first video clip; other clips are letterboxed into it.
+  - **Gaps** (a `{kind: "gap"}` entry in the cut) become black picture + silence of exactly the gap's length. Every segment is cut to whole frames and whole 48 kHz samples from its record start, and 23.976 / 29.97 / 59.94 are the exact rates 24000/1001, 30000/1001, 60000/1001, so sound after a gap stays in sync.
+  - **What it refuses:** before anything is flattened the App checks the raw saved cut (`web/onevideo.mjs`). Upper picture tracks (`video` / `video_tracks`), detached audio (`audio_detached` on a clip), clips of a kind it doesn't know and gaps with no length are refused in plain words ("This cut has gaps (2) and an upper picture track; one-video export can't include them yet.") and nothing changes. When the Cut exports `oneVideoSupport(rawCut) -> {ok, reasons}` the App uses that rule set instead of its own.
+  - **What it leaves out** (as it always has): transitions, titles, graphics and the sound tracks. The result line names them; the Cut's **Render** has them.
 - **Render missing shots** goes through every shot in the cut that has no Final:
   - It switches to that shot, sets the ladder to step 4 and queues it. The stage capture happens at queue time, so each prompt carries its own shot. Ladder auto-rewind is paused during the batch.
   - Afterwards it restores the shot and step you were on.
