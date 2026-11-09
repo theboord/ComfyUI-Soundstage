@@ -243,7 +243,8 @@ def decode_ids(img: np.ndarray, palette: dict, tol: float = 26.0) -> np.ndarray:
 
 
 def srgb_encoded(palette: dict) -> dict:
-    """The stage draws ID colours as linear values that the renderer then encodes to sRGB (74 -> 147)."""
+    """The sRGB-encoded twin of a palette (74 -> 147). The stage draws ID colours exactly since 2026-11-08; passes
+    saved before that are encoded, so pick_palette still tries both."""
     enc = lambda v: 12.92 * v if v <= 0.0031308 else 1.055 * v ** (1 / 2.4) - 0.055  # noqa: E731
     return {k: [int(round(255 * enc(c / 255.0))) for c in rgb] for k, rgb in palette.items()}
 

@@ -7187,7 +7187,17 @@ export class Stage {
     this.scene.fog = null;
     this.scene.overrideMaterial = null;
     if (this.camHelper) this.camHelper.visible = false;
-    this.renderer.render(this.scene, cam);
+    // The ID pass writes the declared 8-bit colours verbatim: no sRGB output encode, no tone mapping. The colour above
+    // is v/255 in the working (linear) space, so with an sRGB output 255,0,223 came out 255,0,240 and every mask built
+    // from scene.id_colors (App attention / people masks, the frame check, the matte nodes) was empty. The offscreen
+    // capture target (offscreen.mjs, an "XR" target) takes its output colour space from its texture instead, so both
+    // are switched to linear for this one render and put back.
+    const r = this.renderer, ocs = r.outputColorSpace, tm = r.toneMapping;
+    const rt = r.getRenderTarget?.(), tex = rt?.isXRRenderTarget ? rt.texture : null, tcs = tex?.colorSpace;
+    r.outputColorSpace = THREE.LinearSRGBColorSpace;
+    r.toneMapping = THREE.NoToneMapping;
+    if (tex) tex.colorSpace = THREE.LinearSRGBColorSpace;
+    try { r.render(this.scene, cam); } finally { r.outputColorSpace = ocs; r.toneMapping = tm; if (tex) tex.colorSpace = tcs; }
     for (const [o, m, v] of saved) {
       if (o.material !== m) for (const x of [].concat(o.material)) if (x !== black && ![].concat(m).includes(x)) x.dispose?.();
       o.material = m; o.visible = v;

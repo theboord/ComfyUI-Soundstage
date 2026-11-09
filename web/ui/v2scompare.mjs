@@ -140,7 +140,8 @@ export function sparkPath(values, w, h, bad = 1.5) {
 }
 
 // ---------------------------------------------------------------------------------------------------- ID pass
-/** The stage draws ID colours as linear values the renderer encodes to sRGB (74 -> 147): the encoded twin. */
+/** The sRGB-encoded twin of a palette (74 -> 147). The stage draws ID colours exactly since 2026-11-08; ID passes saved
+ *  before that are encoded, so pickPalette still tries both. */
 export function srgbEncode(cols) {
   const enc = (v) => (v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055);
   return cols.map((c) => c.map((x) => Math.round(255 * enc(x / 255))));

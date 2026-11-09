@@ -1,0 +1,71 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Soundstage ID pass colour check</title></head>
+<body>
+<!-- The ID (matte) pass must draw every object in EXACTLY its declared scene.id_colors value (stage.idColors()), 8 bit
+     for 8 bit: masks downstream (App attention / people masks, the frame check, nodes_matte, layerpack) match those
+     colours. It used to come out sRGB-encoded (255,0,223 drawn as 255,0,240; 0,255,212 as 0,255,235), so masks built from
+     the declared colour were empty. Seven crates in a row (index 3 and 4 are those two colours), both render paths
+     (the visible canvas and the offscreen capture target). Per actor: pixels exactly the declared colour; plus
+     the ten most common non-black colours drawn. Run by tests/browser/run_shaders.mjs
+     (runShaders({ page: "idpass.html" })). -->
+<div id="box" style="width:640px"></div>
+<pre id="result">pending</pre>
+<script type="module">
+import * as THREE from "../../web/vendor/three.module.min.mjs";
+import { Stage, DEFAULT_SCENE } from "../../web/stage/stage.mjs";
+
+const out = { ok: false, errors: [], declared: {}, paths: {} };
+const done = () => { document.getElementById("result").textContent = JSON.stringify(out); };
+window.addEventListener("error", (e) => { out.errors.push(String(e.message)); });
+try {
+  const st = new Stage(document.getElementById("box"), () => {});
+  st.avatarWaitMs = 0;
+  const actors = [];
+  for (let i = 0; i < 7; i++) actors.push({ id: `crate_${i}`, name: `Crate ${i}`, kind: "crate", position: [(i - 3) * 1.6, 0, 0], size: [1.2, 1.2, 1.2] });
+  const sc = JSON.parse(JSON.stringify(DEFAULT_SCENE));
+  Object.assign(sc, { shot: { frames: 2, fps: 24 }, camera: { position: [0, 1.2, -9], target: [0, 0.6, 0], focal_mm: 24 }, actors, props: [] });
+  delete sc.camera_end;
+  st.load(sc);
+  await new Promise((r) => setTimeout(r, 300));
+  const ids = st.idColors();
+  out.declared = ids;
+  const fw = st.fw, fh = st.fh;
+  const canvasPass = () => {
+    const prev = st.renderer.getSize(new THREE.Vector2());
+    st.renderer.setSize(fw, fh, false);
+    st._renderMode("id", true);
+    const c = document.createElement("canvas"); c.width = fw; c.height = fh;
+    const g = c.getContext("2d"); g.drawImage(st.canvas, 0, 0);
+    const d = g.getImageData(0, 0, fw, fh).data;
+    st.renderer.setSize(prev.x, prev.y, false);
+    return d;
+  };
+  const offPass = () => new Uint8ClampedArray(st._renderOffscreen("id", fw, fh).data);
+  for (const [name, fn] of [["canvas", canvasPass], ["offscreen", offPass]]) {
+    st.setFrameSilent(0);
+    const d = fn();
+    const per = {};
+    const hist = new Map();   // every colour drawn, black excluded
+    for (let i = 0; i < d.length; i += 4) {
+      if (d[i] + d[i + 1] + d[i + 2] === 0) continue;
+      const key = `${d[i]},${d[i + 1]},${d[i + 2]}`;
+      hist.set(key, (hist.get(key) || 0) + 1);
+    }
+    for (const [id, c] of Object.entries(ids)) per[id] = { declared: c, exactPx: hist.get(c.join(",")) || 0 };
+    per._top = [...hist.entries()].sort((x, y) => y[1] - x[1]).slice(0, 10);
+    out.paths[name] = per;
+  }
+  // the ID render puts the renderer back: a Color render before and after it is identical (sRGB output restored)
+  const colourA = new Uint8ClampedArray(st._renderOffscreen("color", fw, fh).data);
+  st._renderOffscreen("id", fw, fh); canvasPass();
+  const colourB = new Uint8ClampedArray(st._renderOffscreen("color", fw, fh).data);
+  let cd = 0; for (let i = 0; i < colourA.length; i++) if (colourA[i] !== colourB[i]) cd++;
+  out.colourChangedAfterId = cd;
+  out.outputColorSpace = st.renderer.outputColorSpace;
+  out.ok = cd === 0 && !out.errors.length && Object.values(out.paths).every((per) => Object.entries(per).every(([k, r]) => k === "_top" || r.exactPx > 200));
+} catch (e) { out.errors.push(String(e?.stack || e)); }
+done();
+</script>
+</body>
+</html>

@@ -94,7 +94,7 @@ export function overrideMaterials(mats, ov) {
  * pass disposes them after the render), except hidden ones, which are the mesh's own.
  */
 export function idMaterial(mats, color) {
-  const flat = () => new THREE.MeshBasicMaterial({ color });
+  const flat = () => new THREE.MeshBasicMaterial({ color, toneMapped: false });   // ID colours are exact (stage._renderId)
   if (!Array.isArray(mats)) {
     if (!isCutout(mats)) return flat();
     const m = alphaOnlyMap(flat());
