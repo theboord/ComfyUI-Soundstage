@@ -533,6 +533,25 @@ export const EXEC = {
       : `${a.who} looks ${at} from the first frame.` };
   },
 
+  /** A timed sit (web/stage/people/sitstand.mjs): walk to the seat, turn, sit down at `time` (s; default as soon as
+   *  they get there, from the playhead), and stand up at `until` (s) if given. */
+  async sit(a) {
+    const fps = this.stage.state?.shot?.fps || 24;
+    const opts = { on: a.on_id, at: a.time != null ? Math.round(a.time * fps) : "auto", ...(a.until != null ? { until: Math.round(a.until * fps) } : {}) };
+    const r = this.stage.setPose?.(a.target_id, "sit", opts);
+    if (!r?.ok) return { ok: false, said: `${a.target} can't sit there: ${r?.error || "no stage"}.` };
+    const t = (f) => (f / fps).toFixed(1);
+    return { ok: true, said: `${a.target} walks to the ${String(a.on).toLowerCase()}, turns and sits down at ${t(r.at)} s (seated by ${t(r.seated)} s)${r.until != null ? `, and stands up at ${t(r.until)} s` : ""}.` };
+  },
+
+  /** Stand someone up from a timed sit at `time` (s; default the playhead) and step `away` (m, default 0.8). */
+  async stand(a) {
+    const fps = this.stage.state?.shot?.fps || 24;
+    const r = this.stage.setPose?.(a.target_id, "stand", { at: a.time != null ? Math.round(a.time * fps) : this.stage.frame, away: a.away ?? 0.8 });
+    if (!r?.ok) return { ok: false, said: `${a.target} can't stand up there: ${r?.error || "no stage"}.` };
+    return { ok: true, said: `${a.target} stands up at ${(r.at / fps).toFixed(1)} s and steps away from the seat.` };
+  },
+
   async dismount(a) {
     this.stage.unmount(a.target_id);
     return { ok: true, said: `${a.target} is out and on foot.` };

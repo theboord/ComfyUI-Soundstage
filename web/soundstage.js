@@ -2001,7 +2001,19 @@ function createStageWidget(node, inputName) {
     syncAppearance(stage.selectedInfo());
     status.textContent = stage.frame > 0 ? `${info.name} hops on at frame ${stage.frame}. Give them a walk to the mount before that.` : `${info.name} rides from the start.`;
   });
-  const personCtl = [apBuild.wrap, apHair.wrap, cHair.wrap, apTop.wrap, cTop.wrap, apBottom.wrap, cBottom.wrap, apSkin.wrap, peopleLook.face.wrap, swimCtl.swim.wrap, rideSel.wrap, seatSel.wrap, hopBtn];
+  // Sit down / stand up in the shot (a timed sit: walk to the seat, turn, sit at the playhead; web/stage/people/sitstand.mjs)
+  const sitSel = mkSelect("Sit", { "": { label: "—" } }, "", (v) => {
+    const info = stage.selectedInfo();
+    sitSel.sel.value = "";
+    if (!info || !v) return;
+    const fps = stage.state?.shot?.fps || 24;
+    const r = v === "__stand" ? stage.setPose(info.id, "stand", { at: stage.frame, away: 0.8 }) : stage.setPose(info.id, "sit", { on: v, at: "auto" });
+    status.textContent = !r?.ok ? (r?.error || "Can't do that here.") : v === "__stand" ? `${info.name} stands up at ${(r.at / fps).toFixed(1)} s and steps away.`
+      : `${info.name} walks to the seat and sits down at ${(r.at / fps).toFixed(1)} s (seated by ${(r.seated / fps).toFixed(1)} s). Move the playhead later and pick Stand up.`;
+    try { tracks?.draw(); afterTimeChange(); } catch { /* timeline not built */ }
+  });
+  sitSel.sel.title = "Sit down on a chair, bench or sofa in the shot (they walk there from the playhead), or stand up at the playhead";
+  const personCtl = [apBuild.wrap, apHair.wrap, cHair.wrap, apTop.wrap, cTop.wrap, apBottom.wrap, cBottom.wrap, apSkin.wrap, peopleLook.face.wrap, swimCtl.swim.wrap, rideSel.wrap, seatSel.wrap, hopBtn, sitSel.wrap];
   apRow.append(...personCtl, cMain.wrap, followSel.wrap, stuntSel.wrap, stuntKmh, stuntRoad.wrap, stuntMass, beamSel.wrap);
   // Pose Studio: every joint (fingers too), a gallery and keys, under the selected person's appearance controls.
   const poseHost = document.createElement("div");
@@ -2037,6 +2049,13 @@ function createStageWidget(node, inputName) {
         ...hosts.map((a) => new Option(a.name, a.id)));
       rideSel.sel.value = info.mount_id || "";
       hopBtn.hidden = !info.mount_id;
+      const sittable = stage.toJSON().actors.filter((a) => ["chair", "bench", "sofa", "armchair"].includes(a.kind));
+      const me = stage.toJSON().actors.find((a) => a.id === info.id) || {};
+      const sits = (me.by_shot?.[stage.state?.active_shot]?.keys?.length ? me.by_shot[stage.state.active_shot].sit_spans : me.sit_spans) || [];
+      sitSel.sel.replaceChildren(new Option("—", ""), ...sittable.map((a) => new Option(`Sit on ${a.name || a.kind} (walk there now)`, a.id)),
+        ...(sits.length || (me.mount_id && sittable.some((a) => a.id === me.mount_id)) ? [new Option("Stand up at the playhead", "__stand")] : []));
+      sitSel.sel.value = "";
+      sitSel.wrap.hidden = !sittable.length;
       const hostKind = stage.toJSON().actors.find((a) => a.id === info.mount_id)?.kind;
       const seats = SEATS[hostKind];
       seatSel.wrap.hidden = !seats;

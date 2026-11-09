@@ -469,3 +469,42 @@ def test_odd_shaped_tool_calls_are_rejected_not_a_crash():
         assert isinstance(D.plan("make it moody", {}, {}, text), dict)
     r = D.run_calls([{"tool": "lens", "args": [35]}], {}, {})
     assert r["calls"] == [] and r["rejected"]
+
+
+# ------------------------------------------------------------------------------------------- timed sits
+
+def _sit_scene():
+    s = copy.deepcopy(DEMO)
+    s["actors"] = [a for a in s["actors"] if a.get("kind") not in ("woman",)] + [
+        {"id": "jane", "name": "Jane", "kind": "woman", "position": [-3, 0, 0], "keys": [{"frame": 0, "position": [-3, 0, 0]}]},
+        {"id": "chair1", "name": "Chair", "kind": "chair", "position": [0, 0, 0], "keys": [{"frame": 0, "position": [0, 0, 0]}]}]
+    return s
+
+
+def test_sits_in_the_chair_is_a_timed_sit_not_a_mount_and_stands_again():
+    s = _sit_scene()
+    p = D.plan("Jane sits in the chair", s, CTX)
+    assert tools(p) == ["sit"], p
+    assert args(p, "sit")["on_id"] == "chair1" and args(p, "sit")["target_id"] == "jane"
+    p = D.plan("she sits down on the chair at 3 s", s, CTX)
+    assert tools(p) == ["sit"] and args(p, "sit")["time"] == 3
+    assert "turn and sit down at 3 s" in p["calls"][0]["plan"]
+    p = D.plan("Jane sits in the chair. She stands again", s, CTX)
+    assert tools(p) == ["sit", "stand"], p
+    p = D.plan("Jane gets up at 6 s", s, CTX)
+    assert tools(p) == ["stand"] and args(p, "stand")["time"] == 6
+    # standing by something is not getting up; a car is still a mount
+    assert "stand" not in tools(D.plan("Jane stands by the chair", s, CTX))
+    car = next(a for a in s["actors"] if a["kind"] in D.VEHICLES)
+    assert "sit" not in tools(D.plan(f"Jane sits in the {car['name']}", s, CTX))
+
+
+def test_sit_tool_validation():
+    w = D.normalize_scene(_sit_scene())
+    with pytest.raises(D.Invalid, match="turn round and sit"):
+        D.validate_call({"tool": "sit", "target": "Jane", "on": "Chair", "time": 2, "until": 3}, w, CTX)
+    c = D.validate_call({"tool": "sit", "target": "Jane", "on": "Chair", "time": 1, "until": 6}, w, CTX)
+    assert c["args"]["until"] == 6 and c["args"]["on_id"] == "chair1"
+    with pytest.raises(D.Invalid, match="isn't a person|can't sit"):
+        D.validate_call({"tool": "sit", "target": "Chair", "on": "Chair"}, w, CTX)
+    assert D.validate_call({"tool": "stand", "target": "Jane", "time": 4}, w, CTX)["args"]["time"] == 4

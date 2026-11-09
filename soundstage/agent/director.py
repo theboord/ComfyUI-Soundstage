@@ -33,6 +33,8 @@ from . import parts as PT
 
 VEHICLES = {k for k, v in C.LIBRARY.items() if v.get("rig") == "vehicle"} | {"police_car", "sports_car", "bus", "boat"}
 SEATABLE = VEHICLES | set(C.MOUNTS) | {"sofa", "armchair", "couch", "stool", "chair", "bench"}
+# Seats a person sits DOWN on in the shot (the "sit" tool, a timed sit): web/stage/stage.mjs SITTABLE
+SIT_SEATS = {"chair", "bench", "sofa", "armchair"}
 STUNTS = {"reverse_jturn": "Reverse J-turn", "donut": "Donut", "handbrake_180": "Handbrake 180", "none": "No stunt"}
 RIGS = ["free", "tripod", "dolly", "chapman", "slider", "jib", "steadicam", "handheld", "drone"]
 CAM_VIEWS = {"hood": "windshield", "windshield": "windshield", "driver_pov": "driver_pov", "passenger": "passenger_on_driver",
@@ -68,6 +70,13 @@ TOOLS: dict[str, dict] = {
     "mount": {"kind": "app", "doc": "Put a person in a vehicle, on a horse or in a seat",
               "args": {"target": ("person", True, None), "on": ("seat", True, None)}},
     "dismount": {"kind": "app", "doc": "Get someone out / off", "args": {"target": ("person", True, None)}},
+    # Timed sits (web/stage/people/sitstand.mjs): the walk to the seat, the turn, the sit-down and the stand-up are
+    # animated in the shot (mount puts someone on a seat for the whole shot instead).
+    "sit": {"kind": "app", "doc": "Someone walks to a chair, bench, sofa or armchair, turns and sits down in the shot: at `time` (s, when they "
+                                  "start sitting; default as soon as the walk gets them there), standing up again at `until` (s) if given",
+            "args": {"target": ("person", True, None), "on": ("seat", True, None), "time": ("num", False, (0, 600)), "until": ("num", False, (0, 600))}},
+    "stand": {"kind": "app", "doc": "Someone seated in the shot (a timed sit) stands up at `time` (s; default the playhead) and steps `away` (m, default 0.8) from the seat",
+              "args": {"target": ("person", True, None), "time": ("num", False, (0, 600)), "away": ("num", False, (0, 5))}},
     "select_shot": {"kind": "app", "doc": "Work on another shot (1 = first in the strip)", "args": {"shot": ("shot", True, None)}},
     "lens": {"kind": "app", "doc": "Focal length in mm for the current shot", "args": {"mm": ("num", True, (8, 400))}},
     "camera_move": {"kind": "app", "doc": "An animated camera move over the shot",
@@ -514,8 +523,12 @@ def validate_call(raw, work: dict, ctx: dict) -> dict:
         out["deg"] = 180
     if name == "grade" and not any(k in out for k in GRADE_KEYS):
         raise Invalid("grade: say what to change (warmer, more contrast...)")
-    if name == "mount" and out.get("target_id") == out.get("on_id"):
-        raise Invalid("mount: someone can't sit on themselves")
+    if name in ("mount", "sit") and out.get("target_id") == out.get("on_id"):
+        raise Invalid(f"{name}: someone can't sit on themselves")
+    if name == "sit" and _kind(work, out.get("on_id")) in VEHICLES:
+        raise Invalid("sit: a vehicle seat is a mount (get in), not a sit-down")
+    if name == "sit" and out.get("until") is not None and out.get("time") is not None and out["until"] <= out["time"] + 2:
+        raise Invalid("sit: they need about 2 s to turn round and sit before they can stand again")
     if name == "ram" and "target_id" not in out:
         vs = [v for v in _vehicles(work) if v["id"] != out.get("victim_id")]
         if not vs:
@@ -691,6 +704,9 @@ def plan_line(call, work, ctx):
         "reframe": lambda: f"nudge the camera: {a['move'].replace('_', ' ')}",
         "mount": lambda: f"put {a['target']} in the {a['on'].lower()}" if a.get("on") else "",
         "dismount": lambda: f"get {a['target']} out",
+        "sit": lambda: f"walk {a['target']} to the {a['on'].lower()}, turn and sit down" + (f" at {a['time']:g} s" if a.get("time") is not None else "")
+                       + (f", standing up again at {a['until']:g} s" if a.get("until") is not None else ""),
+        "stand": lambda: f"stand {a['target']} up" + (f" at {a['time']:g} s" if a.get("time") is not None else "") + " and step away from the seat",
         "select_shot": lambda: f"go to {sl(a['shot'])}",
         "lens": lambda: f"put on a {a['mm']:g} mm: {_lens_word(a['mm'])}",
         "camera_move": lambda: f"make it a {a['speed']} {MOVE_WORDS[a['move']]}",
@@ -1017,6 +1033,35 @@ def rules_calls(command: str, scene: dict, ctx: dict | None = None) -> list[dict
             veh = _vehicle_in(cl, work) or (next((x for x in work["actors"] if last_person and x["id"] == last_person.get("mount_id")), None))
             here.append((m.start(), {"tool": "camera_on", "view": view, **({"target": veh["name"]} if veh else {})}))
             used = True
+        # Timed sits: "she sits in the chair", "Mara sits down on the bench at 3 s", "she stands again", "he gets up".
+        # A chair, bench, sofa or armchair is a sit-down in the shot (sitstand.mjs); a vehicle stays a mount below.
+        m = None if used else re.search(r"\b([a-z]+)\s+(?:sits|sit|is sitting|takes a seat|settles)\s+(?:back\s+)?(?:down\s+)?(?:in|on|into|onto)\s+(?:the\s+|a\s+|her\s+|his\s+|their\s+)?"
+                                        r"([a-z][a-z ]*?)(?:\s+(?:at|after|from)\s+(\d+(?:\.\d+)?)\s*(?:s|sec|secs|seconds?)\b.*)?$", cl)
+        if m:
+            w = m.group(1)
+            who = last_person if w in ("she", "he", "they", "her", "him", "them") else O.find_object(work, w)
+            if who is None and w in ("she", "her"):
+                who = next((p for p in people if p.get("kind") == "woman"), None)
+            if who is None and w in ("he", "him"):
+                who = next((p for p in people if p.get("kind") == "man"), None)
+            seat = O.find_object(work, m.group(2).strip(), exclude=(who["id"],) if who else ())
+            if who is not None and who.get("kind") in C.PEOPLE and seat is not None and seat.get("kind") in SIT_SEATS:
+                here.append((m.start(), {"tool": "sit", "target": who["name"], "on": seat["name"], **({"time": float(m.group(3))} if m.group(3) else {})}))
+                last_person = who
+                used = True
+        m = None if used else re.search(r"\b([a-z]+)\s+(?:stands|stand|gets|get|rises|rise)\s*(?:up|again|back up|up again|to (?:her|his|their) feet)?\b"
+                                        r"(?:.*?\b(?:at|after)\s+(\d+(?:\.\d+)?)\s*(?:s|sec|secs|seconds?)\b)?", cl)
+        if m and not re.search(r"\b(?:stands?|rises?)\s+(?:up\s+)?(?:still|there|by|next|near|beside|on|in|at the)\b|\bgets?\s+(?!up\b)", cl[m.start():]):
+            w = m.group(1)
+            who = last_person if w in ("she", "he", "they", "her", "him", "them") else O.find_object(work, w)
+            if who is None and w in ("she", "her"):
+                who = next((p for p in people if p.get("kind") == "woman"), None)
+            if who is None and w in ("he", "him"):
+                who = next((p for p in people if p.get("kind") == "man"), None)
+            if who is not None and who.get("kind") in C.PEOPLE and (who.get("sit_spans") or any((b or {}).get("sit_spans") for b in (who.get("by_shot") or {}).values()) or re.search(r"\b(?:up|again|to (?:her|his|their) feet)\b", cl)):
+                here.append((m.start(), {"tool": "stand", "target": who["name"], **({"time": float(m.group(2))} if m.group(2) else {})}))
+                last_person = who
+                used = True
         # Mount: put Mara in the sports car / Mara drives the car.
         m = re.search(r"\b(?:put|place|get|seat|sit|have|let)\s+(.+?)\s+(?:in|into|inside|on|onto|behind the wheel of|at the wheel of|in the driver'?s seat of)\s+(?:the\s+|a\s+|her\s+|his\s+|their\s+)?(.+)$", cl) \
             or re.search(r"\b([a-z][a-z ]*?)\s+(?:drives|is driving|rides|is riding|gets in(?:to)?|climbs in(?:to)?|sits in)\s+(?:the\s+|a\s+|her\s+|his\s+)?(.+)$", cl)
@@ -1250,7 +1295,9 @@ def _from_sym(so: dict) -> dict | None:
          "shot": lambda: {"tool": "add_shot", "setup": so.get("setup"), **{k: so[k] for k in ("on", "over") if so.get(k)}},
          "camera": lambda: ({"tool": "lens", "mm": so["focal"]} if so.get("focal") and not so.get("move") else {"tool": "reframe", "move": so.get("move")}),
          "mount": lambda: {"tool": "mount", "target": so.get("target"), "on": so.get("on")},
-         "dismount": lambda: {"tool": "dismount", "target": so.get("target")}}
+         "dismount": lambda: {"tool": "dismount", "target": so.get("target")},
+         "sit": lambda: {"tool": "sit", "target": so.get("target"), "on": so.get("on"), **{k: so[k] for k in ("time", "until") if so.get(k) is not None}},
+         "stand": lambda: {"tool": "stand", "target": so.get("target"), **{k: so[k] for k in ("time", "away") if so.get(k) is not None}}}
     f = m.get(op)
     return f() if f else None
 
@@ -1293,6 +1340,11 @@ def _apply_calls(raw_calls, scene, ctx):
             for a in work["actors"]:
                 if a["id"] == c["args"]["target_id"]:
                     a["mount_id"] = c["args"]["on_id"]
+        elif c["tool"] == "sit":
+            # (the planner's copy: a later "she stands again" in the same command knows she sits)
+            for a in work["actors"]:
+                if a["id"] == c["args"]["target_id"]:
+                    a["sit_spans"] = [*(a.get("sit_spans") or []), {"on": c["args"]["on_id"], "at": None, "to": None}]
         c["plan"] = plan_line(c, work, ctx)
         out.append(c)
     return out, rejected, notes, work
