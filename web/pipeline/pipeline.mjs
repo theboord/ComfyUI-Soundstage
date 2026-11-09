@@ -76,7 +76,48 @@ const STEPS = [
   { k: "deliver", n: 7, label: "Deliver", short: "Deliver", view: "deliver", hint: "Layers for VFX, the cut as one video, NLE export." },
 ];
 const STILL_KREA = "__krea_depth__";
+/** ④ Frame's model defaults (C28, Jon's RTX 5080 sweep through this path, 2026-11-08; outbox claude_C28.md).
+ *  Krea 2 + depth: dpmpp_2m / beta, CFG 1 (1.5 and up burns), 12 steps (8 left blotchy corners with the camera
+ *  block's vignetting). Never karras (8 of 8 handed the stage back), avoid sgm_uniform (a second person).
+ *  FLUX 3 Klein: Lock to the stage depth Light (Off hands the stage back with every prompt), CFG 2 (1.5-3 clean, real
+ *  plaster and wood at 2; a negative only acts above CFG 1), 12 steps, sampler / scheduler auto (euler / simple).
+ *  FLUX.2 Klein 9B: a 4-step distilled model (its card and ComfyUI's template: 4 steps, CFG 1); C28 never ran it,
+ *  and Light is wired for FLUX 3 Klein only, so it keeps 4 steps, CFG 1, depth lock Off. */
+export const FRAME_DEFAULTS = {
+  krea: { steps: 12, cfg: 1, sampler: "dpmpp_2m", scheduler: "beta", label: "Krea 2 Turbo" },
+  klein: { steps: 12, cfg: 2, sampler: "auto", scheduler: "auto", depth: "light", label: "FLUX 3 Klein" },
+  klein9b: { steps: 4, cfg: 1, sampler: "auto", scheduler: "auto", depth: "off", label: "FLUX.2 Klein 9B" },
+  other: { steps: 20, cfg: 1, sampler: "auto", scheduler: "auto", depth: "off", label: "" },
+};
+/** The Krea 2 + depth defaults before C28 (8 steps euler_ancestral / beta): a workflow that still has them exactly
+ *  takes the new ones once; any other value is the user's and stays. */
+export const OLD_KREA_DEFAULTS = { steps: 8, cfg: 1, sampler: "euler_ancestral", scheduler: "beta" };
+/** Schedulers ④ Frame never sends to Krea 2 + depth: karras handed the stage back on every sampler (C28 phase B). */
+export const KREA_NEVER_SCHEDULERS = ["karras"];
+/** The Advanced fold's line under steps / CFG, per frame model. */
+export function samplingNote(model, st, cf) {
+  const key = frameDefaultsKey(model), d = FRAME_DEFAULTS[key];
+  const head = `${d.label || String(model || "The image model").split(" ·")[0]}: ${st} steps, CFG ${cf} (default ${d.steps} steps, CFG ${d.cfg}).`;
+  if (key === "krea") return `${head} Distilled: CFG 1 is right, 1.5 and up burns (colour blotches). Scheduler karras is never sent: it hands the stage back.`;
+  if (key === "klein") return `${head} CFG 2 adds real wall and floor texture with Lock to the stage depth Light and takes about 1.5x as long as CFG 1. The negative prompt acts only above CFG 1.`;
+  if (key === "klein9b") return `${head} A 4-step distilled model: CFG 1 is right, more steps add little.`;
+  return `${head} More steps add fine detail, slower.` + (cf > 1.5 ? " CFG above ~1.5 tends to burn and roughly doubles the time." : "");
+}
+/** Which FRAME_DEFAULTS row a ④ Frame model key uses. */
+export const frameDefaultsKey = (model) => (model === STILL_KREA ? "krea" : /^FLUX 3 Klein/.test(String(model || "")) ? "klein"
+  : /^FLUX\.2 Klein/.test(String(model || "")) ? "klein9b" : "other");
+export const frameDefaultsFor = (model) => FRAME_DEFAULTS[frameDefaultsKey(model)];
+/** The depth-lock mode a FLUX 3 Klein frame starts with when nobody picked one: Light when Krea 2 Turbo is installed
+ *  (the Light pass paints with it), else Off. */
+export const defaultDepthMode = (model, hasTurbo) => (frameDefaultsKey(model) === "klein" && hasTurbo ? "light" : "off");
 // The frame node's sampler / scheduler combos (soundstage/router/adapters.py IMAGE_SAMPLERS / IMAGE_SCHEDULERS).
+/** ④ Frame's Quality buttons (steps): Standard is each model's default (FRAME_DEFAULTS). */
+export const QUALITY_STEPS = {
+  krea: [["Fast", 8], ["Standard", 12], ["High", 16], ["Max", 20]],
+  klein: [["Fast", 8], ["Standard", 12], ["High", 20], ["Max", 28]],
+  klein9b: [["Standard", 4], ["High", 6], ["Max", 8]],   // 4-step distilled: no faster setting
+  other: [["Fast", 8], ["Standard", 20], ["High", 28], ["Max", 40]],
+};
 export const STILL_SAMPLERS = ["auto", "euler", "euler_ancestral", "res_multistep", "dpmpp_2m", "er_sde", "lcm"];
 export const STILL_SCHEDULERS = ["auto", "simple", "normal", "beta", "sgm_uniform", "karras", "linear_quadratic"];
 // ④ Frame "Lock to the stage depth" (soundstage/look/frame_lock.py VERSION 3; numbers: docs/decisions.md 2026-11-02,
@@ -556,12 +597,11 @@ export class Pipeline {
     f.countSeg = h("span", { class: "seg row", title: "Variations: how many frames one Generate makes" }, ...[1, 2, 4].map((n) => h("button", { type: "button", "aria-pressed": String(n === 4),
       on: { click: (e) => { f.count = n; for (const b of f.countSeg.children) b.setAttribute("aria-pressed", String(b === e.currentTarget)); } } }, `${n}`)));
     // Quality = step count, up front (the same Steps field as in Advanced). More steps add fine detail, slower.
-    const QUALITY = { klein: [["Fast", 8], ["Standard", 20], ["High", 28], ["Max", 40]], krea: [["Fast", 6], ["Standard", 8], ["High", 14], ["Max", 20]] };
-    f.qualSeg = h("span", { class: "seg row", title: "Steps for the image model: more = finer detail, slower. CFG stays 1 (these models are distilled)" });
+    f.qualSeg = h("span", { class: "seg row", title: "Steps for the image model: more = finer detail, slower" });
     f.drawQuality = () => {
-      const krea = f.model.value === STILL_KREA, cur = Math.round(+f.steps.value || 0);
-      f.qualSeg.replaceChildren(...QUALITY[krea ? "krea" : "klein"].map(([label, st]) => h("button", { type: "button", "aria-pressed": String(cur === st),
-        title: `${st} steps, CFG 1`,
+      const key = frameDefaultsKey(f.model.value), cur = Math.round(+f.steps.value || 0), cfg = +f.cfg.value || frameDefaultsFor(f.model.value).cfg;
+      f.qualSeg.replaceChildren(...QUALITY_STEPS[key].map(([label, st]) => h("button", { type: "button", "aria-pressed": String(cur === st),
+        title: `${st} steps, CFG ${cfg}`,
         on: { click: () => { f.steps.value = String(st); this._applySampling(); f.drawQuality(); } } }, label)));
     };
     f.goBtn = h("button", { type: "button", class: "go", on: { click: () => this.generateFrames() } }, "Generate frames");
@@ -880,24 +920,59 @@ export class Pipeline {
 
   /** Steps / CFG for the frame model: Krea 2 lives on the App's KSampler (9056), the other models on the picker node. */
   _samplingTarget() {
-    const krea = this.f.model.value === STILL_KREA;
-    return krea ? { id: 9056, steps: "steps", cfg: "cfg", defSteps: 8, label: "Krea 2 Turbo" } : { id: 9081, steps: "steps", cfg: "cfg", defSteps: 20, label: "FLUX 3 Klein" };
+    const krea = this.f.model.value === STILL_KREA, d = frameDefaultsFor(this.f.model.value);
+    const label = d.label || String(this.f.model.value || "the image model").split(" ·")[0];
+    return { id: krea ? 9056 : 9081, steps: "steps", cfg: "cfg", defSteps: d.steps, defCfg: d.cfg, label };
+  }
+
+  /** C28 defaults, once per workflow (node property ssFrameDefaults): Krea 2 + depth's KSampler still on the old 8
+   *  steps euler_ancestral / beta, and a frame node still on the old 20 steps CFG 1 (or never set), take the new
+   *  ones. Any other value is the user's and stays. */
+  _frameDefaultsOnce() {
+    const k = this.node(9056);
+    if (k && (k.properties ||= {}).ssFrameDefaults !== "c28") {
+      const o = OLD_KREA_DEFAULTS, d = FRAME_DEFAULTS.krea;
+      const v = (n) => this.w(9056, n)?.value;
+      if (+v("steps") === o.steps && +v("cfg") === o.cfg && v("sampler_name") === o.sampler && v("scheduler") === o.scheduler) {
+        this.set(9056, "steps", d.steps); this.set(9056, "sampler_name", d.sampler); this.set(9056, "scheduler", d.scheduler);
+      }
+      k.properties.ssFrameDefaults = "c28";
+    }
+    const n = this.node(9081);
+    if (n && (n.properties ||= {}).ssFrameDefaults !== "c28" && this.w(9081, "steps")) {
+      const m = this.w(9081, "model")?.value;
+      const d = frameDefaultsFor(isKreaTurbo(m) ? this._kleinKey() || m : m);   // Strict leaves Krea 2 Turbo on the node
+      const st = +this.w(9081, "steps").value || 0, cf = +this.w(9081, "cfg")?.value || 0;
+      if ((st === 0 || st === 20) && cf <= 1) { this.set(9081, "steps", d.steps); this.set(9081, "cfg", d.cfg); }
+      n.properties.ssFrameDefaults = "c28";
+    }
+  }
+
+  /** The Look's frame_steps (soundstage/look/compile.py): "slight vignetting" only at 12 steps or more. */
+  _lookFrameSteps(st) {
+    const look = this.ctx.look;
+    if (!look?.state || !st || look.state.frame_steps === st) return;
+    look.state.frame_steps = st;
+    try { look.onChange?.(look.toJSON()); } catch { /* look not ready */ }
   }
 
   _applySampling() {
     const f = this.f, t = this._samplingTarget();
     const st = Math.round(+f.steps.value || 0), cf = +f.cfg.value || 0;
     const sa = f.sampler?.value || "auto", sc = f.sched?.value || "auto", sh = Math.max(0, +f.shift?.value || 0);
-    if (t.id === 9056) {   // the App's own KSampler (Krea 2 + depth): its combos take a real name, "auto" = Krea 2's tuned pair
+    if (t.id === 9056) {   // the App's own KSampler (Krea 2 + depth): its combos take a real name, "auto" = C28's pair
+      const d = FRAME_DEFAULTS.krea;
       if (st) this.set(9056, "steps", st); if (cf) this.set(9056, "cfg", cf);
-      if (this.w(9056, "sampler_name")) this.set(9056, "sampler_name", sa === "auto" ? "euler_ancestral" : sa);
-      if (this.w(9056, "scheduler")) this.set(9056, "scheduler", sc === "auto" ? "beta" : sc);
+      if (this.w(9056, "sampler_name")) this.set(9056, "sampler_name", sa === "auto" ? d.sampler : sa);
+      // never karras on Krea 2 + depth: it hands the stage back with every sampler (C28 phase B)
+      if (this.w(9056, "scheduler")) this.set(9056, "scheduler", sc === "auto" || KREA_NEVER_SCHEDULERS.includes(sc) ? d.scheduler : sc);
     } else {
       this.set(9081, "steps", st); this.set(9081, "cfg", cf);
       if (this.w(9081, "sampler")) this.set(9081, "sampler", sa);
       if (this.w(9081, "scheduler")) this.set(9081, "scheduler", sc);
       if (this.w(9081, "shift")) this.set(9081, "shift", sh);
     }
+    this._lookFrameSteps(st || t.defSteps);
     this._samplingNote();
   }
 
@@ -907,7 +982,7 @@ export class Pipeline {
     f.steps.disabled = !sw; f.cfg.disabled = !cw;
     // 0 used to mean "the model's default", which read as broken: write the real numbers instead.
     if (sw && !+sw.value) { sw.value = t.defSteps; sw.callback?.(t.defSteps); }
-    if (cw && !+cw.value) { cw.value = 1; cw.callback?.(1); }
+    if (cw && !+cw.value) { cw.value = t.defCfg; cw.callback?.(t.defCfg); }
     f.steps.value = sw ? String(sw.value || 0) : "";
     f.cfg.value = cw ? String(cw.value || 0) : "";
     if (f.sampler) {
@@ -918,6 +993,7 @@ export class Pipeline {
       pick(f.sampler, saW ? String(saW.value || "auto") : "auto"); pick(f.sched, scW ? String(scW.value || "auto") : "auto");
       f.shift.value = shW ? String(+shW.value || 0) : "";
     }
+    this._lookFrameSteps(Math.round(+f.steps.value || 0) || t.defSteps);
     this._samplingNote();
     try { f.drawQuality?.(); } catch { /* not built */ }
   }
@@ -925,9 +1001,8 @@ export class Pipeline {
   _samplingNote() {
     const f = this.f, t = this._samplingTarget();
     if (f.steps.disabled) { f.sampNote.textContent = "Needs the updated Soundstage nodes (restart ComfyUI once)."; return; }
-    const st = +f.steps.value || t.defSteps, cf = +f.cfg.value || 1;
-    f.sampNote.textContent = `${t.label}: ${st} steps, CFG ${cf}. 0 = the model's tuned default. These are distilled models: ` +
-      "CFG 1 is right; more steps add fine detail, slower." + (cf > 1.5 ? " CFG above ~1.5 tends to burn and roughly doubles the time." : "");
+    const st = +f.steps.value || t.defSteps, cf = +f.cfg.value || t.defCfg;
+    f.sampNote.textContent = samplingNote(f.model.value, st, cf);
   }
 
   /** The Canvas editor (inpaint, outpaint, masks, layers) mounted inside ④ Frame, on the chosen frame. */
@@ -1010,6 +1085,7 @@ export class Pipeline {
     }
     this._fillLoras();
     this.f.loras.set(this._readLoras());
+    this._frameDefaultsOnce();
     this._syncSampling();
     const negW = this.w(9081, "negative");
     f.neg.disabled = !negW;
@@ -1020,7 +1096,8 @@ export class Pipeline {
     f.followOut.textContent = this._followLabel();
     if (this._dmode == null) {
       const saved = this.node(9081)?.properties?.ssDepthMode;
-      this._dmode = saved || (+(this.w(9081, "depth_lock")?.value || 0) > 0 ? (isKreaTurbo(this.w(9081, "model")?.value) ? "strict" : "light") : "off");
+      // nobody picked a mode: null, and _syncDepthLock uses the model's default (Light on FLUX 3 Klein, C28)
+      this._dmode = saved || (+(this.w(9081, "depth_lock")?.value || 0) > 0 ? (isKreaTurbo(this.w(9081, "model")?.value) ? "strict" : "light") : null);
     }
     this._syncDepthLock();
     f.desc.value = this.ctx.look?.state?.description || "";
@@ -1056,6 +1133,16 @@ export class Pipeline {
     }
     this.set(9082, "switch", !krea);
     if (!krea) this.set(9081, "model", f.model.value);
+    // switching between frame-node models (FLUX 3 Klein 12 steps CFG 2, FLUX.2 Klein 9B 4 steps CFG 1): a step count
+    // and CFG still on the old model's defaults move to the new model's; anything the user set stays
+    const key = frameDefaultsKey(f.model.value), prev = this._defKey;
+    if (prev && prev !== key && key !== "krea" && prev !== "krea" && this.w(9081, "steps")) {
+      const a = FRAME_DEFAULTS[prev], b = FRAME_DEFAULTS[key];
+      if (+this.w(9081, "steps").value === a.steps && (+this.w(9081, "cfg")?.value || 0) === a.cfg) {
+        this.set(9081, "steps", b.steps); this.set(9081, "cfg", b.cfg);
+      }
+    }
+    this._defKey = key;
     // Krea 2: the img2img denoise of its depth-steered still; FLUX 3 Klein: stage_denoise, the Color pass as the start.
     this.set(krea ? 9056 : 9081, krea ? "denoise" : "stage_denoise", +f.follow.value);
     this._syncDepthLock();
@@ -1110,7 +1197,7 @@ export class Pipeline {
     const krea = f.model.value === STILL_KREA, has = !!this.w(9081, "depth_lock");
     const klein = /^FLUX 3 Klein/.test(f.model.value), turbo = this._kreaTurboKey();
     const usable = !krea && has && klein;
-    let mode = this._dmode || "off";
+    let mode = this._dmode || defaultDepthMode(f.model.value, !!turbo);
     if (mode === "strict" && !turbo) mode = "off";
     for (const b of f.depthSeg.children) {
       b.disabled = !usable || (b.dataset.k === "strict" && !turbo);
@@ -1125,8 +1212,24 @@ export class Pipeline {
       this.set(9081, "depth_lock", 0);
     }
     if (f.kleinNote) f.kleinNote.hidden = !isKleinModel(f.model.value);
+    this._wireFramePrompt(!krea && isKleinModel(f.model.value) && !(usable && mode === "strict"));
     f.depthNote.textContent = krea ? "always on with Krea 2 + depth" : !has ? "needs ComfyUI restarted (new frame node)" :
       !klein ? "FLUX 3 Klein only" : DEPTH_NOTES[mode];
+  }
+
+  /** FLUX Klein on the frame node reads the Look's edit_prompt (C28 (e): "Turn image 1, a plain 3D stage render, into a
+   *  real photograph …"); Strict (Krea 2 Turbo) and the other models read still_prompt. Only a prompt linked from the
+   *  Look node is rewired, and only when the Look node has that output (a workflow saved before it has four). */
+  _wireFramePrompt(useEdit) {
+    const n = this.node(9081), look = this.node(9079);
+    const slot = n?.inputs?.findIndex((i) => i.name === "prompt") ?? -1;
+    const out = look?.outputs?.findIndex((o) => o.name === (useEdit ? "edit_prompt" : "still_prompt")) ?? -1;
+    if (slot < 0 || out < 0) return;
+    const id = n.inputs[slot].link, links = this.ctx.app.graph?.links;
+    const l = id != null && (typeof links?.get === "function" ? links.get(id) : links?.[id]);
+    if (!l) return;   // typed on the node: left alone
+    const origin = l.origin_id ?? l[1], oslot = l.origin_slot ?? l[2];
+    if (origin === 9079 && oslot !== out) look.connect(out, n, slot);
   }
 
   _setDepthMode(k) {

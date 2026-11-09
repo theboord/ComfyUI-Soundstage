@@ -107,6 +107,9 @@ export const DEFAULT_LOOK = Object.freeze({
   grade: { contrast: 0, saturation: 0, warmth: 0, grain: 0, halation: 0, vignette: 0 },
   description: "", negative: "", description_cast: "", style: "",
   brief: { world: "", atmosphere: "", surfaces: "", furniture: "", colour: "", light: "", outside: "" },
+  // ④ Frame's step count for the frame model, written by the pipeline (0 = unknown, the compiler assumes 12):
+  // soundstage/look/compile.py keeps "slight vignetting" only at 12 steps or more (C28)
+  frame_steps: 0,
 });
 
 // Restyle brief (after 3D Jutsu's final-render brief): one line per aspect of the target world.

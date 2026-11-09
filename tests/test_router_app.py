@@ -42,7 +42,9 @@ def test_router_inputs():
     g = built()
     still, video = by_title(g, "Still model (any)"), by_title(g, "Video model (any)")
     assert g.source_of(still, "image") == (9045, 9) and g.source_of(still, "control_image") == (9045, 3)
-    assert g.source_of(still, "prompt") == (9079, 0) and g.source_of(still, "negative") == (9079, 1)
+    # C28: FLUX Klein (the App's default frame model) reads the Look's edit_prompt (output 4); the App's ④ Frame
+    # points it back at still_prompt (0) for Strict and the other image models (web/pipeline/pipeline.mjs _wireFramePrompt)
+    assert g.source_of(still, "prompt") == (9079, 4) and g.source_of(still, "negative") == (9079, 1)
     assert g.source_of(video, "prompt") == (9079, 2) and g.source_of(video, "control_video") == (9045, 0)
     assert g.source_of(video, "first_frame") == (by_title(g, "Still model · use picker"), 0)
     assert g.source_of(video, "frames") == (9045, 5) and g.source_of(video, "fps") == (9045, 4)

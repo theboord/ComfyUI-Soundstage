@@ -2030,14 +2030,15 @@
    ],
    "title": "Look still (Krea 2, depth-steered)",
    "properties": {
-    "Node name for S&R": "KSampler"
+    "Node name for S&R": "KSampler",
+    "ssFrameDefaults": "c28"
    },
    "widgets_values": [
     448073241061332,
     "fixed",
-    8,
+    12,
     1,
-    "euler_ancestral",
+    "dpmpp_2m",
     "beta",
     0.85
    ],
@@ -3768,8 +3769,7 @@
      "name": "still_prompt",
      "type": "STRING",
      "links": [
-      13993,
-      14000
+      13993
      ]
     },
     {
@@ -3794,6 +3794,14 @@
      "name": "look_json",
      "type": "STRING",
      "links": null
+    },
+    {
+     "localized_name": "edit_prompt",
+     "name": "edit_prompt",
+     "type": "STRING",
+     "links": [
+      14000
+     ]
     }
    ],
    "properties": {
@@ -3971,7 +3979,8 @@
     }
    ],
    "properties": {
-    "Node name for S&R": "SoundstageEditImage"
+    "Node name for S&R": "SoundstageEditImage",
+    "ssFrameDefaults": "c28"
    },
    "widgets_values": [
     "",
@@ -4846,7 +4855,7 @@
   [
    14000,
    9079,
-   0,
+   4,
    9081,
    6,
    "STRING"
