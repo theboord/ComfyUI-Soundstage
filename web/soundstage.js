@@ -1048,6 +1048,7 @@ function createStageWidget(node, inputName) {
   const AXES = [["x", [1, 0, 0], "#e5534b"], ["y", [0, 1, 0], "#57ab5a"], ["z", [0, 0, 1], "#539bf5"]];
   let gizmoDots = [];
   stage.onRendered = (cam) => {
+    ladder.sync?.stageReady?.();   // ⑥ Review's colour-stage tile, if it opened before the stage was up
     const ctx = gizmo.getContext("2d");
     const R = 58, C = 84;
     ctx.clearRect(0, 0, 168, 168);

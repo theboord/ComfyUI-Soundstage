@@ -17,6 +17,7 @@ import { SPEEDS, MasterClock, tileFrame, tileRate, masterLength, driftAction, fr
 import { loadClip } from "./media.mjs";
 
 export const SLOT_NAMES = ["Clay", "Colour clay", "Draft", "Final"];
+const READY_TRIES = 30;   // stageReady() attempts per waiting colour-stage tile
 const PREF_KEY = "ss_syncreview_v1";
 const COOL_MS = 300;   // after a correcting seek, give the tile this long before judging it again
 
@@ -165,7 +166,7 @@ export class SyncReview {
     this._say(`Loaded ${list.length} file${list.length > 1 ? "s" : ""}. "↺ This shot" puts the shot's own takes back.`);
   }
 
-  _key(src) { return src ? (src.url || (src.file && `file:${src.file.name}:${src.file.size}:${src.file.lastModified}`) || (src.live && `live:${src.label}`) || "") : ""; }
+  _key(src) { return src ? (src.url || (src.file && `file:${src.file.name}:${src.file.size}:${src.file.lastModified}`) || (src.live && `live:${src.label}`) || (src.waitStage && "wait:stage") || "") : ""; }
 
   _setTile(t, src) {
     if (this._key(src) === this._key(t.src)) {
@@ -179,6 +180,11 @@ export class SyncReview {
     t.src = src;
     t.cap.firstChild.textContent = src?.label || SLOT_NAMES[t.i];
     if (!src) { this._empty(t); return; }
+    if (src.waitStage) {   // the colour stage before the stage is up: drawn by stageReady(), not on the next frame change
+      this._empty(t, "The colour stage draws here once the stage is ready.");
+      t.waitStage = true;
+      return;
+    }
     const gen = ++this._gen;
     t.gen = gen;
     if (src.live) {
@@ -220,11 +226,11 @@ export class SyncReview {
     });
   }
 
-  _empty(t) {
+  _empty(t, say = null) {
     const what = SLOT_NAMES[t.i];
-    const hint = t.i === 0 ? "No clay video yet: Run ③ Set (the stage preview)."
-      : t.i === 1 ? "The colour stage draws here." : `No ${what} for this shot yet.`;
-    t.kind = null; t.ready = false; t.el = null; t.frames = 0; t.frame = -1; t.presented = null;
+    const hint = say || (t.i === 0 ? "No clay video yet: Run ③ Set (the stage preview)."
+      : t.i === 1 ? "The colour stage draws here." : `No ${what} for this shot yet.`);
+    t.kind = null; t.ready = false; t.el = null; t.frames = 0; t.frame = -1; t.presented = null; t.waitStage = false; t.liveFailed = false;
     t.box.replaceChildren(h("div", { class: "empty" }, `${hint} Or drop a file here.`), t.cap);
     t.cap.querySelector(".f").textContent = "";
   }
@@ -234,6 +240,7 @@ export class SyncReview {
     if (t.kind === "image" && t.el?.src?.startsWith("blob:")) { try { URL.revokeObjectURL(t.el.src); } catch { /* gone */ } }
     try { t.revoke?.(); } catch { /* gone */ }
     t.revoke = null; t.el = null; t.kind = null; t.ready = false; t.still = false; t.pending = null; t.presented = null; t.drift = null; t.gen = 0;
+    t.waitStage = false; t.liveFailed = false; t.readyTries = 0;
   }
 
   destroy() { this.pause(); for (const t of this.tiles) this._dispose(t); this._ro?.disconnect(); this.el.remove(); }
@@ -285,7 +292,7 @@ export class SyncReview {
 
   _caption(t) {
     const f = t.cap.querySelector(".f");
-    if (!t.ready) { f.textContent = ""; return; }
+    if (!t.ready || t.liveFailed) { f.textContent = ""; return; }   // no frame number on a tile that drew nothing
     if (t.kind === "image") { f.textContent = "still"; return; }
     const want = this._tileTarget(t);
     const shown = t.kind === "video" && t.presented != null ? t.presented : want.frame;
@@ -298,8 +305,24 @@ export class SyncReview {
 
   _drawLive(t, frame) {
     if (t.frame === frame) return;
-    t.frame = frame;
-    try { t.src.live.draw(t.el, frame); } catch { /* the stage is busy; the next frame draws */ }
+    // Not drawn yet (the stage is not up, or busy): remember it, so stageReady() draws this frame, instead of the tile
+    // staying black until the frame changes (C27: Review opened over the App's start screen).
+    if (t.src.live.ready && !t.src.live.ready()) { t.liveFailed = true; return; }
+    try { t.src.live.draw(t.el, frame); t.frame = frame; t.liveFailed = false; t.readyTries = 0; } catch { t.liveFailed = true; }
+  }
+
+  /** The host's stage has rendered (web/soundstage.js stage.onRendered): a colour-stage tile that is still waiting
+   *  re-reads the sources or draws its frame now. A no-op otherwise, so it is cheap on every render. */
+  stageReady() {
+    const t = this.tiles[1];
+    if (this._readying || !(t.waitStage || t.liveFailed) || this.el.hidden) return;
+    // a stage that renders but still cannot draw the tile: give up after a few renders (a draw can itself render)
+    if (!t.waitStage && (t.readyTries = (t.readyTries || 0) + 1) > READY_TRIES) return;
+    this._readying = true;
+    try {
+      if (t.waitStage) { this.refresh(); if (!this.clock.playing) this._syncAll(); }
+      else if (t.kind === "live") { this._drawLive(t, this._tileTarget(t).frame); this._caption(t); }
+    } finally { this._readying = false; }
   }
 
   /** Go to a master frame (paused): every tile seeks there exactly. */
