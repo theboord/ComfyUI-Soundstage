@@ -91,6 +91,13 @@ const DEPTH_TITLE = "Hold the frame to your stage's exact depth pass with Krea 2
   "Strict a person in the foreground, so Off stays the default.\n" +
   "About 10-30 s more per frame. Frames you already picked keep the way they were painted.";
 const DEPTH_MODES = [["off", "Off"], ["light", "Light"], ["strict", "Strict"]];
+/** Said under "Follow the blocking" when a FLUX Klein model paints the frame: Klein takes no depth or pose control
+ *  (soundstage/router/adapters.py flux3_klein never feeds control_image into its conditioning, and no Klein control
+ *  model exists), so the rows must not look like they steer it. */
+export const KLEIN_CONTROL_NOTE = "Klein has no depth or pose control: it keeps the layout of your stage picture, " +
+  "which it sees as an aligned reference. Real depth control is Krea 2 only (Lock to the stage depth, or Krea 2 + depth).";
+/** Is this frame-model key a FLUX Klein (FLUX 3 Klein, FLUX.2 Klein 9B)? */
+export const isKleinModel = (m) => /\bKlein\b/.test(String(m || ""));
 const DEPTH_NOTES = { off: "Klein alone", light: "Krea 2 depth pass over the Klein frame",
   strict: "Krea 2 paints on the depth pass; no cast pictures" };
 const VIDEO_L2R = "__ltx_l2r__";
@@ -619,6 +626,7 @@ export class Pipeline {
                 h("span", {}, "Lock to the stage depth", f.depthNote = h("small", {})),
                 f.depthSeg = h("span", { class: "seg row" }, ...DEPTH_MODES.map(([k, label]) => h("button", { type: "button", "data-k": k,
                   "aria-pressed": String(k === "off"), on: { click: () => this._setDepthMode(k) } }, label)))),
+              f.kleinNote = h("small", { class: "status ss-klein-ctl", hidden: "" }, KLEIN_CONTROL_NOTE),
               h("label", { class: "ss-chk status", title: "Each new frame is compared with your blocking (SAM 3.1 against the stage's ID pass): object count, silhouettes, extra objects. A flagged frame is painted again with a new seed, at most twice per Generate." },
                 f.autoReroll = h("input", { type: "checkbox", checked: "" }),
                 h("span", {}, "Check each frame against the blocking; re-roll extra or missing objects"))),
@@ -1116,6 +1124,7 @@ export class Pipeline {
       // otherwise paint Strict without asking, and the frame would be recorded as depth-locked)
       this.set(9081, "depth_lock", 0);
     }
+    if (f.kleinNote) f.kleinNote.hidden = !isKleinModel(f.model.value);
     f.depthNote.textContent = krea ? "always on with Krea 2 + depth" : !has ? "needs ComfyUI restarted (new frame node)" :
       !klein ? "FLUX 3 Klein only" : DEPTH_NOTES[mode];
   }
