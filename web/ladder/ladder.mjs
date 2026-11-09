@@ -176,7 +176,7 @@ export class LadderViewer {
     parts.push(Object.assign(document.createElement("span"), { className: "sep" }));
     const modes = document.createElement("span");
     modes.className = "grp";
-    for (const [m, label, tip] of [["sync", "▦ Sync 4-up", "Clay, colour clay, Draft and Final playing together, frame-locked (grid, wipe, onion)"],
+    for (const [m, label, tip] of [["sync", "▦ Sync 4-up", "Stage video, live stage, Draft and Final playing together, frame-locked (grid, wipe, onion)"],
       ["three", "3-way", "3-way"], ["wipe", "Wipe", "Wipe"], ["side", "Side by side", "Side by side"], ["fade", "Fade", "Fade"]]) {
       modes.append(chip(label, this.mode === m, true, tip, () => this.setMode(m)));
     }

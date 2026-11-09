@@ -2,7 +2,7 @@
 // C26 small UI items:
 //   1. ④ Frame says in plain words that FLUX Klein takes no depth or pose control (soundstage/router/adapters.py
 //      flux3_klein never feeds control_image into Klein's conditioning; no Klein control model exists).
-//   2. ⑥ Review's Sync 4-up: a "Colour clay" tile opened before the stage was ready drew nothing until the frame
+//   2. ⑥ Review's Sync 4-up: a "Live stage" tile (was "Colour clay") opened before the stage was ready drew nothing until the frame
 //      changed (C27, seen once on Jon's machine). It now waits for the stage and draws when the stage first renders.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -33,7 +33,7 @@ const readyStage = () => ({ state: { shot: { fps: 24, frames: 121 } }, fw: 960, 
 test("before the stage has a shot length, the colour tile waits for it instead of vanishing", () => {
   const early = { state: { shot: { fps: 24, frames: 0 } }, fw: 0, fh: 0, renderFrameTo: () => snap };
   assert.ok(!stageReady(early));
-  assert.deepEqual(shotReviewSources({}, early).slots[1], { label: "Colour clay", waitStage: true });
+  assert.deepEqual(shotReviewSources({}, early).slots[1], { label: "Live stage", waitStage: true });
   const s = readyStage();
   assert.ok(stageReady(s));
   const live = shotReviewSources({}, s).slots[1].live;

@@ -1,6 +1,6 @@
 // Which files the synced review shows for the current shot, from the App's saved takes (rendersFor(shotId)):
-//   Clay        the stage preview video (rung 1, "previz": the grey clay pass the generators were guided by)
-//   Colour clay the lifelike colour stage, drawn live from the 3D stage at each frame (there is no file for it)
+//   Stage video the stage preview video (rung 1, "previz": the pass the generators were guided by)
+//   Live stage  the lifelike colour stage, drawn live from the 3D stage at each frame (there is no file for it)
 //   Draft       the latest Draft
 //   Final       the latest Final (with sound when it has it)
 
@@ -27,12 +27,12 @@ export function shotReviewSources(renders = {}, stage = null) {
   } : null;
   // Review opened before the stage was up (the App's start screen): no shot length yet. The tile waits and the player
   // re-reads the sources when the stage first renders (SyncReview.stageReady, called from the stage's onRendered).
-  const waiting = !live && stage?.renderFrameTo ? { label: "Colour clay", waitStage: true } : null;
+  const waiting = !live && stage?.renderFrameTo ? { label: "Live stage", waitStage: true } : null;
   return {
     fps,
     slots: [
-      renders.previz ? { label: "Clay", url: renders.previz } : null,
-      live ? { label: "Colour clay", live } : waiting,
+      renders.previz ? { label: "Stage video", url: renders.previz } : null,
+      live ? { label: "Live stage", live } : waiting,
       renders.draft ? { label: "Draft", url: renders.draft } : null,
       final ? { label: "Final", url: final } : null,
     ],

@@ -342,7 +342,7 @@ Each line: **control**: what it does.
 - **Stop**: Stop: cancel the queued renders and interrupt the one running now
 - **Follow the blocking**
 - **Variations**: Variations: how many frames one Generate makes
-- **Steps for the image model**: Steps for the image model: more = finer detail, slower. CFG stays 1 (these models are distilled)
+- **Steps for the image model**: Steps for the image model: more = finer detail, slower
 - **Clear all**: Clear all: take every frame off this shot's list (the files stay on disk). Undo for 5 s.
 - **Delete the chosen frame?**
 - **Paint, mask or regenerate parts of your chosen frame; come back with “Use my ed…**: Paint, mask or regenerate parts of your chosen frame; come back with “Use my edited frame”

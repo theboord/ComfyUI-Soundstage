@@ -719,12 +719,12 @@ Each shot card in the row says where it stands: **no frame yet**, **painting…*
 | **Prompt: describe the frame** | What's in the frame and how it should feel ("golden hour, dust, worn leather saddles…"). The Look tab adds camera, lens and style to it. This is the same text as the Look tab's **Describe the scene**. |
 | **Follow the blocking** | How closely the frame sticks to the blocking, from **strict** through **balanced (recommended)** to **free**. It works with both image models. |
 | **Style or character add-on** | A stack of LoRAs on the image model, for a recurring character, a product or a house style. **＋ Add LoRA** adds a row (a LoRA, a strength slider, ✕ to remove); they apply in order. Every LoRA in `models/loras` is listed, the ones made for this model first, the rest marked *may not work with this model* with a warning, never blocked. A file whose header says it is for another model stops the frame with a message. An older single add-on opens as one row. |
-| **Advanced: steps, CFG, sampler, shift** | Steps, CFG, sampler, scheduler and sigma shift for FLUX 3 Klein or Krea 2. *auto* and 0 mean the model's tuned values. |
+| **Advanced: steps, CFG, sampler, shift** | Steps, CFG, sampler, scheduler and sigma shift for FLUX 3 Klein or Krea 2. *auto* and 0 mean the model's tuned values. Defaults (measured on an RTX 5080): **Krea 2 + depth** 12 steps, CFG 1, dpmpp_2m / beta (CFG 1.5 and up burns; the karras scheduler is never sent, it gives the stage back); **FLUX 3 Klein** 12 steps, CFG 2, auto, with **Lock to the stage depth: Light** on (Off gives the stage back); **FLUX.2 Klein 9B** 4 steps, CFG 1 (a 4-step distilled model, no depth lock). |
 | **Variations** | 1, 2 or 4 frames per click (default 4). |
-| **Quality** | **Fast**, **Standard**, **High**, **Max**: the number of steps. FLUX 3 Klein: 8, 20 (default), 28, 40. Krea 2: 6, 8 (default), 14, 20. CFG stays at 1: these models are distilled. |
+| **Quality** | **Fast**, **Standard**, **High**, **Max**: the number of steps. FLUX 3 Klein: 8, 12 (default), 20, 28. Krea 2: 8, 12 (default), 16, 20. FLUX.2 Klein 9B: 4 (default), 6, 8. Below 12 steps the prompt drops "slight vignetting" (at 8 steps it made blotchy dark corners). |
 | **Generate frames** | Queue the variations for this shot. About 6 to 10 s a frame once the models are warm; a new shot also renders its stage passes first. Pressing it again adds more candidates. |
 | **…for every shot** | The same number of variations for every shot in the scene. |
-| **Advanced: steps & CFG** | **Steps**, **CFG** and a negative prompt. Leave CFG at 1: above about 1.5 it burns and doubles the time. |
+| **Advanced: steps & CFG** | **Steps**, **CFG** and a negative prompt. Krea 2 stays at CFG 1: above about 1.5 it burns. FLUX 3 Klein defaults to CFG 2, where the negative prompt takes effect (it is ignored at CFG 1); it takes about 1.5x as long. |
 | **Style** | The 32 style cards from the Look tab: one click sets film stock, lens, palette and grade. |
 | **Camera** | Body, lens, focal length and aperture cards, the same as the Look tab. |
 
@@ -842,13 +842,13 @@ Shot length comes from **Length** in ③ Set, frame size from **Aspect**, and th
 
 ### ⑥ Review
 
-**Watch the clay and the renders play together.** Review opens on **▦ Sync 4-up**, which plays four tiles at once on one transport, locked to the same frame:
+**Watch the stage and the renders play together.** Review opens on **▦ Sync 4-up**, which plays four tiles at once on one transport, locked to the same frame:
 
-<p align="center"><img src="media/review_sync_grid.jpg" width="860" alt="Sync 4-up: Clay, Colour clay, Draft and Final, all on f 93"></p>
+<p align="center"><img src="media/review_sync_grid.jpg" width="860" alt="Sync 4-up: Stage video, Live stage, Draft and Final, all on f 93"></p>
 
-1. The four tiles are **Clay** (the stage preview video from ③ Set), **Colour clay** (the colour stage, drawn live), **Draft** and **Final**, all from the current shot. Each label shows the frame on screen, such as **f 93**. When you pause, all four read the same number.
+1. The four tiles are **Stage video** (the stage preview video from ③ Set), **Live stage** (the colour stage, drawn live), **Draft** and **Final**, all from the current shot. Each label shows the frame on screen, such as **f 93**. When you pause, all four read the same number.
 2. Press **▶ Play** (Space). Use **◀** / **▶|** (← / →, Shift for 10 frames) to step, and drag the scrub bar to move. **In** / **Out** (I / O) set a loop, and the speed menu goes from 0.25× to 1×.
-3. Pick a view: **Grid** (1) shows all four. **Wipe** (2) splits any two tiles with a handle you drag. **Onion** (3) puts a render over the clay at an **Opacity**, and **Difference** turns everything that matches black, so any drift from the blocking shows up bright.
+3. Pick a view: **Grid** (1) shows all four. **Wipe** (2) splits any two tiles with a handle you drag. **Onion** (3) puts a render over the stage at an **Opacity**, and **Difference** turns everything that matches black, so any drift from the blocking shows up bright.
 4. **⤢ Full window** fills the screen (Esc to come back). **Add files…**, or dropping files on the tiles, compares any four videos of your own. **By frame** / **By time** sets how files with different frame rates line up.
 
 Details and limits: [docs/review.md](review.md). The older one-picture views are still on the same bar:
@@ -863,7 +863,7 @@ The bar above the picture picks what you compare and how:
 
 | Control | What it does |
 |---|---|
-| **▦ Sync 4-up** (default) | Clay, colour clay, Draft and Final playing together, frame-locked, as a grid, a wipe or an onion skin (above). |
+| **▦ Sync 4-up** (default) | Stage video, live stage, Draft and Final playing together, frame-locked, as a grid, a wipe or an onion skin (above). |
 | **3-way** | The same frame cut into three slices, **Left** \| **Middle** \| **Right**, with two handles you drag across it. Left is **Stage** (or **Wire**, **Frame**), Middle is **Frame** or **Draft** (click it again to drop the middle), Right is **Draft** or **Final**. Every layer is cropped to the render's own aspect, so they line up while you drag: what changes between them is only what the model changed. |
 | **Wipe** | Two stages, **A** and **vs B** (any of Wire, Stage, Frame, Draft, Final), split by one handle. |
 | **Side by side** | A and B next to each other. |

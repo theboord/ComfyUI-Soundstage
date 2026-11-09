@@ -217,7 +217,7 @@ test("this shot's sources: clay preview, the live colour stage, Draft, Final (wi
   const stage = { state: { shot: { fps: 24, frames: 121 } }, fw: 960, fh: 512, renderFrameTo: (m, f) => { calls.push([m, f]); return snap; } };
   const spec = shotReviewSources({ previz: "/v/previz.mp4", draft: "/v/draft.mp4", final: "/v/final.mp4", final_sound: "/v/final_sound.mp4" }, stage);
   assert.equal(spec.fps, 24);
-  assert.deepEqual(spec.slots.map((s) => s?.label), ["Clay", "Colour clay", "Draft", "Final"]);
+  assert.deepEqual(spec.slots.map((s) => s?.label), ["Stage video", "Live stage", "Draft", "Final"]);
   assert.equal(spec.slots[3].url, "/v/final_sound.mp4");
   let drawn = null;
   const canvas = { width: 1, height: 1, getContext: () => ({ drawImage: (src) => { drawn = src; } }) };

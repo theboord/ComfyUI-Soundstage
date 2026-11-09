@@ -1,8 +1,8 @@
 # ⑥ Review: Sync 4-up
 
-Play a shot's **clay**, **colour clay**, **Draft** and **Final** at the same time, locked to the same frame, so you can see where the render stops following the blocking.
+Play a shot's **stage video**, **live stage**, **Draft** and **Final** at the same time, locked to the same frame, so you can see where the render stops following the blocking.
 
-<p align="center"><img src="media/review_sync_grid.jpg" width="860" alt="Sync 4-up: Clay, Colour clay, Draft and Final tiles, all on f 93, with one transport below"></p>
+<p align="center"><img src="media/review_sync_grid.jpg" width="860" alt="Sync 4-up: Stage video, Live stage, Draft and Final tiles, all on f 93, with one transport below"></p>
 
 ## Open it
 
@@ -12,8 +12,8 @@ Go to **⑥ Review**. **▦ Sync 4-up** is the first button on the Review bar, a
 
 | Tile | What it shows | Where it comes from |
 |---|---|---|
-| **Clay** | The stage preview video the generators were guided by | The shot's latest ③ Set run (`previz`) |
-| **Colour clay** | The lifelike colour stage | Drawn live from the 3D stage, frame by frame, as the stage is **now** |
+| **Stage video** | The stage preview video the generators were guided by | The shot's latest ③ Set run (`previz`) |
+| **Live stage** | The lifelike colour stage | Drawn live from the 3D stage, frame by frame, as the stage is **now** |
 | **Draft** | The latest Draft | The shot's saved takes |
 | **Final** | The latest Final (the version with sound when there is one) | The shot's saved takes |
 
@@ -25,7 +25,7 @@ Each tile's label shows the frame the browser actually decoded, as **f 52**. Whe
 
 - **Grid** shows all four tiles. You get 2×2 on a normal screen, four across on a very wide one, and one column on a tall phone.
 - **Wipe** splits any two tiles (**Left** and **Right**) with a handle you drag anywhere on the picture.
-- **Onion** puts one tile (**Over**) on top of another (**Under**) at the **Opacity** you set. **Difference** shows only what changed: black where the render matches the clay, and bright where the car, a person or the camera has moved.
+- **Onion** puts one tile (**Over**) on top of another (**Under**) at the **Opacity** you set. **Difference** shows only what changed: black where the render matches the stage, and bright where the car, a person or the camera has moved.
 
 In Wipe and Onion, both tiles are cropped to the top tile's aspect ratio, the same centre crop the router uses to fit the guide, so the two line up.
 
@@ -43,7 +43,7 @@ In Wipe and Onion, both tiles are cropped to the top tile's aspect ratio, the sa
 | **By frame** / **By time** | the map menu |
 | Full window / back | **⤢ Full window** / Esc |
 
-**By frame** (the default) shows frame N of every file together, which is right for renders of the same shot: a 25 fps re-encode of a 24 fps clay still has the same 121 frames. **By time** shows the same second of every file instead. The fps and frame count come from the MP4 / MOV header. A WebM or a damaged header falls back to the shot's frame rate.
+**By frame** (the default) shows frame N of every file together, which is right for renders of the same shot: a 25 fps re-encode of a 24 fps stage video still has the same 121 frames. **By time** shows the same second of every file instead. The fps and frame count come from the MP4 / MOV header. A WebM or a damaged header falls back to the shot's frame rate.
 
 Click inside the player first so the keys go to it and not to the stage.
 
@@ -56,7 +56,7 @@ Click inside the player first so the keys go to it and not to the stage.
 
 ## Known limits
 
-- **Colour clay is the stage as it is now**, not as it was when the take was rendered. If you have moved things since the render, that tile shows the new blocking. The Clay tile is the recorded one.
+- **Live stage is the stage as it is now**, not as it was when the take was rendered. If you have moved things since the render, that tile shows the new blocking. The Stage video tile is the recorded one.
 - The tiles play with no sound.
 - The colour stage is re-rendered for every frame while playing. On a slow machine that tile can fall behind and catch up in jumps. The videos keep their sync.
 - Measured on the try-it build in headless Chrome (Metal): 4 tiles, every view, 1× and 0.5×: of 613 checks of a playing video against the master at display time, 610 were within ±1 frame and 3 were 2 frames out (in the full-window resize), which the next check corrected. Not yet measured in a real ComfyUI tab on a GPU machine during a render.

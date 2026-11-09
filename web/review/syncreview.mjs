@@ -16,7 +16,7 @@ import { SPEEDS, MasterClock, tileFrame, tileRate, masterLength, driftAction, fr
   frameLabel, dropSlots } from "./syncclock.mjs";
 import { loadClip } from "./media.mjs";
 
-export const SLOT_NAMES = ["Clay", "Colour clay", "Draft", "Final"];
+export const SLOT_NAMES = ["Stage video", "Live stage", "Draft", "Final"];
 const READY_TRIES = 30;   // stageReady() attempts per waiting colour-stage tile
 const PREF_KEY = "ss_syncreview_v1";
 const COOL_MS = 300;   // after a correcting seek, give the tile this long before judging it again
