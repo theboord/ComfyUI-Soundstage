@@ -234,6 +234,7 @@ Each line: **control**: what it does.
 - **Layout IC-LoRA**
 - **Stage guide blur (px)**
 - **Frame reference**
+- **Start on the frame**
 - **VAE decode tiles**
 - **Codec**
 - **H.264 CRF**
