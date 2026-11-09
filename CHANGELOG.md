@@ -5,6 +5,24 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-08
 
+**FLUX Klein and Krea 2 in the image-edit paths: the router side of C26 (private branch `private/lifelike`, 22:10 by this machine's clock)**
+
+- **Still wrong or not verified (read first):**
+  1. **Not loaded into a running ComfyUI.** Verified by queuing API graphs built with this code on the Ada pod (ComfyUI 0.38) at the router level: no App, no Look node, no `SoundstageFill` node from this checkout ran there. The JS that points ④ Frame's prompt at `edit_prompt` is on Jon's branch (`688564f`), not here, and it matches `^FLUX 3 Klein` only: FLUX.2 Klein 9B gets the edit prompt only once that regex also takes it.
+  2. **One scene, one seed per arm**, both invented (the two-friends stage from `share/FirstFrame_Gaze`, and a street picture painted from it). No Replace with a cast picture and no Fill with a small mask was rendered on Krea 2.
+  3. **Krea 2 Whole frame holds the layout but barely edits.** "Make the street lamps brighter, keep the night and the rain" came back almost the same picture. FLUX.2 Klein 9B made the light change, and shifted the framing slightly.
+  4. **The bottom band could not be reproduced through Paint Studio**: `SoundstageFillCrop` already hands the model a 16-px crop. It was reproduced (and fixed) on the direct `krea_edit` graph C26 used: 1312x704 in, 1392x744 with a coloured band at `resolution_steps=1`; 1392x752 and clean at 16.
+  5. **The label "Krea 2 Turbo + Identity Edit · local"** shows on every edit-stage picker, ④ Frame's too, although ④ Frame's Krea path does not use the LoRA (identity edit broke the depth hold). A workflow that saved the plain label on an edit node keeps working through `find_model`, but ComfyUI's own combo check may reject it until the picker is set again.
+  6. **Colour clay tile:** the "stage not ready" state is a guess (no shot length, a 0 x 0 frame, or a throwing draw). C27 saw the bug once; it was not reproduced here.
+  7. **FLUX.2 Klein 9B's licence** is written as FLUX Non-Commercial from memory; check it before shipping. Replace with a subject uses ref_boost 4 (the Pose Studio value), not the pack's 1.
+  8. Full suites: Python 2229 pass, 1 fail (`test_clay_words`: the "clay" words in 0c55956's Review docs, failing the same at 0c55956). JS 1945 of 1948 before the knowledge pack was rebuilt; after: the footplant timing flake remains.
+- **④ Frame on Klein** ([soundstage/nodes_look.py](soundstage/nodes_look.py), [look/compile.py](soundstage/look/compile.py)): the Look node's 5th output `edit_prompt` (last, so saved links keep their slots) is "Turn image 1, a grey 3D blocking render … into a real photograph of the same shot …" plus the look without the shot-size and placement words; the clothes stay. FLUX.2 Klein 9B on the two-friends stage: the still prompt recomposed the shot (both people big, centred); the edit prompt kept both on their marks at their stage sizes.
+- **Krea 2 in Paint Studio** ([soundstage/router/fill_graph.py](soundstage/router/fill_graph.py), [edit_graph.py](soundstage/router/edit_graph.py)): Whole frame, Replace and Fill edit through the Krea 2 Identity Edit LoRA (v1_2 or v1_1, any subfolder; the pack's recipe, 10 steps euler / simple). Before, Whole frame painted an unrelated picture (two men by a railing for the street). Without the LoRA, Whole frame and Replace say why and stop.
+- **16-px edit canvas**, **ReferenceLatent on ComfyUI 0.38** (Klein is no longer dropped for lacking ReferenceMultiLatent; FLUX 3 Klein is gated on the `flux3` text-encoder type instead), and **FLUX.2 Klein 9B** as its own frame and edit model, its LoRAs through ④ Frame's add-on stack.
+- **④ Frame says** "Klein has no depth or pose control …" under Follow the blocking while a Klein paints the frame.
+- **⑥ Review:** the Colour clay tile draws when the stage first renders, not only on the next frame change.
+- Tests: `tests/test_c26_edit_paths.py` (34), `tests/js/c26_klein_control_review.test.mjs` (8). Stills: `c26fix_*` on the Ada pod.
+
 **⑥ Review plays clay, colour clay, Draft and Final together, frame-locked (Sync 4-up), and the old Review slider's frozen layer is fixed (private branch `private/lifelike`, 20:20 by this machine's clock)**
 
 Mike: "I wanna be able to get a really good review side-by-side where the clay video, the colour clay video, the draft render and the final render are all playing simultaneously ... that view right now, the slider review section, doesn't work at all."
