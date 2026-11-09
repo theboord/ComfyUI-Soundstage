@@ -3,6 +3,13 @@
 Soundstage is updated continuously on `main`. Newest first. Times are US Pacific.
 Each entry links to the code; every milestone ships with tests.
 
+## 2026-11-09 PST · ④ Frame: a router error shows its own sentence on the status line; FLUX.2 Klein 9B greys out Light / Strict (Jon's Claude C32, ported)
+
+**Still wrong / not tested:** nothing rendered here, no live ComfyUI, no App run; Jon's Claude's visible passes ran on Jon's branch, not this one. Only the live `execution_error` event is heard: an error that lands while the websocket is reconnecting is still missed (no /history fallback). ComfyUI's own generic "Still model (any) failed" card still shows as well. The 87561b5 reset of a carried-over lock on the model switch is kept and still has no unit test of its own. C32's edits to `tests/js/c30_klein9b.test.mjs` are not ported (that file is not on this branch). Ported from Jon's Claude's C32 patch (`9668329`, made against Jon's branch), re-implemented by hand because `web/pipeline/pipeline.mjs` has diverged.
+- When one of ④ Frame's own runs hits `execution_error`, its status reads "Frame failed: <first line of the router message>" (one line, at most 300 characters) and the Rendering timer stops. Before, it stayed on "Rendering 1 frame…" (once for 15 min). Other prompts' errors are ignored.
+- On FLUX.2 Klein 9B "Lock to the stage depth" is forced Off: Off is pressed and selectable, Light / Strict are disabled with the title "Klein 9B has no Krea 2 depth pass; lock is Off", and the note says so. Before, all three buttons were greyed with "FLUX 3 Klein only". FLUX 3 Klein keeps all three.
+- Tests: `tests/js/c32_frame_ui.test.mjs` (6, from C32, plus a depth-note check).
+
 ## 2026-11-09 01:30 PST · ④ Frame: Krea 2 + depth back to euler_ancestral; FLUX.2 Klein 9B drops a carried-over depth lock
 
 **Still wrong / not tested:** no render here; the Klein 9B lock reset has no unit test (checked by reading the change only). Found by Jon's Claude's visible C31 checks on Jon's machine.

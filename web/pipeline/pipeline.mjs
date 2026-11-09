@@ -108,6 +108,8 @@ export function samplingNote(model, st, cf) {
 export const frameDefaultsKey = (model) => (model === STILL_KREA ? "krea" : /^FLUX 3 Klein/.test(String(model || "")) ? "klein"
   : /^FLUX\.2 Klein/.test(String(model || "")) ? "klein9b" : "other");
 export const frameDefaultsFor = (model) => FRAME_DEFAULTS[frameDefaultsKey(model)];
+/** C32 (Jon's Claude): the title on the greyed Light / Strict lock buttons while FLUX.2 Klein 9B paints the frame. */
+export const KLEIN9B_NO_LOCK = "Klein 9B has no Krea 2 depth pass; lock is Off";
 /** The depth-lock mode a FLUX 3 Klein frame starts with when nobody picked one: Light when Krea 2 Turbo is installed
  *  (the Light pass paints with it), else Off. */
 export const defaultDepthMode = (model, hasTurbo) => (frameDefaultsKey(model) === "klein" && hasTurbo ? "light" : "off");
@@ -402,6 +404,9 @@ export class Pipeline {
     ctx.onRung((ev) => this._onRung(ev));
     const settle = (ev) => { if (this.inflight.delete(ev.detail?.prompt_id)) this._drawShotRows(); };
     for (const t of ["execution_success", "execution_error", "execution_interrupted"]) ctx.api?.addEventListener?.(t, settle);
+    // C32: a ④ Frame run that errors says the router's own sentence on the status line (ComfyUI shows only its
+    // generic "Still model (any) failed" card, and the status stayed on "Rendering 1 frame…")
+    ctx.api?.addEventListener?.("execution_error", (ev) => this._onFrameError(ev));
     setTimeout(() => this._loadChosen(), 0);   // node.properties arrive after the widget is built
     if (ctx.mountReview) ctx.mountReview(this._shotRow("review"));
     this.current = "set";
@@ -437,6 +442,22 @@ export class Pipeline {
       setProp(this.stopBtn, "hidden", n === 0);
       setProp(this.stopBtn, "textContent", n > 1 ? `■ Stop (${n})` : "■ Stop");
     } catch { /* server away */ }
+  }
+
+  /** C32: an execution_error for one of ④ Frame's runs (a prompt id in this.pending): its first line, the router's
+   *  sentence ("Lock to the stage depth needs Krea 2 Turbo, …"), goes on the status line and the ticker stops.
+   *  Other prompts' errors are ignored. */
+  _onFrameError(ev) {
+    const d = ev?.detail || {};
+    if (!d.prompt_id || !this.pending?.has(d.prompt_id)) return;
+    this.pending.delete(d.prompt_id);
+    const line = String(d.exception_message || "").split(/\r?\n/).map((s) => s.trim()).find(Boolean)
+      || `${d.node_type || "The frame node"} error (see the ComfyUI log)`;
+    const st = this.f?.status;
+    if (!st) return;
+    clearInterval(st._ssTick);
+    st._ssTick = null;
+    st.textContent = `Frame failed: ${line.length > 300 ? `${line.slice(0, 299)}…` : line}`;
   }
 
   /**
@@ -1205,11 +1226,16 @@ export class Pipeline {
     const krea = f.model.value === STILL_KREA, has = !!this.w(9081, "depth_lock");
     const klein = /^FLUX 3 Klein/.test(f.model.value), turbo = this._kreaTurboKey();
     const usable = !krea && has && klein;
-    let mode = this._dmode || defaultDepthMode(f.model.value, !!turbo);
+    // C32: FLUX.2 Klein 9B has no Krea 2 depth pass (the router errors), so its lock is Off: Off stays pressed and
+    // selectable, Light / Strict are greyed with the reason (the depth_lock 0 below comes from the not-usable branch)
+    const no9b = has && frameDefaultsKey(f.model.value) === "klein9b";
+    let mode = no9b ? "off" : this._dmode || defaultDepthMode(f.model.value, !!turbo);
     if (mode === "strict" && !turbo) mode = "off";
     for (const b of f.depthSeg.children) {
-      b.disabled = !usable || (b.dataset.k === "strict" && !turbo);
-      b.setAttribute("aria-pressed", String(usable && b.dataset.k === mode));
+      const locked = no9b && b.dataset.k !== "off";
+      b.disabled = no9b ? locked : !usable || (b.dataset.k === "strict" && !turbo);
+      if (locked) b.title = KLEIN9B_NO_LOCK; else if (b.title === KLEIN9B_NO_LOCK) b.title = "";
+      b.setAttribute("aria-pressed", String((usable || no9b) && b.dataset.k === mode));
     }
     if (usable) {
       this.set(9081, "depth_lock", mode === "off" ? 0 : DEPTH_LOCK);
@@ -1222,7 +1248,7 @@ export class Pipeline {
     if (f.kleinNote) f.kleinNote.hidden = !isKleinModel(f.model.value);
     this._wireFramePrompt(!krea && isKleinModel(f.model.value) && !(usable && mode === "strict"));
     f.depthNote.textContent = krea ? "always on with Krea 2 + depth" : !has ? "needs ComfyUI restarted (new frame node)" :
-      !klein ? "FLUX 3 Klein only" : DEPTH_NOTES[mode];
+      no9b ? "off: Klein 9B has no Krea 2 depth pass" : !klein ? "FLUX 3 Klein only" : DEPTH_NOTES[mode];
   }
 
   /** FLUX Klein on the frame node reads the Look's edit_prompt (C28 (e): "Turn image 1, a plain 3D stage render, into a
