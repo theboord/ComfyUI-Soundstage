@@ -741,6 +741,10 @@ def location(scene: dict) -> dict:
     env = scene.get("environment") or {}
     set_id = env.get("set", "plaza")
     int_ext, place = SET_PLACES.get(set_id, ("EXT", set_id.replace("_", " ")))
+    # A floor-plan interior (stage.setInterior) is built on the "empty" set: walls, a ceiling and windows make it an
+    # interior room, not an exterior with no place (it read "Exterior wide shot" with a closed room on screen).
+    if (scene.get("interior") or {}).get("rooms") and set_id in ("empty", "studio", "interior"):
+        int_ext, place = "INT", place if set_id != "empty" else "an interior room"
     weather = WEATHER_WORDS.get(env.get("weather", "none"), "")
     if not weather and set_id in PAVED_SETS and road_surface(scene) == "wet":
         weather = WET_ROAD_WORDS
@@ -905,6 +909,9 @@ def riders_of(scene: dict, host_id, frame: int = 0) -> list[dict]:
 
 
 SEAT_ROWS = ("plane_seats", "train_seats")   # the cabin / carriage sets' seat rows (web/stage/sets): people sit in them
+# Furniture a person sits on (stage.setPose "sit"): sitting, never riding ("a woman sitting on a chair rides", 2026-11-08).
+SEAT_FURNITURE = ("chair", "bench", "sofa", "armchair", "table", "coffee_table", "dining_table", "desk", "bed", "single_bed",
+                  "rock", "cube", "crate")
 
 
 def _seat_no(actor) -> int | None:
@@ -1026,7 +1033,7 @@ def frame_facts(scene: dict, cam: dict, frame: int) -> dict:
             size = "MS"                                # sitting: the legs are out of the picture however wide the frame
         entry = {**c, "noun": noun, "heading": heading, "pos": pos, **pr, "where": screen_words(pr["sx"]),
                  "size": size, "seated": seated,
-                 "riding": seated and not c["enclosed"] and host.get("kind") not in SEAT_ROWS, "host_id": host.get("id") if seated else None,
+                 "riding": seated and not c["enclosed"] and host.get("kind") not in SEAT_ROWS + SEAT_FURNITURE, "host_id": host.get("id") if seated else None,
                  # Riding along: they sit still in the frame however fast the car goes.
                  "moves": not (ride is not None and seated and host.get("id") == ride.get("id"))}
         (people if c["rig"] == "biped" else others).append(entry)
@@ -1128,6 +1135,8 @@ def blocking_sentence(entries: list[dict], cam: dict) -> str:
     for g in groups(entries, cam):
         base = {"ride": "ride", "sit": "sit"}.get(g["pose"]) or ("start" if g["moving"] else "stand")
         verb = base + " side by side" if g["plural"] else (base + "s")
+        if g["pose"] == "sit" and "sitting" in g["nouns"]:   # "a woman sitting on a chair is ...", not "... sits ..."
+            verb = "are side by side" if g["plural"] else "is"
         s = f"{g['nouns']} {verb} {g['where']}" + (", small in the distance" if g["far"] else "")
         if g["facing"]:
             s += f", {g['facing']}"

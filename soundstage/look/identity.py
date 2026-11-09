@@ -162,10 +162,17 @@ def _wardrobe(description: str, noun: str) -> str:
     """The clothes the look's description gives this person: 'a man in a dark canvas jacket, jeans and a cowboy hat
     and a woman in ...' -> 'a dark canvas jacket, jeans and a cowboy hat'. '' when it names none."""
     others = "|".join(n for n in ("man", "woman", "child", "boy", "girl", "person") if n != noun)
-    m = re.search(rf"\b(?:a|an|the|one)\s+(?:[\w-]+\s+){{0,2}}?{noun}\s+(?:in|wearing|dressed in)\s+(.+?)"
-                  rf"(?=\s+and\s+(?:a|an|the)\s+(?:[\w-]+\s+){{0,2}}?(?:{others})\b|\s+(?:{_VERBS})\b|[.;:()]|$)",
-                  description or "", re.I)
-    return m.group(1).strip(" ,") if m else ""
+    for m in re.finditer(rf"\b(?:a|an|the|one)\s+(?:[\w-]+\s+){{0,2}}?{noun}\s+(?:in|wearing|dressed in)\s+(.+?)"
+                         rf"(?=\s+and\s+(?:a|an|the)\s+(?:[\w-]+\s+){{0,2}}?(?:{others})\b|\s+(?:{_VERBS})\b|[.;:()]|$)",
+                         description or "", re.I):
+        # "a woman in her thirties" is her age, not her clothes (it made "The woman wears her thirties").
+        if not _AGE.match(m.group(1)):
+            return m.group(1).strip(" ,")
+    return ""
+
+
+_AGE = re.compile(r"(?:her|his|their)\s+(?:(?:early|mid|late)[\s-]+)?(?:teens|twenties|thirties|forties|fifties|sixties|seventies|"
+                  r"eighties|nineties|\d+s)\b|(?:his|her|their)\s+(?:own\s+)?(?:age|prime|youth)\b", re.I)
 
 
 # ---- what each person wears (C22c, 2026-11-08) ---------------------------------------------------------------------

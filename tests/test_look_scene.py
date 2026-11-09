@@ -181,3 +181,26 @@ def test_car_chase_vehicle_facing():
             assert _FACING[shot["id"]] in r[which], (shot["id"], which)
         # the seated getaway driver is never staged as a pedestrian beside the car (take 28 grew a walking man)
         assert "a man and a sports car" not in r["motion_prompt"].lower(), shot["id"]
+
+
+def test_floorplan_interior_reads_as_interior():
+    """stage.setInterior builds a plan room on the "empty" set: the prompt says Interior, not Exterior (2026-11-08)."""
+    from soundstage.look import scene as S
+    sc = {"environment": {"set": "empty"}, "interior": {"rooms": [{"name": "Room", "x": 0, "z": 0, "w": 4, "d": 5}]}}
+    assert S.location(sc)["int_ext"] == "INT"
+    assert S.location(sc)["place"] == "an interior room"
+    assert S.location({"environment": {"set": "empty"}})["int_ext"] == "EXT"
+
+
+def test_wardrobe_skips_an_age():
+    """'a woman in her thirties' is an age, not clothes ('The woman wears her thirties', 2026-11-08)."""
+    from soundstage.look.identity import _wardrobe
+    assert _wardrobe("Maya, a woman in her thirties, stands by the window.", "woman") == ""
+    assert _wardrobe("a woman in her mid-thirties stands at the door", "woman") == ""
+    assert _wardrobe("a woman in a grey raincoat walks in", "woman") == "a grey raincoat"
+
+
+def test_seated_on_a_chair_is_not_riding():
+    """A person sat on a chair (stage.setPose sit -> mount_id) sits; 'rides' is for horses and bikes (2026-11-08)."""
+    from soundstage.look import scene as S
+    assert "chair" in S.SEAT_FURNITURE and "horse" not in S.SEAT_FURNITURE
