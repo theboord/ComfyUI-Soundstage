@@ -54,6 +54,19 @@ def one_person(id_rgb: np.ndarray, scene: dict) -> tuple[dict, np.ndarray] | Non
     return shown[0] if len(shown) == 1 else None
 
 
+def head_in_frame(scene: dict, actor_id) -> bool | None:
+    """Is this person's head in frame 1? From the stage's own body projection (look/scene.frame_facts: the head at
+    0.92 of the body height through the shot camera, seated or standing), the same check that makes the still prompt
+    say INSERT. None when the stage can't tell (no camera, the person not among frame 1's people)."""
+    try:
+        from ..look import scene as S
+        facts = S.frame_facts(scene, S.camera_at(scene, 0), 0)
+    except Exception:  # noqa: BLE001 - an odd or partial scene: fall back to the ID pass alone
+        return None
+    e = next((e for e in facts.get("people") or [] if e.get("id") == actor_id), None)
+    return None if e is None else not e.get("crop")
+
+
 def pick_cast(labels: list[str], name: str) -> int | None:
     """Which reference is this person's cast picture: the character sheet labelled with their name, else the only
     character sheet, else the only reference when none is labelled (a picture on ref_1). None when it is unclear."""
@@ -91,6 +104,10 @@ def prepare(scene: dict, id_rgb: np.ndarray, labels: list[str]) -> dict:
     if hit is None:
         return {"ok": False, "why": "the cast pass needs exactly one person in frame 1"}
     actor, mask = hit
+    if head_in_frame(scene, actor.get("id")) is False:
+        # An insert (Maya S3, hands only): there is no face to give the cast likeness to, and the pass pasted the cast
+        # picture's jeans and a boot into the silhouette instead.
+        return {"ok": False, "why": f"frame 1 shows no face of {actor.get('name') or 'the person'} (the head is out of frame)"}
     ref = pick_cast(labels, actor.get("name") or "")
     if ref is None:
         return {"ok": False, "why": f"no single cast picture for {actor.get('name') or 'the person'}"}

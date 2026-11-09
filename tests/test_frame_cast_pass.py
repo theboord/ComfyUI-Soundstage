@@ -146,3 +146,32 @@ def test_a_person_seated_on_a_chair_is_still_the_one_person():
     seated = {**SCENE, "actors": [{**SCENE["actors"][0], "mount_id": "chair_main", "pose": "sit"}, SCENE["actors"][1]]}
     hit = CP.one_person(id_pass((60, MAYA)), seated)
     assert hit is not None and hit[0]["id"] == "maya"
+
+
+# ---------------------------------------------------------------- no face in frame 1: no pass (Maya S3, an insert)
+
+def _cam(position, target, focal=50.0):
+    return [{"frame": 0, "position": position, "target": target, "focal_mm": focal},
+            {"frame": 1, "position": position, "target": target, "focal_mm": focal}]
+
+
+INSERT = {**SCENE, "camera_track": _cam([0, 0.95, 0.7], [0, 0.9, 0])}      # on the hands and hips, head far above
+WIDE = {**SCENE, "camera_track": _cam([0, 1.5, 6.0], [0, 1.0, 0])}         # the whole person, head in frame
+
+
+def test_an_insert_with_the_head_out_of_frame_skips_the_cast_pass():
+    """S3 (hands only) ran the pass and pasted the cast picture's jeans and a boot into the silhouette."""
+    assert CP.head_in_frame(INSERT, "maya") is False
+    cp = CP.prepare(INSERT, id_pass((60, MAYA)), ["Maya — character sheet"])
+    assert not cp["ok"] and "no face" in cp["why"] and "mask" not in cp
+
+
+def test_a_person_with_the_head_in_frame_still_gets_the_pass():
+    assert CP.head_in_frame(WIDE, "maya") is True
+    assert CP.prepare(WIDE, id_pass((60, MAYA)), ["Maya — character sheet"])["ok"]
+
+
+def test_when_the_stage_cannot_tell_the_id_pass_decides_as_before():
+    assert CP.head_in_frame({**SCENE, "camera_track": "broken"}, "maya") is None
+    assert CP.prepare({**SCENE, "camera_track": "broken"}, id_pass((60, MAYA)), ["Maya — character sheet"])["ok"]
+    assert CP.head_in_frame(WIDE, "nobody") is None
