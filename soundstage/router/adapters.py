@@ -717,7 +717,9 @@ def ltx25_i2v(g, m, p):
 
 def ltx25_l2r(g, m, p):
     """Official LTX-2.5 ICLoRA Layout-To-Render two-stage distilled, as wired in Soundstage_Shot_v2_ladder:
-    stage clay video guides every frame, the look still (first_frame) rides along at frame_idx -1."""
+    stage clay video guides every frame, the look still (first_frame) rides along at frame_idx -1, and is also the
+    video's real frame 0 (LTXVImgToVideoInplace, strength 1, both stages) unless params first_frame is False. With no
+    first_frame (text + layout only) neither is added."""
     w = p["weights"]
     control = need(p, "control", "LTX-2.5 Layout-to-Render", "a control_video (the stage guide pass)")
     if not w.get("l2r_lora"):
@@ -730,6 +732,9 @@ def ltx25_l2r(g, m, p):
     model, ldf = lora.out(0), lora.out(1)
     ctrl = resize(g, control, W // 2, H // 2)
     lat = g.node("EmptyLTXVLatentVideo", width=W // 2, height=H // 2, length=frames, batch_size=1).out(0)
+    lock = p.get("first") is not None and p["params"].get("first_frame", True) not in (False, "false", "off", 0)
+    if lock:
+        lat = g.node("LTXVImgToVideoInplace", vae=vae, image=p["first"], latent=lat, strength=1.0, bypass=False).out(0)
     gd = _ic_guide(g, pos, neg, vae, lat, ctrl, 0, ldf, "disabled")
     if p.get("first") is not None:
         gd = _ic_guide(g, gd.out(0), gd.out(1), vae, gd.out(2), p["first"], -1, ldf, "center")
@@ -737,6 +742,8 @@ def ltx25_l2r(g, m, p):
     c1 = g.node("LTXVCropGuides", positive=gd.out(0), negative=gd.out(1), latent=s1)
     up_model = g.node("LatentUpscaleModelLoader", model_name=w["upscaler"]).out(0)
     up = g.node("LTXVLatentUpsampler", samples=c1.out(2), upscale_model=up_model, vae=vae).out(0)
+    if lock:
+        up = g.node("LTXVImgToVideoInplace", vae=vae, image=p["first"], latent=up, strength=1.0, bypass=False).out(0)
     hd = _ic_guide(g, pos, neg, vae, up, ctrl, 0, 1.0, "disabled")
     if p.get("first") is not None:
         hd = _ic_guide(g, hd.out(0), hd.out(1), vae, hd.out(2), p["first"], -1, 1.0, "center")

@@ -1,8 +1,8 @@
 {
  "id": "5e601aac-13d8-424d-96e2-163765da256d",
  "revision": 0,
- "last_node_id": 9082,
- "last_link_id": 14008,
+ "last_node_id": 9084,
+ "last_link_id": 14014,
  "nodes": [
   {
    "id": 5509,
@@ -8453,8 +8453,8 @@
     "version": 1,
     "state": {
      "lastGroupId": 166,
-     "lastNodeId": 9078,
-     "lastLinkId": 13989,
+     "lastNodeId": 9083,
+     "lastLinkId": 14011,
      "lastRerouteId": 5070
     },
     "revision": 0,
@@ -8509,7 +8509,8 @@
       "type": "VAE",
       "linkIds": [
        13889,
-       13892
+       13892,
+       14009
       ],
       "pos": [
        -2572.0516466696627,
@@ -8594,7 +8595,8 @@
       "name": "look_still",
       "type": "IMAGE",
       "linkIds": [
-       13894
+       13894,
+       14010
       ],
       "pos": [
        -2572.0516466696627,
@@ -8828,7 +8830,7 @@
         "localized_name": "latent",
         "name": "latent",
         "type": "LATENT",
-        "link": 13874
+        "link": 14011
        },
        {
         "localized_name": "image",
@@ -9152,6 +9154,78 @@
        "use_streaming": false,
        "tile_frames": 97
       }
+     },
+     {
+      "id": 9083,
+      "type": "LTXVImgToVideoInplace",
+      "pos": [
+       -2338.9841840545723,
+       3773.527508878357
+      ],
+      "size": [
+       270,
+       122
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "title": "First frame (your chosen frame, frame 0)",
+      "inputs": [
+       {
+        "localized_name": "vae",
+        "name": "vae",
+        "type": "VAE",
+        "link": 14009
+       },
+       {
+        "localized_name": "image",
+        "name": "image",
+        "type": "IMAGE",
+        "link": 14010
+       },
+       {
+        "localized_name": "latent",
+        "name": "latent",
+        "type": "LATENT",
+        "link": 13874
+       },
+       {
+        "localized_name": "strength",
+        "name": "strength",
+        "type": "FLOAT",
+        "widget": {
+         "name": "strength"
+        },
+        "link": null
+       },
+       {
+        "localized_name": "bypass",
+        "name": "bypass",
+        "type": "BOOLEAN",
+        "widget": {
+         "name": "bypass"
+        },
+        "link": null
+       }
+      ],
+      "outputs": [
+       {
+        "localized_name": "latent",
+        "name": "latent",
+        "type": "LATENT",
+        "links": [
+         14011
+        ]
+       }
+      ],
+      "properties": {
+       "Node name for S&R": "LTXVImgToVideoInplace",
+       "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+       1,
+       false
+      ]
      }
     ],
     "groups": [],
@@ -9233,8 +9307,8 @@
       "id": 13874,
       "origin_id": 3059,
       "origin_slot": 0,
-      "target_id": 5012,
-      "target_slot": 3,
+      "target_id": 9083,
+      "target_slot": 2,
       "type": "LATENT"
      },
      {
@@ -9329,6 +9403,30 @@
       "target_slot": 7,
       "type": "FLOAT",
       "parentId": 5070
+     },
+     {
+      "id": 14009,
+      "origin_id": -10,
+      "origin_slot": 2,
+      "target_id": 9083,
+      "target_slot": 0,
+      "type": "VAE"
+     },
+     {
+      "id": 14010,
+      "origin_id": -10,
+      "origin_slot": 9,
+      "target_id": 9083,
+      "target_slot": 1,
+      "type": "IMAGE"
+     },
+     {
+      "id": 14011,
+      "origin_id": 9083,
+      "origin_slot": 0,
+      "target_id": 5012,
+      "target_slot": 3,
+      "type": "LATENT"
      }
     ],
     "reroutes": [
@@ -9450,8 +9548,8 @@
     "version": 1,
     "state": {
      "lastGroupId": 166,
-     "lastNodeId": 9078,
-     "lastLinkId": 13989,
+     "lastNodeId": 9084,
+     "lastLinkId": 14014,
      "lastRerouteId": 5070
     },
     "revision": 0,
@@ -9508,7 +9606,8 @@
       "linkIds": [
        13829,
        13877,
-       13901
+       13901,
+       14012
       ],
       "pos": [
        -899.1938279610581,
@@ -9593,7 +9692,8 @@
       "name": "image",
       "type": "IMAGE",
       "linkIds": [
-       13900
+       13900,
+       14013
       ],
       "label": "first_frame_image",
       "pos": [
@@ -9915,7 +10015,7 @@
         "localized_name": "latent",
         "name": "latent",
         "type": "LATENT",
-        "link": 13871
+        "link": 14014
        },
        {
         "localized_name": "image",
@@ -10385,6 +10485,78 @@
       "widgets_values_named": {
        "sampler_name": "euler_ancestral"
       }
+     },
+     {
+      "id": 9084,
+      "type": "LTXVImgToVideoInplace",
+      "pos": [
+       -705.1297660930059,
+       2142.29817095154
+      ],
+      "size": [
+       270,
+       122
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "title": "First frame (your chosen frame, frame 0)",
+      "inputs": [
+       {
+        "localized_name": "vae",
+        "name": "vae",
+        "type": "VAE",
+        "link": 14012
+       },
+       {
+        "localized_name": "image",
+        "name": "image",
+        "type": "IMAGE",
+        "link": 14013
+       },
+       {
+        "localized_name": "latent",
+        "name": "latent",
+        "type": "LATENT",
+        "link": 13871
+       },
+       {
+        "localized_name": "strength",
+        "name": "strength",
+        "type": "FLOAT",
+        "widget": {
+         "name": "strength"
+        },
+        "link": null
+       },
+       {
+        "localized_name": "bypass",
+        "name": "bypass",
+        "type": "BOOLEAN",
+        "widget": {
+         "name": "bypass"
+        },
+        "link": null
+       }
+      ],
+      "outputs": [
+       {
+        "localized_name": "latent",
+        "name": "latent",
+        "type": "LATENT",
+        "links": [
+         14014
+        ]
+       }
+      ],
+      "properties": {
+       "Node name for S&R": "LTXVImgToVideoInplace",
+       "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+       1,
+       false
+      ]
      }
     ],
     "groups": [
@@ -10504,8 +10676,8 @@
       "id": 13871,
       "origin_id": 9025,
       "origin_slot": 0,
-      "target_id": 9039,
-      "target_slot": 3,
+      "target_id": 9084,
+      "target_slot": 2,
       "type": "LATENT",
       "parentId": 5062
      },
@@ -10631,6 +10803,30 @@
       "target_id": 9041,
       "target_slot": 1,
       "type": "CONDITIONING"
+     },
+     {
+      "id": 14012,
+      "origin_id": -10,
+      "origin_slot": 2,
+      "target_id": 9084,
+      "target_slot": 0,
+      "type": "VAE"
+     },
+     {
+      "id": 14013,
+      "origin_id": -10,
+      "origin_slot": 9,
+      "target_id": 9084,
+      "target_slot": 1,
+      "type": "IMAGE"
+     },
+     {
+      "id": 14014,
+      "origin_id": 9084,
+      "origin_slot": 0,
+      "target_id": 9039,
+      "target_slot": 3,
+      "type": "LATENT"
      }
     ],
     "reroutes": [

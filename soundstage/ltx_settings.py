@@ -24,6 +24,9 @@ A settings dict (every key optional; missing keys come from the preset):
   guide_blur       px of Gaussian blur on the clay guide at 960 wide (None = from Adherence; 0 = sharp)
   reference        strength of your chosen frame as the look reference (the frame_idx -1 IC-LoRA guide, both stages;
                    None = from Adherence). 1 lets the frame's composition win over the clay at the start of the shot.
+  first_frame      True (default): your chosen frame IS the video's frame 0 (LTXVImgToVideoInplace, strength 1, in
+                   stage 1 and in stage 2), on top of the look reference. False: the frame only steers the look (the
+                   frame_idx -1 guide), for a shot that should not open on a fixed picture.
   fps              render frame rate (None = the shot's); the clay is retimed to it
   temporal_x2      LTX-2.5 temporal upscaler on the final latent: twice the frames (48 fps from 24)
   decode           {"tile_size", "overlap", "temporal_size", "temporal_overlap"} for the tiled VAE decode
@@ -112,6 +115,45 @@ def reference_guides(prompt: dict) -> list[str]:
     frame, outside the clip's time range) as opposed to the clay guide at frame_idx 0."""
     return [k for k, n in (prompt or {}).items() if isinstance(n, dict) and n.get("class_type") == "LTXAddVideoICLoRAGuide"
             and (n.get("inputs") or {}).get("frame_idx") == -1]
+
+
+def first_frame_nodes(prompt: dict) -> list[str]:
+    """The App's first-frame conditioning in an API prompt: its LTXVImgToVideoInplace nodes (your chosen frame on
+    latent frame 0, stage 1 and stage 2)."""
+    return [k for k, n in (prompt or {}).items() if isinstance(n, dict) and n.get("class_type") == "LTXVImgToVideoInplace"]
+
+
+def _flag(v, default=True) -> bool:
+    if v is None or v == "":
+        return default
+    if isinstance(v, str):
+        return v.strip().lower() not in ("0", "false", "no", "off")
+    return bool(v)
+
+
+def _quality_settings(prompt: dict):
+    q = next((n.get("inputs") or {} for n in (prompt or {}).values()
+              if isinstance(n, dict) and n.get("class_type") == "SoundstageQuality"), None)
+    if q is None:
+        return None
+    quality, adv = q.get("quality"), q.get("advanced", "")
+    if isinstance(quality, list) or isinstance(adv, list):
+        return None                         # driven by links: nothing literal to read
+    return from_quality(quality or "Final", adv)
+
+
+def apply_first_frame(prompt: dict) -> dict:
+    """On-prompt: switch the App's first-frame conditioning from the shot's settings (first_frame, default on):
+    bypass on the LTXVImgToVideoInplace nodes when it is off. Linked bypasses and non-Soundstage prompts are left
+    alone. Edits the prompt in place and returns it."""
+    s = _quality_settings(prompt)
+    if s is None:
+        return prompt
+    for k in first_frame_nodes(prompt):
+        inp = prompt[k].setdefault("inputs", {})
+        if not isinstance(inp.get("bypass"), list):
+            inp["bypass"] = not s["first_frame"]
+    return prompt
 
 
 def apply_reference(prompt: dict) -> dict:
@@ -276,6 +318,7 @@ def resolve(settings: dict | str | None, presets: dict | None = None) -> dict:
         out["guide_blur"] = int(min(32, max(0, round(float(out["guide_blur"])))))
     if out.get("reference") is not None:
         out["reference"] = float(min(1.0, max(0.0, float(out["reference"]))))
+    out["first_frame"] = _flag(out.get("first_frame"), True)
     if out.get("fps") is not None:
         out["fps"] = float(min(60.0, max(8.0, float(out["fps"]))))
     rows = lora_rows(out["loras"] if "loras" in out else out.get("extra_lora"))

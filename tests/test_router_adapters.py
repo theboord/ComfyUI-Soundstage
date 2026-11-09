@@ -247,6 +247,35 @@ def test_ltx_auto_mode_picks_layout_to_render_when_control_connected():
     assert "LTXICLoRALoaderModelOnly" not in classes and "LTXVImgToVideoInplace" in classes
 
 
+def test_ltx_l2r_first_frame_is_the_real_frame_0_in_both_stages():
+    """The look still was only a frame_idx -1 guide, so the model was free to change the face from f0 (Maya S2)."""
+    m = next(x for x in WIRED if x["id"] == "open.ltx_2_5")
+
+    def build(**kw):
+        g = FakeGraph()
+        A.ADAPTERS["ltx25"](g, m, base_p(m, "generate_video", control=link("ctrl"), **kw))
+        return g
+
+    g = build(first=link("img"))
+    i2v = [n for n in g.nodes.values() if n.class_type == "LTXVImgToVideoInplace"]
+    assert len(i2v) == 2 and all(n.inputs["image"] == link("img") and n.inputs["strength"] == 1.0
+                                 and n.inputs["bypass"] is False for n in i2v)
+    ups = [n for n in g.nodes.values() if n.class_type == "LTXVLatentUpsampler"]
+    assert any(n.inputs["latent"] == ups[0].out(0) for n in i2v)           # stage 2: on the upscaled latent
+    empty = next(n for n in g.nodes.values() if n.class_type == "EmptyLTXVLatentVideo")
+    assert any(n.inputs["latent"] == empty.out(0) for n in i2v)            # stage 1: on the empty latent
+    # The look guide stays (frame_idx -1 in both stages).
+    assert sum(n.inputs.get("frame_idx") == -1 for n in g.nodes.values()) == 2
+    # Switchable, and a text + layout shot (no first frame) has neither.
+    p = base_p(m, "generate_video", control=link("ctrl"), first=link("img"))
+    p["params"]["first_frame"] = False
+    g = FakeGraph()
+    A.ADAPTERS["ltx25"](g, m, p)
+    assert not any(n.class_type == "LTXVImgToVideoInplace" for n in g.nodes.values())
+    g = build()
+    assert not any(n.class_type == "LTXVImgToVideoInplace" for n in g.nodes.values())
+
+
 def test_ltx_l2r_without_lora_is_a_friendly_error():
     m = next(x for x in WIRED if x["id"] == "open.ltx_2_5")
     p = base_p(m, "generate_video", control=link("ctrl"))

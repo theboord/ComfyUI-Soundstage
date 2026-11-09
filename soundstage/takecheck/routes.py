@@ -77,11 +77,13 @@ def judge(path: str, base_url: str, force: bool = False) -> dict:
 
 
 def on_prompt_reference(body: dict) -> dict:
-    """On-prompt: Adherence's look-reference strength on the App's frame_idx -1 guides. Never raises."""
+    """On-prompt: Adherence's look-reference strength on the App's frame_idx -1 guides, and the shot's first-frame
+    switch on its LTXVImgToVideoInplace nodes. Never raises."""
     try:
         from .. import ltx_settings as L
         if isinstance(body.get("prompt"), dict):
             L.apply_reference(body["prompt"])
+            L.apply_first_frame(body["prompt"])
     except Exception:  # noqa: BLE001 - a knob must never stop a render
         pass
     return body

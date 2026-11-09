@@ -73,7 +73,7 @@ export const DECODES = [
   ["1024/256/128/48", "Large tiles (fastest, most memory)", { tile_size: 1024, overlap: 256, temporal_size: 128, temporal_overlap: 48 }],
 ];
 const KEYS = ["resolution", "two_stage", "steps_1", "steps_2", "s2_start", "sigmas_1", "sigmas_2", "sampler", "scheduler", "shift", "cfg", "seed",
-  "ic_lora", "fps", "temporal_x2", "decode", "codec", "crf", "loras", "adherence", "guide_blur", "reference", "from"];
+  "ic_lora", "fps", "temporal_x2", "decode", "codec", "crf", "loras", "adherence", "guide_blur", "reference", "first_frame", "from"];
 /** The quality knobs: changing one of these on a Draft / Final shot makes it Advanced. The seed (the take), Adherence and
  *  its raw knobs (the blocking) and the LoRAs (add-ons) are their own controls and never move a shot off its preset. */
 export const QUALITY_KEYS = ["resolution", "two_stage", "steps_1", "steps_2", "s2_start", "sigmas_1", "sigmas_2", "sampler", "scheduler", "shift",
@@ -106,6 +106,8 @@ export function resolveSettings(saved) {
   out.crf = Math.round(clamp(num(out.crf, 14), 0, 51));
   out.temporal_x2 = !!out.temporal_x2;
   if (!ADHERENCE_NAMES.includes(out.adherence)) out.adherence = ADHERENCE.default;
+  // Your chosen frame is the video's real frame 0 (both stages) unless the shot turns it off (mirrors ltx_settings).
+  out.first_frame = !(out.first_frame === false || ["0", "false", "no", "off"].includes(String(out.first_frame).toLowerCase()));
   return out;
 }
 
@@ -190,7 +192,8 @@ export class LtxStore {
    *  from Final's values and remembers where it came from (the "Reset to …" button). */
   setPreset(sid, q) {
     const saved = this.saved(sid), { seed, adherence } = saved, loras = resolveSettings(saved).loras;   // the take, the blocking and the add-ons are their own controls
-    const keep = { ...(seed != null ? { seed } : {}), ...(adherence ? { adherence } : {}), ...(loras?.length ? { loras } : {}) };
+    const ff = resolveSettings(saved).first_frame;
+    const keep = { ...(seed != null ? { seed } : {}), ...(adherence ? { adherence } : {}), ...(loras?.length ? { loras } : {}), ...(ff === false ? { first_frame: false } : {}) };
     if (q === "Advanced") {
       const cur = resolveSettings(saved);
       return this.put(sid, { preset: "Advanced", from: cur.preset === "Advanced" ? cur.from : cur.preset, ...keep });
@@ -320,6 +323,7 @@ export class LtxAdvanced {
     f.ic = h("input", { type: "number", min: 0, max: 2, step: 0.05, placeholder: "auto", on: { change: () => this.patch({ ic_lora: f.ic.value === "" ? null : +f.ic.value }) } });
     f.blur = h("input", { type: "number", min: 0, max: 32, step: 1, placeholder: "auto", on: { change: () => this.patch({ guide_blur: f.blur.value === "" ? null : +f.blur.value }) } });
     f.ref = h("input", { type: "number", min: 0, max: 1, step: 0.05, placeholder: "auto", on: { change: () => this.patch({ reference: f.ref.value === "" ? null : +f.ref.value }) } });
+    f.ff = h("input", { type: "checkbox", on: { change: () => this.patch({ first_frame: f.ff.checked ? null : false }) } });
     f.loras = createLoraStack({ h, min: -2, max: 2, fallback: 0.8, matchLabel: "LTX LoRAs", otherLabel: "Other LoRAs (may not work with LTX)",
       groups: (cur) => ltxLoraGroups(this._loraValues(), cur), warn: ltxLoraWarning,
       onChange: (rows) => this.patch({ loras: rows.length ? rows : null }) });
@@ -348,7 +352,8 @@ export class LtxAdvanced {
       h("h4", {}, "Blocking (Adherence)"),
       h("div", { class: "g" }, ...row("Layout IC-LoRA", f.ic, "How literally LTX follows the stage animation. Empty = from Adherence (Exact 1.0, Balanced 0.92, Loose 0.825). Above 1.1 tested no tighter."),
         ...row("Stage guide blur (px)", f.blur, "Softens the stage guide so LTX redraws limbs and gait. 0 = sharp. Empty = from Adherence (Exact 0, Balanced 6, Loose 10)."),
-        ...row("Frame reference", f.ref, "How strongly your chosen frame steers the look. 1 also pulls the composition toward the frame (the opening can start off its marks); lower lets the blocking win. Below 0.4 the render turns flat grey. Empty = from Adherence (Exact 0.5).")),
+        ...row("Frame reference", f.ref, "How strongly your chosen frame steers the look. 1 also pulls the composition toward the frame (the opening can start off its marks); lower lets the blocking win. Below 0.4 the render turns flat grey. Empty = from Adherence (Exact 0.5)."),
+        ...row("Start on the frame", h("label", { class: "row" }, f.ff, "the shot opens on your chosen frame"), "On: your chosen frame is the video's real first frame in both stages, so faces and costume start exactly as picked and hold longer (about 30% more render time measured on one shot). Off: the frame only steers the look, for a shot that should not open on a fixed picture.")),
       h("h4", {}, "LoRAs (your stack, applied in order)"),
       h("div", { class: "note" }, "Style, character or detail add-ons on the video model. The Layout IC-LoRA above is separate: Adherence sets it."),
       f.loras.el,
@@ -390,6 +395,7 @@ export class LtxAdvanced {
     f.ic.value = s.ic_lora == null ? "" : String(s.ic_lora);
     f.blur.value = s.guide_blur == null ? "" : String(s.guide_blur);
     f.ref.value = s.reference == null ? "" : String(s.reference);
+    f.ff.checked = s.first_frame !== false;
     const ak = adherenceKnobs(s);
     f.ic.placeholder = `auto (${ak.ic_lora})`; f.blur.placeholder = `auto (${ak.guide_blur})`; f.ref.placeholder = `auto (${ak.reference})`;
     this._loraOptions();

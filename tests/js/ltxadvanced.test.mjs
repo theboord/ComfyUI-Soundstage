@@ -199,3 +199,20 @@ test("Adherence is saved per shot (only when not the default) and survives a pre
   st.writeGraph((id, k, v) => calls.push([id, k, v]), "a");
   assert.deepEqual(JSON.parse(calls.find(([id, k]) => id === 9096 && k === "advanced")[2]).adherence, "Balanced");
 });
+
+test("Start on the frame: on by default, saved only when off, kept across a preset click, not a quality knob", () => {
+  assert.equal(resolveSettings({}).first_frame, true);
+  assert.equal(resolveSettings({ first_frame: false }).first_frame, false);
+  assert.equal(resolveSettings({ first_frame: "off" }).first_frame, false);
+  assert.deepEqual(compactSettings({ preset: "Final" }), { preset: "Final" });
+  assert.deepEqual(compactSettings({ preset: "Final", first_frame: false }), { preset: "Final", first_frame: false });
+  assert.ok(!QUALITY_KEYS.includes("first_frame"));
+  const st = new LtxStore();
+  st.patch("s1", { first_frame: false });
+  assert.equal(st.saved("s1").preset, "Final");                    // a blocking switch never moves the shot to Advanced
+  st.setPreset("s1", "Draft");
+  assert.deepEqual(st.saved("s1"), { preset: "Draft", first_frame: false });
+  st.patch("s1", { first_frame: null });
+  assert.deepEqual(st.saved("s1"), { preset: "Draft" });
+  assert.match(web("motion/ltxadvanced.mjs"), /row\("Start on the frame", /);
+});
