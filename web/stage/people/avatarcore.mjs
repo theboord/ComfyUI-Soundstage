@@ -17,7 +17,7 @@
 import * as THREE from "../../vendor/three.module.min.mjs";
 import { LIBRARY } from "../library.mjs";
 import { knockedOver, physicsFrom } from "./onemotion.mjs";
-import { naturalStride, strideScale } from "./locomotion.mjs";
+import { naturalStride, strideScale, OPTS as LOCO } from "./locomotion.mjs";
 
 /** The person kinds (stage.mjs PERSON_KINDS): every one is lifelike or a marked stand-in, never clay. */
 export const PERSON_KINDS = new Set(["man", "woman", "child"]);
@@ -242,7 +242,7 @@ export function clipTimes({ frame, fps = 24, phase = 0, seed = 0 }, clips) {
     const d = c.duration || 1;
     // (the idle at each person's own pace, 0.9-1.1x from the seed: two people standing side by side don't shift their
     // weight in step; seed 0 plays the clip at its own rate)
-    out[k] = k === "idle" ? (((frame / fps) * idlePace(seed) + seed * d) % d + d) % d : frac * d;
+    out[k] = k === "idle" ? (((frame / fps) * (LOCO.idlePace ? idlePace(seed) : 1) + seed * d) % d + d) % d : frac * d;
   }
   return out;
 }

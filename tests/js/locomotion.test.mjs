@@ -2,13 +2,44 @@
 // body turns ahead of the path and eases into a turn, the head leads into it, each person swings their arms their own
 // way and more when walking faster, a standing person breathes, the idle runs at each person's own pace, and the feet
 // stay grounded through it all. Every test here fails on the parent commit (08dd88d); numbers in the messages.
-import { test } from "node:test";
+import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import * as THREE from "../../web/vendor/three.module.min.mjs";
 import * as C from "../../web/stage/people/avatarcore.mjs";
 import * as A from "../../web/stage/people/avatars.mjs";
 import { Stage } from "../../web/stage/stage.mjs";
 import * as K from "./footkit.mjs";
+import * as LOCO from "../../web/stage/people/locomotion.mjs";
+
+// The lifelike-walk layers are OFF by default since 2026-11-08 19:59 (Mike backed them out: the clips play as authored);
+// these tests check the code behind the switches, so they switch the layers on here (in this file's own process).
+const SHIPPED = { ...LOCO.OPTS }, LAYERS_ON = { retime: true, heading: true, layer: true, idlePace: true };
+before(() => Object.assign(LOCO.OPTS, LAYERS_ON));
+after(() => Object.assign(LOCO.OPTS, SHIPPED));
+
+test("by default every layer that alters the clips is off: the walk plays as authored", () => {
+  for (const k of ["retime", "heading", "stride", "layer", "blend", "idlePace"]) assert.equal(SHIPPED[k], false, `${k} is off by default`);
+  // the idle at the clip's own rate for everyone (was 0.9-1.1x per person)
+  const t = C.clipTimes({ frame: 48, fps: 24, phase: 0, seed: 0.37 }, { idle: { duration: 10 } }).idle;
+  const at = (f) => C.clipTimes({ frame: f, fps: 24, phase: 0, seed: 0.37 }, { idle: { duration: 10 } }).idle;
+  LOCO.OPTS.idlePace = false;
+  try { assert.ok(Math.abs(at(48) - at(24) - 1) < 1e-9, `idle advances ${(at(48) - at(24)).toFixed(3)} s in 1 s`); } finally { LOCO.OPTS.idlePace = true; }
+  assert.ok(Number.isFinite(t));
+});
+
+test("real Rocketbox, default switches: the audit scene's soles never go through the floor and never float", { skip: K.NOT_INSTALLED }, async () => {
+  Object.assign(LOCO.OPTS, SHIPPED);
+  try {
+    for (const kind of ["man", "woman"]) {
+      const a = person(kind, SCENE[kind]);
+      const st = await K.setup(kind, a, { frames: 241 });
+      const s = K.physical(K.measure(st, a));
+      // measured with the layers off (as before the lifelike walk): man pen 0, slide 0.52 cm/frame, drop 4.32 cm;
+      // woman slide 1.08 cm/frame
+      assert.ok(s.pen > -0.01 && s.float === 0 && s.slide <= 0.012 && s.drop <= 0.05, `${kind}: ${K.fmt(s)}`);
+    }
+  } finally { Object.assign(LOCO.OPTS, LAYERS_ON); }
+});
 
 const FPS = 24;
 const deg = (r) => (r * 180) / Math.PI;

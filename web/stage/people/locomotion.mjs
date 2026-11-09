@@ -27,9 +27,12 @@ const sstep = (x) => { const t = clamp(x, 0, 1); return t * t * (3 - 2 * t); };
 const smooth = (a, b, x) => sstep((x - a) / (b - a));
 const wrap = (x) => Math.atan2(Math.sin(x), Math.cos(x));
 
-/** Switches for A/B checks (all on): retime the path, ease the heading, scale the stride, the upper-body layer, the
- *  eased idle <-> walk crossfade. */
-export const OPTS = { retime: true, heading: true, stride: false, layer: true, blend: false };
+/** Switches for A/B checks: retime the path, ease the heading (and the 300 deg/s turn rate), scale the stride, the
+ *  upper-body layer (arm swing by speed and person, lean, bank, breath, head lead), the eased idle <-> walk crossfade,
+ *  each person's own idle pace. ALL OFF since 2026-11-08 19:59 (Mike: "whatever we're doing to alter the animations does
+ *  not look good, so let's back up"): the clips play as authored, only the feet are kept on the ground. The code
+ *  stays; switch them back on here (or revert the commit that turned them off) to restore the lifelike-walk layers. */
+export const OPTS = { retime: false, heading: false, stride: false, layer: false, blend: false, idlePace: false };
 
 /** Person kinds the human locomotion applies to. */
 export const HUMAN_KINDS = new Set(["man", "woman", "child"]);

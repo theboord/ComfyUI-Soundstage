@@ -5,6 +5,16 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-08
 
+**The walk plays the clips as authored again: every layer that altered the animation is off (private branch `private/lifelike`, 19:59 by this machine's clock)**
+
+Mike, after the walk before/after and the diagnostic ladder: "Whatever we're doing to alter the animations does not look good, so let's back up on that."
+
+- **Still wrong (read first):**
+  1. **The walk is back to the robot timing it had before 9bf6649.** People stop dead and set off at full speed in one frame (about 9 m/s^2), turn at a constant 540 deg/s, and have no lean, bank, breath or head lead. Four men on the same keys swing their arms alike again. With these layers off, the audit scene's feet are back to the old numbers: the man's pelvis drops 4.32 cm to reach a planted foot, and the woman's sole slides 1.08 cm/frame. No shoe goes into the floor and no frame floats.
+  2. **The clip is still played faster or slower with speed.** That is the distance-driven gait phase, which keeps the planted feet from skating, so it stays. At 1.7 m/s a man still takes 2.79 steps a second (a person takes about 2.0). The diagnostic ladder found that the Rocketbox walk itself is a single 1.2 s stride with zero sideways hip sway; nothing here changes that.
+- **Off by default, code kept:** `locomotion.OPTS` = `{ retime, heading, stride, layer, blend, idlePace }`, all `false` ([web/stage/people/locomotion.mjs](web/stage/people/locomotion.mjs)). The new `idlePace` switch gates each person's 0.9-1.1x idle rate ([avatarcore.mjs](web/stage/people/avatarcore.mjs) `clipTimes`). Foot grounding (footplant.mjs) stays on. To restore the lifelike-walk layers, set the switches back to `true`, or revert this commit.
+- **Tests:** [tests/js/locomotion.test.mjs](tests/js/locomotion.test.mjs) switches the layers on for its own tests (they check the code behind the switches). Two new tests check the defaults: every switch is off and the idle runs at the clip's rate; and in the audit scene with the default switches, no sole goes through the floor or floats. Full JS run: 1923 tests, 1922 passed, 0 failed. The one other result is a not-ok marked "re-publish the try-it demo", from scene files the other lane changed; it is not a failure.
+
 **A big render countdown at the top of the App: ELAPSED and TIME LEFT side by side, from a size-aware estimate that learns this machine (private branch `private/lifelike`, 19:35 by this machine's clock)**
 
 Mike: "is there a big timer/countdown in the app yet?", then "put it AT THE TOP ... show BOTH clearly: how long it has been running and how much longer", then "make the time-left an actual ESTIMATE from previous runs and the job's size".
