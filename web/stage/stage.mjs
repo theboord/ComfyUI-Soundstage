@@ -1897,13 +1897,14 @@ export class Stage {
     // Stunt keys (Milestone 13): the keys say where the nose points (heading_deg, unwrapped), at any rate.
     if (hasHeadingKeys(keys)) return THREE.MathUtils.degToRad(Stage._sample(headingTrack(keys), Math.max(0, Math.min(this._lastFrame(), frame)), "h", false)[0]);
     const last = this._lastFrame();
-    const sig = JSON.stringify([keys, a.rotation_deg || 0, last, a.kind, a.drive || ""]);
+    const sig = JSON.stringify([keys, a.rotation_deg || 0, last, a.kind, a.drive || "", !!(this.water || this.setFx?.underwater)]);
     this._headCache = this._headCache || new WeakMap();
     let hd = this._headCache.get(a);
     if (!hd || hd.sig !== sig) {
       const fps = this.state.shot?.fps || 24;
       // people: 300 deg/s at most, then eased (Loco.smoothHeadings); was 540, a 120-degree turn on the spot in 0.2 s
-      const human = Loco.OPTS.heading && Loco.HUMAN_KINDS.has(a.kind);
+      const wet = !!(this.water || this.setFx?.underwater);
+      const human = Loco.OPTS.heading && !wet && Loco.HUMAN_KINDS.has(a.kind);
       const rateDeg = TURN_RATE[a.kind] ?? (human ? 300 : ["man", "woman", "child"].includes(a.kind) ? 540 : 360);
       const step = THREE.MathUtils.degToRad(rateDeg) / fps;
       const rest = THREE.MathUtils.degToRad(a.rotation_deg || 0);
@@ -1933,7 +1934,9 @@ export class Stage {
       for (let f = 1; f <= last; f++) out[f] = toward(out[f - 1], back[f]);
       // people: the body faces a little ahead of the path and eases into and out of a turn (Loco.smoothHeadings; was
       // a constant-rate spin that started and stopped dead, the body never ahead of the path)
-      hd = { sig, out: Loco.OPTS.heading && Loco.HUMAN_KINDS.has(a.kind) && keys.length > 1 ? Loco.smoothHeadings(out, fps) : out };
+      // (not in a set with water: the swim's own turn and the ease out of the water are timed to the plain heading; eased,
+      // a man walking in, out and in again turned back 4 frames early and his hips jumped 0.43 m at the wall)
+      hd = { sig, out: Loco.OPTS.heading && !wet && Loco.HUMAN_KINDS.has(a.kind) && keys.length > 1 ? Loco.smoothHeadings(out, fps) : out };
       this._headCache.set(a, hd);
     }
     const out = hd.out;
