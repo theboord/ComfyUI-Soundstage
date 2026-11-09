@@ -51,6 +51,14 @@ LTX_IC_CLASSES = LTX_CLASSES + ["LTXICLoRALoaderModelOnly", "LTXAddVideoICLoRAGu
                                 "GetImageSize"]
 
 
+ID_WEIGHTS = [  # ④ Frame's cast pass (router/castpass.py): FLUX.2 Klein 9B repaints the one person with the cast picture
+    {"role": "id_unet", "folder": "diffusion_models",
+     "any": ["flux-2-klein-9b.safetensors", "flux-2-klein-9b-fp8.safetensors", "flux-2-klein-9b-kv-fp8.safetensors"]},
+    {"role": "id_text_encoder", "folder": "text_encoders",
+     "any": ["qwen_3_8b.safetensors", "qwen_3_8b_fp8mixed.safetensors", "qwen_3_8b_fp8_scaled.safetensors"]},
+    {"role": "id_vae", "folder": "vae", "any": ["flux2-vae.safetensors"]}]
+
+
 def partner(id, name, provider, stages, adapter, classes, variant=None, params=None, notes="",
             source_ids=None, kind="partner", license=API_LICENSE):
     return {"id": id, "name": name, "provider": provider, "kind": kind, "stages": stages,
@@ -99,7 +107,7 @@ WIRED = [
                             # loras/krea2/) and the comfyui-krea2edit nodes
                             {"role": "edit_lora", "folder": "loras",
                              "any": ["krea2_identity_edit_v1_2.safetensors", "krea2_identity_edit_v1_1.safetensors"],
-                             "classes": ["Krea2EditModelPatch", "Krea2EditGroundedEncode"]}],
+                             "classes": ["Krea2EditModelPatch", "Krea2EditGroundedEncode"]}] + ID_WEIGHTS,
           notes="8 steps cfg 1. control_image = stage depth steers the layout (Krea2 depth-control LoRA). "
                 "Paint Studio (Whole frame, Replace, Fill) edits through the Krea 2 Identity Edit LoRA (10 steps "
                 "euler/simple, the source as the aligned scene reference); without it Whole frame and Replace refuse. "
@@ -133,7 +141,7 @@ WIRED = [
               {"role": "krea_text_encoder", "folder": "text_encoders", "any": ["qwen3vl_4b_fp8_scaled.safetensors"]},
               {"role": "krea_vae", "folder": "vae", "any": ["qwen_image_vae.safetensors"]},
               {"role": "depth_lora", "folder": "loras", "any": ["depth-control-lora.safetensors"],
-               "classes": ["Krea2ControlLoRALoader", "Krea2ControlImageEncode", "Krea2ControlApply"]}],
+               "classes": ["Krea2ControlLoRALoader", "Krea2ControlImageEncode", "Krea2ControlApply"]}] + ID_WEIGHTS,
           notes="Edit = ReferenceMultiLatent (image + refs, 1 MP), or chained ReferenceLatent on a ComfyUI without it. "
                 "Distilled template settings. depth_lock (④ Frame "
                 "\"Lock to the stage depth\"): a Krea 2 Turbo + depth-control LoRA pass on the Klein frame, held to the "

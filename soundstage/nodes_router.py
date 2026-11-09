@@ -21,6 +21,7 @@ from .router import registry as R
 from .look import frame_lock as FL
 from .router.adapters import ADAPTERS, RouterError, IMAGE_SAMPLERS, IMAGE_SCHEDULERS, lora_stack
 from .router import lora_check as LC
+from .router import castpass as CP
 
 _TTL_S = 30
 _cache: dict[str, tuple[float, list]] = {}
@@ -98,7 +99,10 @@ class _Router(IO.ComfyNode):
     @classmethod
     def _expand(cls, model, **v):
         m, p, g = cls._prepare(model, **v)
-        return ADAPTERS[m["adapter"]](g, m, p), g
+        out = ADAPTERS[m["adapter"]](g, m, p)
+        if cls.STAGE == "edit_image" and p.get("cast_pass") and "image" in out:
+            out = {**out, "image": CP.apply(g, m, p, out["image"])}   # ④ Frame's cast pass (router/castpass.py)
+        return out, g
 
     @classmethod
     def _prepare(cls, model, **v):
@@ -153,7 +157,10 @@ class _Router(IO.ComfyNode):
                 p["params"] = {**p["params"], "depth_lock": FL.depth_lock(v["depth_lock"])}
             refs = _parse_ref_files(v.get("ref_files"))
             first = len(p["refs"]) + (2 if p["image"] is not None else 1)   # image 1 is the clay frame being edited
+            labels = [""] * len(p["refs"]) + [lab for _, lab in refs]
             p["refs"] += [g.node("LoadImage", image=f).out(0) for f, _ in refs]
+            if p["refs"] and p.get("control") is not None:   # ④ Frame: the stage frame + its depth + cast pictures
+                p["cast_pass"] = _cast_pass(cls.hidden, labels)
             named = [f"image {first + i} shows {label}" for i, (_, label) in enumerate(refs) if label]
             if named:
                 p["prompt"] = (p["prompt"].rstrip() + " Keep each subject's appearance from its reference: "
@@ -164,6 +171,44 @@ class _Router(IO.ComfyNode):
             if p["last"] is None and (v.get("last_file") or "").strip():
                 p["last"] = g.node("LoadImage", image=v["last_file"].strip()).out(0)
         return m, p, g
+
+
+def _cast_pass(hidden, labels) -> dict | None:
+    """④ Frame (the frame node: stage colour pass + stage depth + cast pictures): find the queued prompt's 3D Stage,
+    read frame 1's ID pass and, when exactly one person shows and one cast picture is theirs, write the grown and
+    feathered person mask to input/soundstage_cast/ for the cast pass (router/castpass.py). None when it can't."""
+    import json
+    import os
+    import numpy as np
+    from PIL import Image
+    from .stagestore import try_resolve
+    prompt = getattr(hidden, "prompt", None) or {}
+    if isinstance(prompt, str):
+        try:
+            prompt = json.loads(prompt)
+        except ValueError:
+            return None
+    data = next((try_resolve((n.get("inputs") or {}).get("stage")) for n in prompt.values()
+                 if isinstance(n, dict) and n.get("class_type") == "SoundstageStage"), None)
+    if not isinstance(data, dict) or not isinstance(data.get("scene"), dict) or not (data.get("passes") or {}).get("id"):
+        return None
+    try:
+        passes = data["passes"]
+        img = np.asarray(Image.open(folder_paths.get_annotated_filepath(passes["id"])).convert("RGB"))
+        if passes.get("grid"):
+            tw, th = passes["grid"]["tile"]
+            img = img[:th, :tw]
+    except (OSError, KeyError, TypeError, ValueError):
+        return None
+    cp = CP.prepare(data["scene"], img, labels)
+    if not cp.get("ok"):
+        return cp
+    folder = os.path.join(folder_paths.get_input_directory(), "soundstage_cast")
+    os.makedirs(folder, exist_ok=True)
+    name = CP.mask_name(cp["mask"])
+    if not os.path.exists(os.path.join(folder, name)):
+        CP.mask_image(cp["mask"]).save(os.path.join(folder, name))
+    return {**{k: v for k, v in cp.items() if k != "mask"}, "mask_file": f"soundstage_cast/{name}"}
 
 
 class SoundstageGenerateImage(_Router):
@@ -265,7 +310,7 @@ class SoundstageEditImage(_Router):
                                         "applied in order on the image model. Wins over the single lora / lora_strength above."),
             ],
             outputs=[IO.Image.Output(display_name="image")],
-            hidden=HIDDEN,
+            hidden=HIDDEN + [IO.Hidden.prompt],   # the queued prompt: ④ Frame's cast pass reads the stage from it
             enable_expand=True,
         )
 

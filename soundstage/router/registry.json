@@ -80,6 +80,31 @@
       "Krea2EditModelPatch",
       "Krea2EditGroundedEncode"
      ]
+    },
+    {
+     "role": "id_unet",
+     "folder": "diffusion_models",
+     "any": [
+      "flux-2-klein-9b.safetensors",
+      "flux-2-klein-9b-fp8.safetensors",
+      "flux-2-klein-9b-kv-fp8.safetensors"
+     ]
+    },
+    {
+     "role": "id_text_encoder",
+     "folder": "text_encoders",
+     "any": [
+      "qwen_3_8b.safetensors",
+      "qwen_3_8b_fp8mixed.safetensors",
+      "qwen_3_8b_fp8_scaled.safetensors"
+     ]
+    },
+    {
+     "role": "id_vae",
+     "folder": "vae",
+     "any": [
+      "flux2-vae.safetensors"
+     ]
     }
    ],
    "auto_download": false,
@@ -240,6 +265,31 @@
       "Krea2ControlLoRALoader",
       "Krea2ControlImageEncode",
       "Krea2ControlApply"
+     ]
+    },
+    {
+     "role": "id_unet",
+     "folder": "diffusion_models",
+     "any": [
+      "flux-2-klein-9b.safetensors",
+      "flux-2-klein-9b-fp8.safetensors",
+      "flux-2-klein-9b-kv-fp8.safetensors"
+     ]
+    },
+    {
+     "role": "id_text_encoder",
+     "folder": "text_encoders",
+     "any": [
+      "qwen_3_8b.safetensors",
+      "qwen_3_8b_fp8mixed.safetensors",
+      "qwen_3_8b_fp8_scaled.safetensors"
+     ]
+    },
+    {
+     "role": "id_vae",
+     "folder": "vae",
+     "any": [
+      "flux2-vae.safetensors"
      ]
     }
    ],
