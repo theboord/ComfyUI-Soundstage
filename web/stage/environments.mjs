@@ -31,13 +31,24 @@ export const SETS = {
   train_car: { label: "Train carriage" },
   train_station: { label: "Train station platform" },
   empty: { label: "Empty stage" },
+  void: { label: "Black void (theatre limbo)" },
 };
 
 /** Milestone 11 sets: built in web/stage/sets/*.mjs; each returns {group, water, fx} (fx: per-frame + per-pass hooks). */
 const SET_BUILDERS = {
+  void: buildVoid,
   underwater: buildUnderwater, burning_building: buildBurningBuilding, airplane_cabin: buildAirplaneCabin,
   runway: buildRunway, above_clouds: buildAboveClouds, train_car: buildTrainCar, train_station: buildTrainStation,
 };
+
+/** Black void (theatre limbo): no floor, no sky, no fog, nothing but black around what is built on it (a floor-plan
+ *  interior, props, people). Every pass sees the black: the Clay guide and the Color pass would otherwise show the
+ *  stage floor and the sky colour, which a layout-to-render model reads as a ground and a horizon. */
+const VOID_BLACK = new THREE.Color(0x000000);
+function buildVoid() {
+  return { group: new THREE.Group(), water: null, fx: { id: "void", hideGround: true,
+    pass(mode, { stage }) { stage.scene.background = VOID_BLACK; stage.scene.fog = null; } } };
+}
 
 export const WEATHER = {
   none: { label: "Clear" },

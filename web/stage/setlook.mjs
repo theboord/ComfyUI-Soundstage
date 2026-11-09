@@ -44,6 +44,7 @@ export const SET_LOOK = Object.freeze({
   train_car: { ground: "#4a4b4d", indoor: true },
   train_station: { ground: "#5d5d5b" },
   empty: { ground: "#8c8c8c", indoor: true },                                                                    // a neutral stage floor
+  void: { ground: "#000000", indoor: true },                                                                     // no floor at all (hidden)
 });
 
 const CLAY = "#9a9a9a";

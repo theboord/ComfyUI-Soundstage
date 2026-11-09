@@ -51,6 +51,7 @@ SET_PLACES = {
     "above_clouds": ("EXT", "the open sky high above a sea of white clouds"),
     "train_car": ("INT", "a passenger train carriage, seats facing across tables, big windows with countryside streaming past"),
     "train_station": ("EXT", "a railway station platform under a steel canopy beside the tracks"),
+    "void": ("INT", "a pure black void, nothing but darkness all around"),
 }
 WEATHER_WORDS = {
     "rain": "rain falling", "snow": "snow falling", "fog": "fog and haze in the air", "smoke": "drifting smoke",
@@ -745,6 +746,9 @@ def location(scene: dict) -> dict:
     # interior room, not an exterior with no place (it read "Exterior wide shot" with a closed room on screen).
     if (scene.get("interior") or {}).get("rooms") and set_id in ("empty", "studio", "interior"):
         int_ext, place = "INT", place if set_id != "empty" else "an interior room"
+    # A floor-plan room built in the black void is a theatre set standing alone in the dark (open on the camera side).
+    if (scene.get("interior") or {}).get("rooms") and set_id == "void":
+        place = "a room built as a theatre set standing alone in a pure black void"
     weather = WEATHER_WORDS.get(env.get("weather", "none"), "")
     if not weather and set_id in PAVED_SETS and road_surface(scene) == "wet":
         weather = WET_ROAD_WORDS

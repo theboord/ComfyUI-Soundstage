@@ -176,3 +176,17 @@ test("the clouds past the cabin and the land past the carriage scroll on the set
     assert.equal(tiles[0].position.z, z0);
   }
 });
+
+test("the black void hides the floor and paints every pass black (no sky, no fog)", () => {
+  assert.ok(SETS.void?.label);
+  const built = buildSet("void", mesh);
+  assert.equal(built.water, null);
+  assert.equal(built.fx.hideGround, true);
+  assert.equal(built.group.children.length, 0);
+  for (const mode of ["clay", "color", "depth"]) {
+    const stage = { scene: { background: new THREE.Color(0x9cc3e6), fog: new THREE.Fog(0x9aa3ad, 2, 40) } };
+    built.fx.pass(mode, { stage });
+    assert.equal(stage.scene.background.getHex(), 0x000000, mode);
+    assert.equal(stage.scene.fog, null, mode);
+  }
+});
