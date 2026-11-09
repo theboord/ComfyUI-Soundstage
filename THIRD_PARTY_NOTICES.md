@@ -16,7 +16,7 @@
 
 | Component | Where | License |
 |---|---|---|
-| Microsoft Rocketbox avatars and animations (`Male_Adult_01`, `Female_Adult_01`, idle / walk / run / talk clips; textures converted to 1024 px PNG) from [microsoft/Microsoft-Rocketbox](https://github.com/microsoft/Microsoft-Rocketbox) at commit `0943055db6ec570bcef9f2c8b41c9e5467c808f9` | `web/stage/people/rocketbox/` (kept out of git; see `web/stage/people/README.md`) | MIT, Copyright (c) 2020 Microsoft. The full licence text sits next to the files as `LICENSE.md`. Only commits from 2020-11-17 on are MIT; earlier ones are not. |
+| Microsoft Rocketbox avatars and animations (`Male_Adult_01`, `Female_Adult_01`, idle / walk / run / talk clips and the seated chair idles; textures converted to 1024 px PNG) from [microsoft/Microsoft-Rocketbox](https://github.com/microsoft/Microsoft-Rocketbox) at commit `0943055db6ec570bcef9f2c8b41c9e5467c808f9` | `web/stage/people/rocketbox/` (kept out of git; see `web/stage/people/README.md`) | MIT, Copyright (c) 2020 Microsoft. The full licence text sits next to the files as `LICENSE.md`. Only commits from 2020-11-17 on are MIT; earlier ones are not. |
 
 MIT License, Microsoft Rocketbox:
 

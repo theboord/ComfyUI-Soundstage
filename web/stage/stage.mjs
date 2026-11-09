@@ -55,6 +55,7 @@ import { cameraCurveAt, curveVersion, CAM_CURVE } from "./camcurve.mjs";   // th
 import { keysHash } from "./people/avatarcore.mjs";
 import * as Loco from "./people/locomotion.mjs";   // people start, stop, curve and turn like people (retimeTable, smoothHeadings)   // a cheap signature of a person's keys (_jumpsInShot)
 import { setStandIn } from "./people/standin.mjs";
+import * as SitStand from "./people/sitstand.mjs";   // timed sit-down / stand-up spans (sit_spans)
 import { probeTier, pickTier, deviceInfo, savedPick, savePick } from "./tier.mjs";
 import { upgradeHuman, avatarsAt, avatarsReady, loadingCount, trackLoading, setShown as setAvatarShown, AVATAR_WAIT_MS, undoAvatarWrites } from "./people/avatars.mjs";   // lifelike people over the hidden logic rig (one motion, Lifelike-only L1)
 import { swapAvatarCutouts, idMaterial } from "./people/cutout.mjs";   // hair / lash cards keep their cut-out in Depth, Clay, Wire and ID
@@ -1913,7 +1914,9 @@ export class Stage {
     // Stunt keys (Milestone 13): the keys say where the nose points (heading_deg, unwrapped), at any rate.
     if (hasHeadingKeys(keys)) return THREE.MathUtils.degToRad(Stage._sample(headingTrack(keys), Math.max(0, Math.min(this._lastFrame(), frame)), "h", false)[0]);
     const last = this._lastFrame();
-    const sig = JSON.stringify([keys, a.rotation_deg || 0, last, a.kind, a.drive || "", !!(this.water || this.setFx?.underwater)]);
+    // timed sits (sit_spans): inside one the person faces the seat's way (turning round after they arrive)
+    const sits = this._sitHeadingSpans(a);
+    const sig = JSON.stringify([keys, a.rotation_deg || 0, last, a.kind, a.drive || "", !!(this.water || this.setFx?.underwater), sits]);
     this._headCache = this._headCache || new WeakMap();
     let hd = this._headCache.get(a);
     if (!hd || hd.sig !== sig) {
@@ -1941,10 +1944,15 @@ export class Stage {
       }
       // Before it ever moves, it faces its Turn.
       for (let f = 0; f <= last; f++) if (desired[f] === null) desired[f] = rest;
+      // A timed sit: from the frame they start to sit to the frame they are up again, they face the seat's way (the
+      // spans' frames are walls for anticipation: no turning round while still walking up, and no turning toward the
+      // walk away while still standing up).
+      const inSit = new Uint8Array(last + 1);
+      for (const sp of sits) for (let f = Math.max(0, sp.s); f <= Math.min(last, sp.e); f++) { inSit[f] = 1; desired[f] = sp.yaw; }
       // Backward pass (anticipation), then forward pass (inertia) from that.
       const back = new Array(last + 1);
       back[last] = desired[last];
-      for (let f = last - 1; f >= 0; f--) back[f] = toward(back[f + 1], desired[f]);
+      for (let f = last - 1; f >= 0; f--) back[f] = inSit[f] !== inSit[f + 1] ? desired[f] : toward(back[f + 1], desired[f]);
       const out = new Array(last + 1);
       out[0] = back[0];
       for (let f = 1; f <= last; f++) out[f] = toward(out[f - 1], back[f]);
@@ -1952,11 +1960,83 @@ export class Stage {
       // a constant-rate spin that started and stopped dead, the body never ahead of the path)
       // (not in a set with water: the swim's own turn and the ease out of the water are timed to the plain heading; eased,
       // a man walking in, out and in again turned back 4 frames early and his hips jumped 0.43 m at the wall)
-      hd = { sig, out: Loco.OPTS.heading && !wet && Loco.HUMAN_KINDS.has(a.kind) && keys.length > 1 ? Loco.smoothHeadings(out, fps) : out };
+      const eased = Loco.OPTS.heading && !wet && Loco.HUMAN_KINDS.has(a.kind) && keys.length > 1;
+      hd = { sig, out: eased ? (sits.length ? this._sitHeadings(out, sits, fps) : Loco.smoothHeadings(out, fps)) : sits.length ? this._sitHeadings(out, sits, fps, false) : out };
       this._headCache.set(a, hd);
     }
     const out = hd.out;
     return out[Math.max(0, Math.min(out.length - 1, Math.round(frame)))];
+  }
+
+  /** Pose the clay logic rig in a timed sit (sitstand.curves): standing to seated joint by joint, from over the feet
+   *  at the stand spot to the seat, facing the seat's way. */
+  _sitClay(a, g, ss) {
+    const seat = this._seatPoint(ss.host), hg = this.actorMeshes.get(ss.host.id);
+    if (!seat || !hg) return;
+    const h = (a.height_m || 1.8) * (a.scale || 1), yaw = hg.rotation.y, c = SitStand.curves(ss.phase, ss.t);
+    Gait.release(g);
+    for (const jn of ["spine", "neck", "head"]) g.userData.joints?.[jn]?.quaternion.identity();
+    const J = Object.values(g.userData.joints || {});
+    const drop = applyPose(g, "sit", h);
+    const sitQ = J.map((j) => j.quaternion.clone());
+    applyPose(g, "stand", h);
+    if (c.w > 0) J.forEach((j, i) => j.quaternion.slerp(sitQ[i], c.w));
+    const P = SitStand.standSpot(seat, yaw, h), floorY = this._heightAt(a, this.frame);
+    g.rotation.order = "YXZ";
+    g.rotation.set(0, yaw, 0, "YXZ");
+    g.position.set(P[0] + (seat[0] - P[0]) * c.back, floorY + (seat[1] - drop - floorY) * c.down, P[1] + (seat[2] - P[1]) * c.back);
+  }
+
+  /** The timed sits' heading windows for _headingAt: [{s (turn starts), t (turned round), e (up again), yaw (the
+   *  seat's way)}], frames clamped to the shot. */
+  _sitHeadingSpans(a) {
+    const spans = this._sitSpans(a);
+    if (!spans.length || a.mount_id || a.mount_spans?.length || a.carry_id) return [];
+    const fps = this.state.shot?.fps || 24, last = this._lastFrame(), out = [];
+    for (const sp of spans) {
+      const host = this.state.actors.find((x) => x.id === sp?.on), hg = host && this.actorMeshes.get(host.id);
+      if (!hg || SitStand.spanError(sp, fps)) continue;
+      const w = SitStand.window(sp, fps);
+      out.push({ s: Math.max(0, Math.round(Math.max(-1, w.start))), t: Math.round(Math.min(last + 1, Math.max(-1, w.down))), e: Math.round(Math.min(last, w.end - 1)), yaw: +hg.rotation.y.toFixed(6), open: !(w.start > -Infinity) });
+    }
+    return out;
+  }
+
+  /**
+   * Headings with timed sits (_headingAt): each stretch on the feet between sits is eased on its own
+   * (Loco.smoothHeadings, its ends held: no turn smeared across a sit), inside a sit the person turns round from the
+   * heading they arrived with to the seat's way over the turn (sitstand.turnHeading), then faces it until they are up;
+   * the walk away eases out of the seat's way over 8 frames.
+   */
+  _sitHeadings(raw, sits, fps, ease = true) {
+    const n = raw.length, out = raw.slice(), inSit = new Uint8Array(n);
+    for (const sp of sits) for (let f = sp.s; f <= sp.e && f < n; f++) inSit[f] = 1;
+    // the stretches on the feet
+    for (let f = 0; f < n;) {
+      if (inSit[f]) { f++; continue; }
+      let g = f;
+      while (g + 1 < n && !inSit[g + 1]) g++;
+      if (ease) {
+        const pad = Math.round(fps), seg = [];
+        for (let i = f - pad; i <= g + pad; i++) seg.push(raw[Math.max(f, Math.min(g, i))]);
+        const sm = Loco.smoothHeadings(seg, fps);
+        for (let i = f; i <= g; i++) out[i] = sm[i - f + pad];
+      }
+      f = g + 1;
+    }
+    const wrap = (x) => Math.atan2(Math.sin(x), Math.cos(x));
+    for (const sp of sits) {
+      const from = sp.s > 0 ? out[sp.s - 1] : sp.yaw;
+      for (let f = sp.s; f <= sp.e && f < n; f++) {
+        out[f] = sp.open || f >= sp.t ? sp.yaw : SitStand.turnHeading(from, sp.yaw, (f - sp.s) / Math.max(1, sp.t - sp.s));
+      }
+      // the walk away: out of the seat's way into the path's over 8 frames
+      for (let k = 1; k <= 8 && sp.e + k < n && !inSit[sp.e + k]; k++) {
+        const f = sp.e + k, u = k / 9, e = u * u * (3 - 2 * u);
+        out[f] = sp.yaw + wrap(out[f] - sp.yaw) * e;
+      }
+    }
+    return out;
   }
 
   /**
@@ -2163,7 +2243,8 @@ export class Stage {
     const last = this._lastFrame();
     const floor = this.setFx?.floorAt || null;   // a set's walkable surface: station platforms, the seabed
     const fps = this.state.shot?.fps || 24;   // gravity per frame depends on it
-    const sig = JSON.stringify([keys, last, fps, this._obsCache?.sig, this.setFx?.id || null]);
+    const sitOn = this._sitSeatIds(a);
+    const sig = JSON.stringify([keys, last, fps, this._obsCache?.sig, this.setFx?.id || null, [...sitOn]]);
     this._yCache = this._yCache || new WeakMap();
     let c = this._yCache.get(a);
     if (!c || c.sig !== sig) {
@@ -2177,7 +2258,9 @@ export class Stage {
     }
     if (!c || c.sig !== sig) {
       const kk = 0.5 * 9.8 / (fps * fps), R = 0.18;
-      const onto = keyedOnto(obs, keys);
+      // a seat the person sits on in a timed sit (sit_spans) is never their ground: keyed onto a chair, they sit on it
+      // (people/sitstand.mjs), they don't climb up and stand on it
+      const onto = keyedOnto(sitOn.size ? obs.filter((o) => !sitOn.has(o.id)) : obs, keys);
       const S = [];
       for (let f = 0; f <= last; f++) {
         const p = this._actorPosAt(a, f);
@@ -2804,6 +2887,12 @@ export class Stage {
         Gait.release(g);
         for (const jn of ["spine", "neck", "head"]) g.userData.joints?.[jn]?.rotation.set(0, 0, 0);
         g.position.y = this._heightAt(a, this.frame) - applyPose(g, "sit_floor", (a.height_m || 1.8) * (a.scale || 1));
+      }
+      // A timed sit (sit_spans): sitting down onto the seat, seated, standing up (the lifelike body: avatars.mjs
+      // sitStandBody; the rig is then solved from it). Turning round in front of the seat stays the walk's.
+      if (rig === "biped" && g.userData.limbs) {
+        const ss = this._sitSpanAt(a, this.frame);
+        if (ss && ss.phase !== "turn") this._sitClay(a, g, ss);
       }
       if (g.userData.flames) this._animateFire(g, a);
       if (g.userData.mixer) g.userData.mixer.setTime(this.frame / (this.state.shot?.fps || 24));
@@ -6078,7 +6167,7 @@ export class Stage {
 
   /** Who else already sits on this seat (one person per seat with setPose), or null. */
   _seatTakenBy(host, a) {
-    return this.state.actors.find((x) => x.id !== a.id && x.mount_id === host.id && PERSON_KINDS.has(x.kind)) || null;
+    return this.state.actors.find((x) => x.id !== a.id && PERSON_KINDS.has(x.kind) && (x.mount_id === host.id || this._sitSeatIds(x).has(host.id))) || null;
   }
 
   /**
@@ -6088,6 +6177,17 @@ export class Stage {
    */
   _sitSpec(a, frame = this.frame) {
     if (!a || !PERSON_KINDS.has(a.kind)) return null;
+    // a timed sit (sit_spans, people/sitstand.mjs): sitting down, seated, standing up. Turning round in front of the
+    // seat is still on the feet (the clip's: null here).
+    const ss = this._sitSpanAt(a, frame);
+    if (ss) {
+      if (ss.phase === "turn") return null;
+      const host = ss.host, hg = this.actorMeshes.get(host.id), seat = this._seatPoint(host);
+      if (!hg || !seat) return null;
+      const h = (a.height_m || 1.8) * (a.scale || 1);
+      return { pose: "sit", on: host.id, seat, yaw: hg.rotation.y,
+        span: { phase: ss.phase, t: ss.t, stand: SitStand.standSpot(seat, hg.rotation.y, h), hips: SitStand.seatedHips(seat, hg.rotation.y, h), window: ss.w } };
+    }
     const mt = this._mountAt(a, frame);
     if (mt) {
       if (mt.at > frame || frame >= mt.to) return null;   // still walking up / hopping on, or getting off (a recorded span)
@@ -6159,10 +6259,55 @@ export class Stage {
     return { id: a.mount_id, at: a.mount_at, pose: a.pose, seat: a.seat, to: Infinity };
   }
 
-  /** A whole-shot key of a person's mounts (the foot plan's cache key): the recorded spans, else the fields. */
+  /** A whole-shot key of a person's mounts (the foot plan's cache key): the recorded spans, else the fields; and the
+   *  timed sits of the active shot (sit_spans). */
   _mountSig(a) {
-    if (a?.mount_spans?.length && this.drive && !this.drive.involved?.has(a.id)) return `spans:${JSON.stringify(a.mount_spans)}`;
-    return `${a?.mount_id || ""}|${a?.mount_at ?? ""}|${a?.pose || ""}`;
+    const sit = SitStand.spansSig(this._sitSpans(a));
+    if (a?.mount_spans?.length && this.drive && !this.drive.involved?.has(a.id)) return `spans:${JSON.stringify(a.mount_spans)}|${sit}`;
+    return `${a?.mount_id || ""}|${a?.mount_at ?? ""}|${a?.pose || ""}|${sit}`;
+  }
+
+  /**
+   * A person's timed sits in the active shot (people/sitstand.mjs): [{on: seat id, at, to}]. They go with the keys
+   * that hold the person at the stand spot: a shot with its own blocking (by_shot[shot].keys) has its own sit_spans
+   * there (none = none in that shot); otherwise the person's own a.sit_spans.
+   */
+  _sitSpans(a) {
+    if (!a || !PERSON_KINDS.has(a.kind)) return [];
+    const own = a.by_shot?.[this.state?.active_shot];
+    if (own?.keys?.length) return Array.isArray(own.sit_spans) ? own.sit_spans : [];
+    return Array.isArray(a.sit_spans) ? a.sit_spans : [];
+  }
+
+  /** The ids of the seats a person sits on in a timed sit in the active shot (a Set). */
+  _sitSeatIds(a) {
+    const out = new Set();
+    for (const s of this._sitSpans(a)) if (s?.on) out.add(s.on);
+    return out;
+  }
+
+  /** The seat point (world [x, y, z]: the seat top, from MOUNTS and the prop's scale) of a seat prop, or null. */
+  _seatPoint(host) {
+    const hg = host && this.actorMeshes.get(host.id);
+    if (!hg) return null;
+    const m = MOUNTS[host.kind] || { seat: [0, (host.height_m || 1) * 0.6, 0] }, k = this._seatScale(host);
+    const w = new THREE.Vector3(m.seat[0] * k, m.seat[1] * k, m.seat[2] * k).applyAxisAngle(new THREE.Vector3(0, 1, 0), hg.rotation.y);
+    return [hg.position.x + w.x, hg.position.y + w.y, hg.position.z + w.z];
+  }
+
+  /**
+   * The timed sit a person is in at frame f: {span, phase ("turn" | "down" | "seated" | "up"), t, w (its frames),
+   * host} or null. Not while they are mounted, carried or riding (those own the body), nor on a seat that is gone or
+   * can't be sat on (then they just stand at the stand spot on their keys). Pure: the scene only.
+   */
+  _sitSpanAt(a, f = this.frame) {
+    const spans = this._sitSpans(a);
+    if (!spans.length || a.mount_id || a.mount_spans?.length || a.carry_id) return null;
+    const ss = SitStand.spanAt(spans, f, this.state.shot?.fps || 24);
+    if (!ss) return null;
+    const host = this.state.actors.find((x) => x.id === ss.span.on);
+    if (!host || host.id === a.id || !this._canSitOn(host, true, a)) return null;
+    return { ...ss, host };
   }
 
   /**
@@ -6183,6 +6328,9 @@ export class Stage {
     if (a.carry_id) return { ok: false, error: `'${a.name || id}' is being carried` };
     const name = (o) => o.name || o.id;
     const commit = () => { this.setFrame(this.frame); this.onChange(this.toJSON()); };
+    // timed: sit down / stand up at a frame (people/sitstand.mjs), walking to the seat first
+    const timed = opts && ("at" in opts || "until" in opts);
+    if (timed && pose === "stand") return this._timedStand(a, opts, commit);
     const offSeat = () => {   // off the seat, keys kept (the mount never moved them); the clay stands up
       delete a.mount_id; delete a.mount_at; delete a.seat;
       const g = this.actorMeshes.get(a.id);
@@ -6214,6 +6362,7 @@ export class Stage {
         host = best?.o || null;
         if (!host) return { ok: false, error: `nothing to sit on within 1.5 m of '${name(a)}' (none free and low enough): pass {on: id}, or use 'sit_floor'` };
       }
+      if (timed) return this._timedSit(a, host, opts, commit);
       if (a.mount_id === host.id && (a.pose || "sit") === "sit" && !a.mount_at) return { ok: true, pose, on: host.id, changed: false };
       this.mount(a.id, host.id, "sit");
       return { ok: true, pose, on: host.id, changed: true };
@@ -6233,6 +6382,144 @@ export class Stage {
     if (a.mount_id) { offSeat(); delete a.pose; commit(); return { ok: true, pose, changed: true }; }
     if (a.pose === "sit_floor") { delete a.pose; commit(); return { ok: true, pose, changed: true }; }
     return { ok: true, pose, changed: false };
+  }
+
+  /** The keys and sit spans a timed sit edits: the active shot's own blocking (by_shot) when it has keys, else the
+   *  person's own. {keys (sorted copy), save(keys, spans), spans (copy)}. */
+  _sitBlock(a) {
+    const own = a.by_shot?.[this.state.active_shot];
+    const base = !own?.keys?.length;
+    const keys = (base ? this._baseKeys(a) : own.keys).map((k) => ({ ...k, position: [...k.position] })).sort((x, y) => x.frame - y.frame);
+    const spans = (base ? a.sit_spans : own.sit_spans) || [];
+    const save = (ks, sp) => {
+      ks.sort((x, y) => x.frame - y.frame);
+      if (base) {
+        a.keys = ks; a.position = [...ks[0].position];
+        if (sp.length) a.sit_spans = sp; else delete a.sit_spans;
+      } else {
+        own.keys = ks;
+        if (sp.length) own.sit_spans = sp; else delete own.sit_spans;
+      }
+      this._yCache?.delete(a);
+    };
+    return { keys, spans: spans.map((x) => ({ ...x })), save };
+  }
+
+  /** A frame for the timed API: a number (frames), or a string "<n>s" (seconds). NaN when neither. */
+  _apiFrame(v) {
+    if (typeof v === "number") return Number.isFinite(v) ? Math.round(v) : NaN;
+    const m = typeof v === "string" ? /^\s*(-?\d+(?:\.\d+)?)\s*s\s*$/.exec(v) : null;
+    return m ? Math.round(+m[1] * (this.state.shot?.fps || 24)) : NaN;
+  }
+
+  /**
+   * setPose(id, "sit", {on?, at, until?}): a timed sit (people/sitstand.mjs). They walk to the stand spot in front of
+   * the seat (from where they are at the playhead, at an easy 1.25 m/s, unless already there), arriving at `at`
+   * ("auto": as soon as the walk gets them there; a frame number, or "<n>s"), turn round to the seat's way, sit down,
+   * stay seated, and with `until` stand up there and are back on their keys (a key after it walks them away). Their
+   * keys between the arrival and standing again are replaced by the hold at the stand spot; keys before and after stay.
+   */
+  _timedSit(a, host, opts, commit) {
+    const fps = this.state.shot?.fps || 24, last = this._lastFrame(), n = SitStand.frames(fps), nm = (o) => o.name || o.id;
+    const seat = this._seatPoint(host), hg = this.actorMeshes.get(host.id);
+    if (!seat || !hg) return { ok: false, error: `'${nm(host)}' is not on the set yet` };
+    const h = (a.height_m || 1.8) * (a.scale || 1), P = SitStand.standSpot(seat, hg.rotation.y, h);
+    const y0 = 0;
+    const from = this._actorPosAt(a, this.frame), d = Math.hypot(from[0] - P[0], from[2] - P[1]);
+    // coming from behind the seat: round it (a key beside it, in front), not through it
+    let detour = null;
+    if (d >= 0.15) {
+      const yaw = hg.rotation.y, fx = Math.sin(yaw), fz = Math.cos(yaw), cx = hg.position.x, cz = hg.position.z;
+      const sx = P[0] - from[0], sz = P[1] - from[2], L2 = sx * sx + sz * sz || 1;
+      const u = Math.max(0, Math.min(1, ((cx - from[0]) * sx + (cz - from[2]) * sz) / L2));
+      const near = Math.hypot(from[0] + sx * u - cx, from[2] + sz * u - cz);
+      const behind = (from[0] - cx) * fx + (from[2] - cz) * fz < 0.1;
+      if (near < 0.5 && behind) {
+        const side = (from[0] - cx) * fz - (from[2] - cz) * fx >= 0 ? 1 : -1;   // the side they come from
+        const x = cx + fz * side * 0.75 + fx * 0.35, z = cz - fx * side * 0.75 + fz * 0.35;
+        detour = { x, z, d1: Math.hypot(x - from[0], z - from[2]), d2: Math.hypot(P[0] - x, P[1] - z) };
+      }
+    }
+    const walk = detour ? detour.d1 + detour.d2 : d;
+    let at;
+    if (opts.at == null || opts.at === "auto") at = d < 0.15 ? this.frame : this.frame + Math.max(12, Math.round((walk / 1.25 + 0.5) * fps));
+    else at = this._apiFrame(opts.at);
+    const until = opts.until == null ? null : this._apiFrame(opts.until);
+    if (!Number.isFinite(at) || at < 0) return { ok: false, error: `bad 'at' (${JSON.stringify(opts.at)}): a frame number, "<n>s" or "auto"` };
+    if (until != null && !Number.isFinite(until)) return { ok: false, error: `bad 'until' (${JSON.stringify(opts.until)}): a frame number or "<n>s"` };
+    if (at > last) return { ok: false, error: `they would only reach '${nm(host)}' at frame ${at}, after the shot's last frame ${last}: a longer shot, or start them nearer` };
+    const span = { on: host.id, at, to: until };
+    const bad = SitStand.spanError(span, fps);
+    if (bad) return { ok: false, error: `can't sit '${nm(a)}' like that: ${bad}` };
+    if (a.mount_id) { delete a.mount_id; delete a.mount_at; delete a.seat; }
+    if (a.pose === "sit_floor" || a.pose === "sit") delete a.pose;
+    const blk = this._sitBlock(a), w = SitStand.window(span, fps), holdEnd = until == null ? Math.max(last, at) : w.end;
+    const hold = [+P[0].toFixed(3), y0, +P[1].toFixed(3)];
+    let keys = blk.keys.filter((k) => k.frame < at || k.frame > holdEnd);
+    // set off from where they are at the playhead (a key there unless the walk already starts from one)
+    if (d >= 0.15 && this.frame < at && !keys.some((k) => k.frame === this.frame)) keys.push({ frame: this.frame, position: [+from[0].toFixed(3), y0, +from[2].toFixed(3)] });
+    keys = keys.filter((k) => !(k.frame > this.frame && k.frame < at) || d < 0.15);
+    if (detour) {
+      const wf = Math.round(this.frame + (at - this.frame) * detour.d1 / Math.max(1e-6, detour.d1 + detour.d2));
+      if (wf > this.frame && wf < at) keys.push({ frame: wf, position: [+detour.x.toFixed(3), y0, +detour.z.toFixed(3)] });
+    }
+    keys.push({ frame: at, position: [...hold] });
+    if (holdEnd > at) keys.push({ frame: holdEnd, position: [...hold] });
+    const spans = blk.spans.filter((x) => { const v = SitStand.window(x, fps); return v.end <= at || v.start > holdEnd; });
+    spans.push(span);
+    spans.sort((x, y) => (x.at ?? -1) - (y.at ?? -1));
+    blk.save(keys, spans);
+    commit();
+    return { ok: true, pose: "sit", on: host.id, changed: true, at, seated: w.seated, until, stand: [hold[0], hold[2]] };
+  }
+
+  /**
+   * setPose(id, "stand", {at}): the person seated in a timed sit at that frame stands up there (over sitstand.UP_S)
+   * and is back on their keys; `away` (m, optional): then a few steps away along the seat's facing.
+   */
+  _timedStand(a, opts, commit) {
+    const fps = this.state.shot?.fps || 24, last = this._lastFrame(), n = SitStand.frames(fps), nm = (o) => o.name || o.id;
+    const at = opts.at == null ? this.frame : this._apiFrame(opts.at);
+    if (!Number.isFinite(at) || at < 0) return { ok: false, error: `bad 'at' (${JSON.stringify(opts.at)}): a frame number or "<n>s"` };
+    let blk = this._sitBlock(a);
+    let i = blk.spans.findIndex((x) => { const w = SitStand.window(x, fps); return at >= w.seated && at <= w.up; });
+    // seated on a chair for the whole shot (a plain mount, setPose "sit" with no time: an earlier shot sat them down)
+    // and standing up in this one: the mount becomes a sit held from the shot's start (at: null) at the stand spot,
+    // in every shot (a shot with its own blocking gets the same open sit), so they can get up here
+    const mh = i < 0 && a.mount_id && !(a.mount_at > 0) ? this.state.actors.find((x) => x.id === a.mount_id) : null;
+    if (mh && SITTABLE.has(mh.kind) && this._seatPoint(mh)) {
+      const P0 = SitStand.standSpot(this._seatPoint(mh), this.actorMeshes.get(mh.id).rotation.y, (a.height_m || 1.8) * (a.scale || 1));
+      const k0 = [{ frame: 0, position: [+P0[0].toFixed(3), 0, +P0[1].toFixed(3)] }];
+      delete a.mount_id; delete a.mount_at; delete a.seat; delete a.pose;
+      a.keys = k0.map((k) => ({ ...k, position: [...k.position] })); a.position = [...k0[0].position];
+      a.sit_spans = [{ on: mh.id, at: null, to: null }];
+      for (const b of Object.values(a.by_shot || {})) if (b?.keys?.length) { b.keys = k0.map((k) => ({ ...k, position: [...k.position] })); b.sit_spans = [{ on: mh.id, at: null, to: null }]; }
+      this._yCache?.delete(a);
+      blk = this._sitBlock(a);
+      i = 0;
+    }
+    if (i < 0) return { ok: false, error: `'${nm(a)}' isn't seated at frame ${at} (sit them first: setPose(id, "sit", {on, at}))` };
+    const span = blk.spans[i], host = this.state.actors.find((x) => x.id === span.on), seat = host && this._seatPoint(host), hg = host && this.actorMeshes.get(host.id);
+    if (!seat || !hg) return { ok: false, error: `the seat '${span.on}' is gone` };
+    const h = (a.height_m || 1.8) * (a.scale || 1), P = SitStand.standSpot(seat, hg.rotation.y, h), hold = [+P[0].toFixed(3), 0, +P[1].toFixed(3)];
+    const oldEnd = SitStand.window(span, fps).end;
+    span.to = at;
+    const end = SitStand.window(span, fps).end;
+    // the hold now ends when they are up; keys after the old hold (a walk away) are kept
+    const same = (k) => Math.hypot(k.position[0] - hold[0], k.position[2] - hold[2]) < 1e-3;
+    // (an open sit held them at the stand spot to the last frame: that hold key goes; any other later key stays)
+    let keys = blk.keys.filter((k) => k.frame <= at || (k.frame > end && !(same(k) && (!Number.isFinite(oldEnd) || k.frame <= oldEnd))));
+    if (end <= last) keys = keys.filter((k) => k.frame !== end).concat([{ frame: end, position: [...hold] }]);
+    const away = Number(opts.away) > 0 ? Math.min(5, Number(opts.away)) : 0;
+    if (away && end < last) {
+      const yaw = hg.rotation.y, f2 = Math.min(last, end + Math.round((away / 1.1 + 0.6) * fps));
+      keys = keys.filter((k) => k.frame <= end || k.frame > f2);
+      keys.push({ frame: f2, position: [+(P[0] + Math.sin(yaw) * away).toFixed(3), 0, +(P[1] + Math.cos(yaw) * away).toFixed(3)] });
+    }
+    blk.spans[i] = span;
+    blk.save(keys, blk.spans);
+    commit();
+    return { ok: true, pose: "stand", on: span.on, changed: true, at, standing: end };
   }
 
   /** A copy of the whole scene (a string) for a tool to put back later with restoreSnapshot (Ask's own Undo). It is

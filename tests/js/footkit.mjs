@@ -25,6 +25,8 @@ export async function realKits() {
     const manager = new THREE.LoadingManager();
     manager.setURLModifier((u) => C.tgaToPng(u, `${RB}tex/`));
     const clips = Object.fromEntries(C.CLIP_KINDS.map((k) => [k, parse(`anim/${spec.clips[k]}.max.fbx`).animations[0]]));
+    // the seated idle (optional in an install, as in avatars.loadKit)
+    if (spec.seated && existsSync(`${RB}anim/${spec.seated}.max.fbx`)) clips.seated = parse(`anim/${spec.seated}.max.fbx`).animations[0];
     _kits[kind] = A.buildKit(parse(`${spec.model}.fbx`, manager), clips);
     _kits[kind].spec = spec;
   }

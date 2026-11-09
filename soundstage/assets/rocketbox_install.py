@@ -20,7 +20,10 @@ from pathlib import Path
 PINNED_COMMIT = "0943055db6ec570bcef9f2c8b41c9e5467c808f9"   # MIT from 2020-11-17 on (web/stage/people/README.md)
 REPO = "https://github.com/microsoft/Microsoft-Rocketbox"
 AVATARS = {"Male_Adult_01": "m002", "Female_Adult_01": "f001"}
-CLIPS = ["m_idle_neutral_01", "m_walk_neutral_01", "m_run_neutral_01", "f_idle_neutral_01", "f_walk_neutral_01", "f_run_neutral_01"]
+CLIPS = ["m_idle_neutral_01", "m_walk_neutral_01", "m_run_neutral_01", "f_idle_neutral_01", "f_walk_neutral_01", "f_run_neutral_01",
+         # the seated idles a timed sit plays on the seat (web/stage/people/sitstand.mjs; avatarcore ROCKETBOX .seated).
+         # Optional at run time: a kit without them folds the standing idle onto the seat instead.
+         "m_sit_chair_idle_neutral_01", "f_sit_chair_idle_neutral_01"]
 MAPS = ["body_color", "body_normal", "head_color", "head_normal", "opacity_color"]   # no *_specular: never loaded
 TIER_TEXTURE = {"TP": 256, "T0": 512, "T1": 1024, "Hero": 1024}
 CONVERTER = "Pillow LANCZOS, RGBA kept, optimize=True"

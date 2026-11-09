@@ -20,6 +20,7 @@ import * as O from "./onemotion.mjs";
 import * as Loco from "./locomotion.mjs";
 import { setStandIn } from "./standin.mjs";
 import { lifelikeSet } from "../tier.mjs";
+import * as SS from "./sitstand.mjs";
 
 F.setCloner((o) => SkeletonUtils.clone(o));
 
@@ -50,6 +51,8 @@ export function loadKit(spec) {
     ]);
     const clips = {};
     C.CLIP_KINDS.forEach((k, i) => { clips[k] = anims[i].animations?.[0] || null; });
+    // the seated idle (optional: an older install has none; then the timed sit folds the idle with sitBody)
+    if (spec.seated) clips.seated = await fbx(`${ROCKETBOX_DIR}anim/${spec.seated}.max.fbx`, new THREE.LoadingManager()).then((o) => o.animations?.[0] || null, () => null);
     const kit = buildKit(model, clips, { texErrors });
     kit.spec = spec;
     return kit;
@@ -108,13 +111,15 @@ export function buildKit(model, clips, { texErrors = [] } = {}) {
   const hipUnits = root ? root.getWorldPosition(new THREE.Vector3()).y : 90;
   const prepared = {};
   for (const k of C.CLIP_KINDS) if (clips[k]) prepared[k] = C.prepareClip(clips[k], boneNames);
+  // the seated idle is not one of the crossfaded clips: sampled on its own (seatedPose), never in the mixer
+  const seated = clips.seated ? C.prepareClip(clips.seated, boneNames) : null;
   const { stature, floor, idleBox } = measureStanding(model, prepared.idle?.clip);
   // Foot grounding (footplant.mjs): the leg bones and sole vertices, found once in the bind pose, and each clip's own
   // standing sole height (the body offset follows the clip that plays, not only the idle's first frame).
   const feet = F.footRig(model, keep);
   const floors = F.clipFloors(model, prepared, feet);
   return {
-    template: model, meshName: keep.name, materials, faceless: { neutral, hidden }, clips: prepared, hipUnits, stature, floor, idleBox, feet, floors,
+    template: model, meshName: keep.name, materials, faceless: { neutral, hidden }, clips: prepared, seated, hipUnits, stature, floor, idleBox, feet, floors,
     report: { meshes: list.map((m) => m.name), kept: keep.name, lightsRemoved: lights.length, missingMaps: C.missingColorMaps(materials), lashTriangles: lashes,
       unbound: Object.fromEntries(C.CLIP_KINDS.map((k) => [k, prepared[k]?.missing || null])), texErrors },
   };
@@ -482,6 +487,149 @@ export function sitBody(skin, sit, heightM = 1.8) {
   return target;
 }
 
+// ---------------------------------------------------------------- timed sits (stage sit_spans, people/sitstand.mjs)
+const LEG_BONE_NAMES = new Set(["Bip01_L_Thigh", "Bip01_L_Calf", "Bip01_L_Foot", "Bip01_L_Toe0", "Bip01_R_Thigh", "Bip01_R_Calf", "Bip01_R_Foot", "Bip01_R_Toe0"]);
+/** The kit's seated idle (f_ / m_sit_chair_idle_neutral_01) at frame f, on every bone but the legs (they are solved
+ *  onto the planted feet). Sampled from the clip's tracks, never through the mixer (its cached values are the
+ *  crossfaded clips'). false when the kit has no seated clip. */
+function seatedPose(skin, f, fps) {
+  const sc = skin.kit.seated;
+  if (!sc?.clip) return false;
+  const I = (sc._interp ||= sc.clip.tracks.map((t) => { const d = t.name.lastIndexOf("."); return { bone: t.name.slice(0, d), prop: t.name.slice(d + 1), it: t.createInterpolant() }; }));
+  const dur = sc.clip.duration || 1, t = (((f / fps) % dur) + dur) % dur;
+  for (const x of I) {
+    const b = skin.bones[x.bone];
+    if (!b || LEG_BONE_NAMES.has(x.bone)) continue;
+    const v = x.it.evaluate(t);
+    if (x.prop === "quaternion") b.quaternion.set(v[0], v[1], v[2], v[3]).normalize();
+    else if (x.prop === "position") b.position.set(v[0], v[1], v[2]);
+  }
+  return true;
+}
+const hipMid = (B) => B.Bip01_L_Thigh.getWorldPosition(new THREE.Vector3()).add(B.Bip01_R_Thigh.getWorldPosition(new THREE.Vector3())).multiplyScalar(0.5);
+/** Move the holder (world offset d). */
+function shiftHolder(h, d) {
+  const par = h.parent;
+  if (par) { par.updateWorldMatrix(true, false); h.position.copy(par.worldToLocal(h.getWorldPosition(new THREE.Vector3()).add(d))); } else h.position.add(d);
+  h.updateMatrixWorld(true);
+}
+
+/**
+ * Where the feet stay planted through a timed sit: {down: {l, r}, up: {l, r}} ({pos, q, exact}: the foot bone's world
+ * place and turn). The clip's own pose (the walk's body with its foot plan) on the frame just before the sit-down (after
+ * turning round) gives the sit-down's feet, and on the first frame after the stand-up (the walk away) the stand-up's, so
+ * the feet don't move at either handover (exact: true). Without a clip frame there (seated from the shot's start, or
+ * still seated at its end), the standing idle at the stand spot facing the seat's way. Cached on the skin per span and
+ * gait (a pure function of them).
+ */
+function sitFeet(stage, a, g, skin, sit, { fps, scale, last }) {
+  const sp = sit.span, w = sp.window, yaw = sit.yaw;
+  const plan = footPlanFor(stage, a, g, skin, { last, fps, scale });
+  const key = `${sp.stand.join(",")}|${yaw}|${w.down}|${w.end}|${scale}|${idOf(plan)}|${skin.gait?.sig}`;
+  if (skin._sitFeet?.key === key) return skin._sitFeet;
+  const read = (exact) => {
+    skin.holder.updateMatrixWorld(true);
+    const o = {};
+    for (const lr of ["l", "r"]) {
+      const ft = skin.legs[lr].foot;
+      o[lr] = { pos: ft.getWorldPosition(new THREE.Vector3()), q: ft.getWorldQuaternion(new THREE.Quaternion()), exact };
+    }
+    return o;
+  };
+  const clipAt = (fr) => {
+    const local = [];
+    poseFromClip(stage, a, g, skin, fr, { fps, scale, last, undo: local });
+    const o = read(true);
+    R.undoRig(local);
+    g.updateMatrixWorld(true);
+    return o;
+  };
+  const idle = () => {
+    const fr = Math.max(0, Math.min(last, Number.isFinite(w.down) ? w.down : 0));
+    placeHolder(g, skin.holder, { x: sp.stand[0], y: bodyY(stage, a, g, fr) - F.floorFor(skin.kit, C.clipWeights(0)) * scale, z: sp.stand[1], yaw, scale });
+    drive(skin, { frame: fr, fps, speed: 0, phase: 0, seed: C.phaseSeed(a.id) });
+    return read(false);
+  };
+  const down = Number.isFinite(w.down) && w.down - 1 >= 0 ? clipAt(w.down - 1) : idle();
+  const up = Number.isFinite(w.end) && w.end <= last ? clipAt(w.end) : down;
+  return (skin._sitFeet = { key, down, up });
+}
+
+/**
+ * Pose the lifelike body in a timed sit (stage._sitSpec(a).span: phase "down" | "seated" | "up", t): the standing idle
+ * at the stand spot and the seated idle (the kit's real seated clip on the trunk, arms and head; sitBody's fold when the
+ * kit has none) blended joint by joint (sitstand.curves w), the trunk leaned forward over the knees (lean), the hips
+ * put on their path from over the feet down onto the seat (back, down), and both legs solved (two-bone IK) onto feet
+ * that stay planted where they stood (sitFeet). Seated, the feet move once, lifted, if the walk away plants them
+ * somewhere else than the sit-down did.
+ */
+export function sitStandBody(stage, a, g, skin, f, sit, { fps, scale, last }) {
+  const sp = sit.span, yaw = sit.yaw, B = skin.bones, hM = C.clayHeight(a) * (a.scale || 1);
+  if (!B.Bip01_L_Thigh || !B.Bip01_R_Thigh || !skin.legs) return sitBody(skin, sit, hM);
+  const feet = sitFeet(stage, a, g, skin, sit, { fps, scale, last });
+  const fwd = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw)), side = new THREE.Vector3(0, 1, 0).cross(fwd);
+  const c = SS.curves(sp.phase, sp.t);
+  // A: the standing idle at the stand spot, facing the seat's way
+  const floorY = bodyY(stage, a, g, f);
+  const place = () => placeHolder(g, skin.holder, { x: sp.stand[0], y: floorY - F.floorFor(skin.kit, C.clipWeights(0)) * scale, z: sp.stand[1], yaw, scale });
+  place();
+  drive(skin, { frame: f, fps, speed: 0, phase: 0, seed: C.phaseSeed(a.id) });
+  skin.holder.updateMatrixWorld(true);
+  const hipA = hipMid(B);
+  const bones = Object.values(B), qa = bones.map((b) => b.quaternion.clone()), ra = B.Bip01?.position.clone();
+  // B: seated
+  if (c.w > 0) {
+    if (!seatedPose(skin, f, fps)) { sitBody(skin, { pose: "sit", seat: sit.seat, yaw }, hM); place(); }
+    const qb = bones.map((b) => b.quaternion.clone()), rb = B.Bip01?.position.clone();
+    bones.forEach((b, i) => b.quaternion.copy(qa[i]).slerp(qb[i], c.w));
+    if (ra && rb) B.Bip01.position.lerpVectors(ra, rb, c.w);
+  }
+  skin.holder.updateMatrixWorld(true);
+  // the trunk over the knees (above the pelvis), the head kept looking ahead
+  if (c.lean) {
+    for (const [n, share] of [["Bip01_Spine", 0.3], ["Bip01_Spine1", 0.4], ["Bip01_Spine2", 0.3]]) turnWorld(B[n], side, c.lean * share);
+    turnWorld(B.Bip01_Neck, side, -c.lean * 0.25);
+    turnWorld(B.Bip01_Head, side, -c.lean * 0.2);
+  }
+  // the hips on their path
+  const HB = new THREE.Vector3(sp.hips[0], sp.hips[1], sp.hips[2]);
+  const H = new THREE.Vector3(hipA.x + (HB.x - hipA.x) * c.back, hipA.y + (HB.y - hipA.y) * c.down, hipA.z + (HB.z - hipA.z) * c.back);
+  skin.holder.updateMatrixWorld(true);
+  shiftHolder(skin.holder, H.sub(hipMid(B)));
+  // the feet: where they stood (seated: once from the sit-down's place to the stand-up's, lifted, mid-hold)
+  const w = sp.window;
+  let u = sp.phase === "up" ? 1 : 0, lift = 0;
+  if (sp.phase === "seated" && Number.isFinite(w.up) && Number.isFinite(w.seated)) {
+    const mid = (w.seated + w.up) / 2, half = Math.min(8, (w.up - w.seated) / 2);
+    u = half > 0 ? Math.max(0, Math.min(1, (f - (mid - half)) / (2 * half))) : 0;
+    u = u * u * (3 - 2 * u);
+    lift = Math.sin(Math.PI * u) * 0.025 * hM / 1.8;
+  }
+  for (const lr of ["l", "r"]) {
+    const L = skin.legs[lr], d0 = feet.down[lr], d1 = feet.up[lr];
+    const moving = d0.pos.distanceToSquared(d1.pos) > 1e-8;
+    const target = moving ? d0.pos.clone().lerp(d1.pos, u).addScaledVector(UPV, moving ? lift : 0) : d0.pos;
+    L.foot.updateWorldMatrix(true, false);
+    const q = u >= 1 ? d1.q : u > 0 ? d0.q.clone().slerp(d1.q, u) : d0.q;
+    F.twoBoneIK(L.thigh, L.calf, L.foot, target, q, fwd);
+    // the sole on the ground (the planted place is the foot bone's; the turn the idle gives it can hold the sole a few
+    // cm up or down): once more with the lowest sole point's error taken off (not while it is lifted to move)
+    const rig = skin.kit.feet?.[lr];
+    // (the clip's own feet at a handover are matched exactly there: the correction fades out over the sit-down's first
+    // 25 % and into the stand-up's last 30 %, so a clip frame with a sole a little up, the walk's first step, is met)
+    const k = sp.phase === "down" ? smooth01(sp.t / 0.25) : sp.phase === "up" ? 1 - smooth01((sp.t - 0.7) / 0.3) : 1;
+    if (rig && skin.mesh && !(moving && lift > 1e-4) && k > 1e-4) {
+      skin.holder.updateMatrixWorld(true);
+      const ground = groundFn(stage, a, g, f), p = F.solePoints(skin.mesh, rig);
+      let lo = Infinity;
+      for (let i = 0; i < p.length; i += 3) lo = Math.min(lo, p[i + 1] - ground(p[i], p[i + 2]));
+      if (Number.isFinite(lo) && Math.abs(lo) > 1e-4) F.twoBoneIK(L.thigh, L.calf, L.foot, target.clone().addScaledVector(UPV, -lo * k), q, fwd);
+    }
+  }
+  skin.holder.updateMatrixWorld(true);
+  return H;
+}
+
 /** The strides (m per loop) of a kit's walk and run at this scale. */
 export const kitStrides = (kit, scale) => ({ walk: (kit.clips.walk?.travel || 120) * scale, run: (kit.clips.run?.travel || 210) * scale });
 
@@ -731,6 +879,7 @@ function evalSource(k, stage, a, g, skin, { fps, scale, last, f }, undo, { groun
     const sit = seatSpec();
     skin.footOut = null;
     if (!sit) { poseRaw(stage, a, g, skin, f, { fps, scale, last }); return new THREE.Vector3(); }
+    if (sit.span) { sitStandBody(stage, a, g, skin, f, sit, { fps, scale, last }); return new THREE.Vector3(); }
     placeHolder(g, skin.holder, { x: sit.seat[0], y: sit.seat[1] - F.floorFor(skin.kit, C.clipWeights(0)) * scale, z: sit.seat[2], yaw: sit.yaw, scale });
     drive(skin, { frame: f, fps, speed: 0, phase: 0, seed: C.phaseSeed(a.id) });
     sitBody(skin, sit, C.clayHeight(a) * (a.scale || 1));

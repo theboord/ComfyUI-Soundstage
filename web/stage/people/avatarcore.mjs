@@ -25,9 +25,11 @@ export const PERSON_KINDS = new Set(["man", "woman", "child"]);
 /** Which Rocketbox avatar and clips each person kind gets. Children get the marked stand-in until a licence-clean
  *  child avatar exists (Mike, 2026-11-07). */
 export const ROCKETBOX = {
-  man: { model: "Male_Adult_01", clips: { idle: "m_idle_neutral_01", walk: "m_walk_neutral_01", run: "m_run_neutral_01" } },
-  woman: { model: "Female_Adult_01", clips: { idle: "f_idle_neutral_01", walk: "f_walk_neutral_01", run: "f_run_neutral_01" } },
+  man: { model: "Male_Adult_01", clips: { idle: "m_idle_neutral_01", walk: "m_walk_neutral_01", run: "m_run_neutral_01" }, seated: "m_sit_chair_idle_neutral_01" },
+  woman: { model: "Female_Adult_01", clips: { idle: "f_idle_neutral_01", walk: "f_walk_neutral_01", run: "f_run_neutral_01" }, seated: "f_sit_chair_idle_neutral_01" },
 };
+/** The seated idle (spec.seated) is optional: a kit installed before it was added has none, and a timed sit then
+ *  folds the standing idle onto the seat (sitBody) instead of playing the real seated clip. */
 export const CLIP_KINDS = ["idle", "walk", "run"];
 export const ROOT_BONE = "Bip01";
 
