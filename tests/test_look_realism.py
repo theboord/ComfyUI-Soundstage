@@ -29,7 +29,8 @@ def test_people_in_frame_get_real_actor_wording():
     assert "real actors, natural skin texture" in out["still_prompt"]
     assert "candid unposed body language" in out["still_prompt"]
     neg = out["still_negative"]
-    assert "plastic skin" in neg and "mannequin" in neg and "doll-like faces" in neg
+    # C28 (d): the short negative (the long one with "plastic skin, mannequin …" let a second woman in on Krea 2)
+    assert "waxy airbrushed skin" in neg and "CGI" in neg and "3d render" in neg and "plastic skin" not in neg
     # The head count still comes first and the realism words never mention more people.
     p = out["still_prompt"]
     assert p.index("people in frame") < p.index("real actors")

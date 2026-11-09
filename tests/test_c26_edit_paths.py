@@ -82,14 +82,22 @@ def T_values(out):
 def test_edit_prompt_is_an_instruction_without_shot_size_or_placement():
     r = compile_look({"film_stock": "double_x"}, DEFAULT_SCENE)
     still, edit = r["still_prompt"], r["edit_prompt"]
-    assert edit.startswith("Turn image 1, a grey 3D blocking render")
-    assert edit == EG.frame_instruction(edit.split(" The photograph: ", 1)[1].rstrip("."))
+    # C28 (e): a photographic look's edit prompt is the measured Klein instruction, not frame_instruction(...)
+    assert edit.startswith("Turn image 1, a plain 3D stage render, into a real photograph of the same shot: keep the ")
     for placed in ("wide shot", "at the left third", "in the centre", "small in frame", "seen from behind"):
         assert placed in still, placed            # the still prompt keeps them (Krea 2, Light / Strict)
         assert placed not in edit, placed
     # the look, the light and the clothes stay: only where people are and how big goes
-    for kept in ("Kodak Double-X", "golden hour", "35mm lens", "pink button-up shirt", "exactly two people"):
+    for kept in ("Kodak Double-X", "golden-hour sun", "35mm", "at T2", "pink button-up shirt", "Exactly two people"):
         assert kept in edit, kept
+
+
+def test_a_stylised_look_keeps_the_old_frame_instruction():
+    r = compile_look({"description": "a Pixar-style animated chase"}, DEFAULT_SCENE)
+    edit = r["edit_prompt"]
+    assert edit.startswith("Turn image 1, a grey 3D blocking render")
+    assert edit == EG.frame_instruction(edit.split(" The photograph: ", 1)[1].rstrip("."))
+    assert "ARRI" not in edit and "cinematic film still" in r["still_prompt"]
 
 
 def test_edit_prompt_keeps_the_book_and_sfx_words():

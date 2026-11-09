@@ -18,7 +18,7 @@ from ..cine.prompts import SIZE_STILL, _cap, _join
 from . import scene as S
 from .colors import palette_phrase, palette_words
 from .gaze import frame1_looks, head_beats
-from .identity import body_words, motion_identity, people_identity, plain_word, still_identity, wardrobe
+from .identity import body_words, known_wear, motion_identity, people_identity, plain_word, still_identity, wardrobe
 from .impacts import impact_beats
 from .sfx import sfx_beats, sfx_still_words, without_rigs
 from .objstate import motion_beats, still_words
@@ -227,6 +227,200 @@ def _style_head(parts: dict) -> str:
     return "cinematic film still"
 
 
+# ---- the camera block (C28, Jon's RTX 5080 sweep through ④ Frame, 2026-11-08: outbox claude_C28.md) ---------------
+# The vague "cinematic film still" head is replaced by a concrete camera setup: the body, the lens with its focal
+# length and stop, the depth of field and what is in focus, the film stock, grain, halation and a slight edge softness,
+# then the light as the set motivates it. Variant (d) of the sweep: clean on both seeds on Krea 2 + depth, where the
+# old head (a) was plainer and the long negative (c) painted a second woman. Words never used: beautiful, 8k,
+# masterpiece, ultra-detailed (BANNED_WORDS; the tests grep every compiled prompt for them).
+BANNED_WORDS = ("beautiful", "8k", "masterpiece", "ultra-detailed")
+DEFAULT_BODY = "ARRI Alexa 35"
+DEFAULT_GLASS = "Cooke S4 prime"
+DEFAULT_STOCK = "Kodak Vision3 500T film stock"
+DEFAULT_T_STOP = 2.0
+# "slight vignetting" at 8 Krea steps made heavy, blotchy dark corners; at 12 steps it is clean (C28 phase D).
+VIGNETTE_MIN_STEPS = 12
+DEFAULT_FRAME_STEPS = 12   # ④ Frame's default for Krea 2 + depth and FLUX 3 Klein (web/pipeline/pipeline.mjs FRAME_DEFAULTS)
+# The short negative of variant (d). At CFG 1 Krea 2 still reads it (mean pixel change 7.3 against none); Klein reads it
+# only above CFG 1. The long negative (c) let a second woman in on one of two seeds.
+C28_NEGATIVE = "CGI, 3d render, waxy airbrushed skin, oversaturated, HDR, illustration, extra people"
+# Stocks / looks that are digital or grainless: no "fine visible film grain", no halation from the block.
+_NO_GRAIN = {"digital_clean", "hdr", "arri_log_look", "kodak_50d", "vhs_tape"}
+_NO_HALATION = {"digital_clean", "hdr", "vhs_tape"}
+_GARMENTS = ("t-shirt", "shirt", "blouse", "jeans", "trousers", "pants", "shorts", "skirt", "dress", "gown",
+             "coat", "jacket", "blazer", "suit", "sweater", "jumper", "hoodie", "cardigan", "vest", "uniform", "overalls",
+             "jumpsuit", "robe", "wetsuit", "top", "tank top", "leggings", "scrubs", "apron")
+
+
+def _a(noun: str) -> str:
+    return ("an " if noun[:1].lower() in "aeiou" else "a ") + noun
+
+
+def _stop_word(t: float) -> str:
+    return f"T{t:g}"
+
+
+def _stage_t_stop(scene: dict) -> float | None:
+    """The shot camera's iris at frame 1 when the stage keys one (the phone viewfinder's lens keys, ③ Set's T-stop)."""
+    keys = sorted((k for k in scene.get("camera_keys") or [] if isinstance(k, dict)), key=lambda k: k.get("frame", 0))
+    for k in keys[:1] + [scene.get("camera") or {}]:
+        try:
+            t = float(k.get("t_stop") or 0)
+        except (TypeError, ValueError):
+            t = 0
+        if 0.5 <= t <= 64:
+            return t
+    return None
+
+
+def _look_t_stop(c: dict) -> float | None:
+    """The Look tab's aperture (f2_8 -> 2.8)."""
+    oid = (c.get("aperture") or {}).get("id") or ""
+    m = re.fullmatch(r"f(\d+)(?:_(\d+))?", oid)
+    return float(f"{m.group(1)}.{m.group(2) or 0}") if m else None
+
+
+def _windows(scene: dict) -> int:
+    """Windows the set has: a floor-plan room's window openings, or a set whose place names its windows."""
+    n = sum(1 for o in ((scene.get("interior") or {}).get("openings") or []) if (o or {}).get("type") == "window")
+    if not n and re.search(r"\bwindows?\b", S.location(scene).get("place") or ""):
+        n = 1
+    return n
+
+
+def _light_words(l: dict) -> str:
+    k = float(l.get("kelvin", 5600))
+    tone = "warm" if k < 3300 else "cool blue" if k > 9000 else "cool" if k > 6000 else "neutral"
+    kind = str(l.get("type", "light")).replace("_", " ")
+    return f"a {'dim ' if kind == 'practical' else ''}{tone} {kind}{' lamp' if kind == 'practical' else ''}"
+
+
+def motivated_light(scene: dict) -> str:
+    """The light as the set motivates it: the key from the sun, the moon or the set's own lamps (through the window in
+    a room that has one), the fill from what else is there, never a lamp the set does not have. '' when the stage sent
+    its own lighting note (lighting_prompt): that note is said as written, elsewhere in the prompt."""
+    if scene.get("lighting_prompt"):
+        return ""
+    sun = scene.get("sun") or {}
+    lighting = scene.get("lighting") or {}
+    el = float(sun.get("elevation_deg", 30))
+    lights = [_light_words(l) for l in lighting.get("lights") or [] if isinstance(l, dict)]
+    lights = list(dict.fromkeys(lights))
+    inside = S.location(scene).get("int_ext") == "INT"
+    win = _windows(scene)
+    through = (" through the windows" if win > 1 else " through the window") if inside and win else ""
+    if lighting.get("overcast"):
+        sky, dark = "soft overcast daylight", False
+    elif el < -6:
+        sky, dark = "cool moonlight", True
+    elif el < 0:
+        sky, dark = "blue-hour skylight", True
+    elif el < 6:
+        sky, dark = "low magic-hour sun", False
+    elif el < 20:
+        sky, dark = "low golden-hour sun", False
+    else:
+        sky, dark = "bright sunlight", False
+    if inside and not win:          # a closed room: only its own lamps light it
+        key, fill = (lights[0], _join(lights[1:2]) or "soft bounce off the walls") if lights else ("soft ambient light", "")
+    elif dark and lights and not through:   # a night street: the lamps are the key, the moon fills
+        key, fill = lights[0], sky
+    else:
+        key = sky + through
+        fill = lights[0] if lights else ("soft bounce off the walls" if inside else "soft skylight" if not dark else "")
+    bits = [f"motivated light: {key} as the key"] + ([f"{fill} as fill"] if fill else [])
+    return ", ".join(bits + ["deep natural shadows" if dark else "natural shadows"])
+
+
+def _focus_target(f1: dict) -> str:
+    """'the subject' when someone or something is in frame: never the noun again. The people phrase says each person
+    once (C22c: a woman named twice came out as two women; C28's (b) and (c), which said "focus on the woman", painted a
+    second woman on one seed of two)."""
+    return "the subject" if (f1.get("people") or f1.get("others")) else ""
+
+
+def camera_block(look: dict, scene: dict, parts: dict, f1: dict, steps: int | None = None, edit: bool = False) -> dict:
+    """The concrete camera setup that heads a photographic still (C28 variant (d); (e) for the edit instruction).
+
+    Derived from what the App knows: the stage's focal length and its T-stop when it keys one (else the Look tab's
+    aperture, else T2), the Look tab's body, glass and stock (else Alexa 35, Cooke S4, Vision3 500T). Returns
+    {"text", "said": the look fields the block already says (their own fragments are not repeated), "body_rest"}."""
+    c = parts["chosen"]
+    body = c.get("camera_body") or {}
+    bstill = body.get("still", "")
+    said, body_rest = {"aperture"}, ""
+    cine = True
+    if not body:
+        head = f"photograph shot on {_a(DEFAULT_BODY)}"
+    elif bstill.startswith("shot on "):
+        name, _, body_rest = bstill[len("shot on "):].partition(", ")
+        name = re.sub(r"\s*\b8K\b", "", name)          # "RED V-Raptor 8K": the resolution tag is a banned word
+        head = f"photograph shot on {name if name.startswith(('a ', 'an ')) else _a(name)}"
+        said.add("camera_body")
+    else:   # a video camera (smartphone, VHS, CCTV): its own words lead, no film stock or film grain of ours
+        name, _, body_rest = bstill.partition(", ")
+        head, cine = name, False
+        said.add("camera_body")
+    mm = round(f1["focal_mm"])
+    lens = c.get("lens")
+    glass = f"{mm}mm {DEFAULT_GLASS} lens" if not lens or lens.get("id") == "cooke_s4" else f"{mm}mm lens"
+    t = _stage_t_stop(scene) or _look_t_stop(c) or DEFAULT_T_STOP
+    head += f" with {_a(glass)} at {_stop_word(t)}"
+    target = _focus_target(f1)
+    inside = f1["location"]["int_ext"] == "INT"
+    if t <= 2.8:
+        dof = ["shallow depth of field"]
+        if target and not edit:
+            dof += [f"focus on {target}", f"the {'back wall' if inside else 'background'} softly out of focus"]
+    elif t <= 5.6:
+        dof = ["moderate depth of field"] + ([f"focus on {target}"] if target and not edit else [])
+    else:
+        dof = ["deep focus, foreground and background both sharp"]
+    stock = c.get("film_stock") or {}
+    sid = stock.get("id", "")
+    stock_words = stock.get("still", "") or (DEFAULT_STOCK if cine else "")
+    if stock:
+        said.add("film_stock")
+    texture = []
+    already = " ".join([stock_words, (lens or {}).get("still", ""), bstill]).lower()
+    if cine and sid not in _NO_GRAIN and "grain" not in already:
+        texture.append("fine visible film grain")
+    if cine and sid not in _NO_HALATION and "halation" not in already and not parts["bw"]:
+        texture.append(f"gentle halation around the bright {'window' if _windows(scene) else 'highlights'}")
+    vignette = (steps or DEFAULT_FRAME_STEPS) >= VIGNETTE_MIN_STEPS
+    if edit:
+        edge = "slight vignetting" if vignette else ""
+    else:
+        edge = "slight vignetting and softness at the frame edges" if vignette else "slight softness at the frame edges"
+    light = motivated_light(scene)
+    text = _join([head, *dof, stock_words, *texture, edge, light])
+    return {"text": text, "said": said, "body_rest": body_rest, "light": bool(light)}
+
+
+def _garments(wear: str) -> list[str]:
+    words = (wear or "").lower()
+    found = []
+    for g in _GARMENTS:
+        if re.search(rf"\b{re.escape(g)}s?\b", words) and not any(g in f for f in found):
+            found.append(g)
+    return found
+
+
+def skin_fabric_tail(scene: dict, f1: dict, look: dict, short: bool = False) -> str:
+    """'real skin texture with pores and fine lines, visible fabric weave and creases in the shirt and jeans': the
+    garments are the ones the people phrase already names (identity.known_wear), never new clothes."""
+    by_id = {a.get("id"): a for a in scene.get("actors") or []}
+    garments: list[str] = []
+    for e in f1["people"]:
+        for g in _garments(known_wear(by_id.get(e["id"]) or e["actor"], look)):
+            if g not in garments:
+                garments.append(g)
+    if short:
+        return "real skin texture with pores, visible fabric weave and creases"
+    where = (" in the " + S._join_and(garments)) if garments else " in their clothes"
+    return f"real skin texture with pores and fine lines, visible fabric weave and creases{where}"
+
+
 def _still_count(n: int) -> str:
     return {0: "no people in frame", 1: "exactly one person in frame", 2: "exactly two people in frame",
             3: "exactly three people in frame"}.get(n, f"exactly {n} people in frame")
@@ -295,17 +489,32 @@ def _drop_repeated_people(desc: str, people_words: str) -> str:
     return re.sub(r",\s*$", "", text)
 
 
-def compile_still(look: dict, scene: dict, parts: dict, edit: bool = False) -> tuple[str, str]:
+def compile_still(look: dict, scene: dict, parts: dict, edit: bool = False,
+                  steps: int | None = None) -> tuple[str, str]:
     """The frame-1 still prompt and negative. edit=True is the text for an edit model that sees the stage's Color pass
     as image 1 (FLUX Klein, the Look's `edit_prompt`): the shot-size and the who-is-where slots go, because the picture
-    already says where everyone is and those words made Klein recompose the shot (share/QA/klein_fix s_nopos)."""
+    already says where everyone is and those words made Klein recompose the shot (share/QA/klein_fix s_nopos).
+    steps: ④ Frame's step count for the frame model (None = its default, 12); "slight vignetting" needs 12 or more.
+
+    A photographic look (real people wanted, not a frame picked before Milestone 5) opens with the camera block
+    (camera_block, C28) instead of "cinematic film still"; a drawn or rendered look, and a legacy frame, keep the
+    old head."""
     f1 = S.frame1_facts(scene)
     c = parts["chosen"]
-    style = [_style_head(parts)]
+    legacy = scene.get("look_start") is False
+    photo = real_people_wanted(look) and not legacy
+    cam = camera_block(look, scene, parts, f1, steps, edit) if photo else None
+    named = any(f in c and c[f].get("still") for f in ("movement", "subgenre", "genre"))
+    # a genre / movement head ("Korean thriller film still") still leads; the block replaces only the generic head
+    style = (([_style_head(parts)] if named else []) + [cam["text"]]) if cam else [_style_head(parts)]
     genre_layer = "subgenre" if "subgenre" in c else "genre"   # a subgenre already says its genre
     if "movement" in c and genre_layer in c:
         style.append(c[genre_layer]["still"])
-    legacy = scene.get("look_start") is False
+    said = cam["said"] if cam else set()
+    lens_frag = c.get("lens", {}).get("still", "")
+    if cam and c.get("lens", {}).get("id") == "cooke_s4":
+        lens_frag = lens_frag.partition(", ")[2]          # "Cooke S4 prime" is in the block already
+    body_frag = cam["body_rest"] if "camera_body" in said else c.get("camera_body", {}).get("still", "")
     # People: each one said ONCE - count, size, place, distance, the body's facing at frame 0, and clothes (C22c,
     # 2026-11-08: the old group phrase named the one woman twice, in the plural, facing the way she would walk, and
     # Krea 2 painted a second woman; no clothes were named and the woman came out bare-chested). A frame picked before
@@ -360,7 +569,7 @@ def compile_still(look: dict, scene: dict, parts: dict, edit: bool = False) -> t
     # zero (or one) makes Krea paint pedestrians; seen from inside, the riders ARE the people in frame.
     count = not lock or n > 0
     # A frame picked before Milestone 5 re-renders with the words it was painted with (stage sends look_start false).
-    real = real_people_wanted(look) and not legacy
+    real = photo
     if vcam and vcam.get("where") in ("interior", "hood", "bumper", "wheel") and place and place != "underwater":
         place_words = f"driving through {place}" if (S.camera_move(scene).get("rides") or {}).get("moving") else f"parked in {place}"
     else:
@@ -386,9 +595,9 @@ def compile_still(look: dict, scene: dict, parts: dict, edit: bool = False) -> t
         # The bumper and over-the-tyre mounts lead with "low camera hard-mounted": never "eye-level" after that.
         S.ANGLE_STILL[f1["angle"]] if f1["angle"] != "eye" else
         "low angle" if (vcam or {}).get("where") in ("bumper", "wheel") else "eye-level camera",
-        f"{round(f1['focal_mm'])}mm lens",
-        c.get("lens", {}).get("still", ""),
-        c.get("aperture", {}).get("still", ""),
+        "" if cam else f"{round(f1['focal_mm'])}mm lens",   # the block says "35mm Cooke S4 prime lens at T2"
+        lens_frag,
+        "" if cam else c.get("aperture", {}).get("still", ""),
         place_words,
         "; ".join(props),
         still_words(scene, {e["id"] for e in f1["people"] + f1["others"]}).rstrip("."),   # Milestone 26: lamps, doors, paint
@@ -397,19 +606,80 @@ def compile_still(look: dict, scene: dict, parts: dict, edit: bool = False) -> t
         c.get("technique", {}).get("still", ""),
         _intensity(c.get("mood", {}).get("still", ""), look) if c.get("mood") else "",
         "black and white" if parts["bw"] else parts["palette_still"],
+        "" if "film_stock" in said else
         (LEGACY_STILL.get(c.get("film_stock", {}).get("id")) if legacy else None) or c.get("film_stock", {}).get("still", ""),
-        c.get("camera_body", {}).get("still", ""),
+        body_frag,
         _join(_grade_words(look)),
+        # C28: the skin and fabric tail closes the still, naming the clothes the people phrase already gave them
+        skin_fabric_tail(scene, f1, look) if cam and n else "",
     ])
     # Never tell the model "no people" when the shot has people in it: riders in the car, someone walking in later.
     no_people = n == 0 and not S.people_in_shot(scene)
-    negative = _join([FRAME1_NEGATIVE + (", people, person, figure" if no_people else "") if n <= 3 else "extra people",
-                      BLUR_SAFE_NEGATIVE if _ASKS_BLUR.search(prompt) else BASE_NEGATIVE, REAL_PEOPLE_NEG if n and real else "", facing_neg, NOTHING_EXTRA_NEG, vcam["negative"] if vcam else "", lock["negative"] if lock else "",
-                      SW.negative_words(scene, seen), *parts["negatives"], look.get("negative", "")])
+    count_neg = FRAME1_NEGATIVE + (", people, person, figure" if no_people else "") if n <= 3 else "extra people"
+    scene_neg = [facing_neg, vcam["negative"] if vcam else "", lock["negative"] if lock else "",
+                 SW.negative_words(scene, seen), *parts["negatives"], look.get("negative", "")]
+    if cam:
+        # C28 (d): the short negative, plus only what this shot needs (facing, the car, the empty road, the swim kit,
+        # the look's own). A look that asks for HDR keeps "HDR" out of its negative.
+        short = C28_NEGATIVE.replace("HDR, ", "") if re.search(r"\bHDR\b", prompt) else C28_NEGATIVE
+        negative = _join([count_neg, short, *scene_neg])
+    else:
+        negative = _join([count_neg, BLUR_SAFE_NEGATIVE if _ASKS_BLUR.search(prompt) else BASE_NEGATIVE,
+                          REAL_PEOPLE_NEG if n and real else "", facing_neg, NOTHING_EXTRA_NEG, *scene_neg[1:]])
+    if edit and cam:
+        return _edit_instruction(look, scene, f1, cam, prompt, people_words if one_phrase and people else "",
+                                 wear_of, n, real), _dedupe(negative)
     still = _dedupe(prompt)
     if one_phrase and people:
         still = still.replace(_PEOPLE_SLOT, people_words)
     return still, _dedupe(negative)
+
+
+def _edit_instruction(look: dict, scene: dict, f1: dict, cam: dict, prompt: str, people_words: str, wear_of,
+                      n: int, real: bool) -> str:
+    """④ Frame on FLUX Klein (the Look's `edit_prompt`): C28 variant (e), the only Klein text that came close to a
+    photograph (and, with "Lock to the stage depth: Light", gave one on both seeds). An instruction to turn image 1
+    into a photograph of the same shot, keeping the place, the camera and every mark; then the camera block without
+    the focus target; then who is there and what they wear (no positions: image 1 has them); the skin, fabric and
+    material words; and the rest of the look. `prompt` is compile_still's edit=True slot list, joined: its look words
+    (genre, era, description, palette, grade …) follow, minus what the block already said."""
+    inside = f1["location"]["int_ext"] == "INT"
+    place = "room" if inside else "location"
+    others = f1["others"]
+    if n == 1 and not others:
+        marks = f"{S.definite(f1['people'][0]['noun'])}'s position, size and pose"
+    elif n or others:
+        marks = "every person's and object's position, size and pose"
+    else:
+        marks = "every object's position and size"
+    head = (f"Turn image 1, a plain 3D stage render, into a real photograph of the same shot: keep the {place}, the "
+            f"camera, and {marks} exactly.")
+    block = _cap(cam["text"].replace("photograph shot on", "Shot on", 1)) + "."
+    dressed = [f"{S.definite(e['noun'])} {wear_of(e)}".strip() for e in sorted(f1["people"], key=lambda e: e["sx"])]
+    if n == 1:
+        who = f"Exactly one {re.sub(r'^(?:a|an|the) ', '', f1['people'][0]['noun'])}, {wear_of(f1['people'][0])}"
+    elif n:
+        who = f"Exactly {NUM.get(n, n)} people: " + "; ".join(dressed)
+    else:
+        who = ""
+    floorplan = bool((scene.get("interior") or {}).get("rooms"))
+    material = "real plaster walls and wooden floor" if floorplan else "real materials on every surface"
+    tail = _join([who, skin_fabric_tail(scene, f1, look, short=True) if n and real else "", material,
+                  (f"nobody else in the {'room' if inside else 'frame'}" if n else "")])
+    # The rest of the look: compile_still's edit slots minus the block (first) and what the instruction now says.
+    rest = prompt.replace(_PEOPLE_SLOT, "")
+    if rest.startswith(cam["text"]):
+        rest = rest[len(cam["text"]):]
+    drop = {x.strip().lower() for x in (people_words, *dressed, _still_count(n)) if x}
+    drop |= {p.strip().lower() for p in (REAL_PEOPLE + ", " + skin_fabric_tail(scene, f1, look)).split(",")}
+    if cam["light"]:
+        drop |= {p.strip().lower() for p in (f1["lighting"] or "").split(",")}
+    keep = [p for p in _dedupe(rest).split(", ") if p and p.strip().lower() not in drop
+            and not p.lower().startswith(("nobody else", "no other vehicles", "eye-level camera", "in ", "exactly "))]
+    worn = "; ".join(dressed)   # the clothes are in `who` already
+    keep = [p for p in keep if p not in worn]
+    look_s = _cap(_join(keep)) + "." if keep else ""
+    return " ".join(x for x in (head, block, _cap(tail) + "." if tail else "", look_s) if x)
 
 
 def _dedupe(text: str) -> str:
@@ -659,8 +929,13 @@ def compile_look(look_in: dict | None, scene: dict | None) -> dict:
     scene = scene if isinstance(scene, dict) and scene else dict(DEFAULT_SCENE)
     scene = without_rigs(scene)   # SFX rigs are crew equipment, never things in the shot (their effects get beats)
     parts = look_parts(look, look_context(scene))
-    still, negative = compile_still(look, scene, parts)
-    edit_still, _ = compile_still(look, scene, parts, edit=True)
+    # ④ Frame's step count for the frame model, when the App sends it (the Look JSON's frame_steps): the vignetting rule
+    try:
+        steps = int((look_in or {}).get("frame_steps") or 0) if isinstance(look_in, dict) else 0
+    except (TypeError, ValueError):
+        steps = 0
+    still, negative = compile_still(look, scene, parts, steps=steps or None)
+    edit_still, _ = compile_still(look, scene, parts, edit=True, steps=steps or None)
     sw = sfx_still_words(scene)
     if sw:
         still = f"{still.rstrip(' .')}. {sw}"
@@ -674,8 +949,9 @@ def compile_look(look_in: dict | None, scene: dict | None) -> dict:
         edit_still = f"{edit_still.rstrip(' .')}. {bw}"
     # ④ Frame on FLUX Klein: an instruction to turn the clay (image 1) into a photograph of the same shot, then the
     # look without placement words (soundstage/router/edit_graph.py; local import: the router imports look.frame_lock).
+    # A photographic look's edit_still is already that instruction (C28 variant (e), _edit_instruction).
     from ..router.edit_graph import frame_instruction
-    edit_prompt = frame_instruction(edit_still)
+    edit_prompt = edit_still if edit_still.startswith("Turn image 1") else frame_instruction(edit_still)
     f1 = S.frame1_facts(scene)
     return {
         "look": look,
