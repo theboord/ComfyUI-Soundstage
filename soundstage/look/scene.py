@@ -350,6 +350,23 @@ def _project_body(pos, height, cam) -> dict | None:
             "screen_h": (min(top, 1) - max(bottom, -1)) / 2}
 
 
+HEAD_OUT = 1.05   # the head's screen height (NDC, +1 = the top edge) above which the face is out of frame
+
+
+def head_out_words(pr: dict, body_h: float) -> str:
+    """'' when the head is in frame; else which part of the body the frame holds at frame 1, from where the top edge
+    of the frame cuts the body (pr from _project_body: head = 0.92 of the body height, feet = 0)."""
+    top, bottom = pr.get("top", 0), pr.get("bottom", 0)
+    if top <= HEAD_OUT or top <= bottom:
+        return ""
+    cut = (1.0 - bottom) / (top - bottom) * 0.92     # fraction of the body height at the top edge of the frame
+    if cut >= 0.78:
+        return "seen from the shoulders down, the face out of frame above"
+    if cut >= 0.5:
+        return "seen from the chest down, the head out of frame above"
+    return "only the hands and hips in frame, the head and shoulders out of frame above"
+
+
 def shot_size(z: float, height: float, focal_mm: float) -> str:
     """Shot size from how much of the subject's height the frame covers at its distance."""
     frame_h = z * G.sensor_h() / focal_mm
@@ -538,7 +555,9 @@ def _person_clause(e: dict, cam: dict, wear: str) -> str:
     box = (e.get("layout") or {}).get("box")
     sx, h = (((box[0] + box[2]) - 1.0), box[3] - box[1]) if box else (e["sx"], e["screen_h"])
     bits = [e["noun"]]
-    if not e.get("seated"):
+    if e.get("crop"):
+        bits.append(e["crop"])          # the head out of frame (head_out_words), seated or not
+    elif not e.get("seated"):
         bits.append(_FIGURE.get(e.get("size"), ""))
     bits.append("very small in frame" if h < 0.18 else "small in frame" if h < 0.5 else "")
     verb = "" if e.get("riding") else "seated" if e.get("seated") else "standing"
@@ -1035,8 +1054,13 @@ def frame_facts(scene: dict, cam: dict, frame: int) -> dict:
         size = shot_size(pr["z"], c["height"], cam["focal_mm"])
         if seated and size in ("FS", "COWBOY"):
             size = "MS"                                # sitting: the legs are out of the picture however wide the frame
+        crop = head_out_words(pr, body)
+        if crop:
+            # The head is above the top of the frame: the camera is on the hands or the body, not the face. Distance
+            # alone called the Maya S3 hand close "close-up of the face, head and shoulders" and Krea 2 painted a wide.
+            size = "INSERT"
         entry = {**c, "noun": noun, "heading": heading, "pos": pos, **pr, "where": screen_words(pr["sx"]),
-                 "size": size, "seated": seated,
+                 "size": size, "seated": seated, "crop": crop,
                  "riding": seated and not c["enclosed"] and host.get("kind") not in SEAT_ROWS + SEAT_FURNITURE, "host_id": host.get("id") if seated else None,
                  # Riding along: they sit still in the frame however fast the car goes.
                  "moves": not (ride is not None and seated and host.get("id") == ride.get("id"))}

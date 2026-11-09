@@ -76,9 +76,10 @@ def absent_words(scene: dict, f1: dict) -> list[str]:
     return list(dict.fromkeys(out))
 
 
-def frame1_safe(text: str, absent: list[str] | tuple = ()) -> str:
+def frame1_safe(text: str, absent: list[str] | tuple = (), names: list[str] | tuple = ()) -> str:
     """Keep only the clauses of a description that can be true in the first frame. absent: words naming cast that is
-    out of frame at frame 0 (absent_words); a sentence that names one is dropped whole, its spray and light with it."""
+    out of frame at frame 0 (absent_words); a sentence that names one is dropped whole, its spray and light with it.
+    names: the cast's names ("Maya"), so a later sentence about one of them goes with the move it follows."""
     if not text:
         return ""
     if absent:
@@ -86,17 +87,57 @@ def frame1_safe(text: str, absent: list[str] | tuple = ()) -> str:
         sentences = re.split(r"(?<=[.!?])\s+", text.strip())
         text = " ".join(x for x in sentences if not name.search(x) or _NEGATED.search(x))
     # Everything from the first "then" / "after" etc. onward happens later in the shot ("…, then they
-    # sprint in, vault up and gallop away" drops all three actions, not just the first clause).
-    clauses = re.split(r"(?<=[.;!?])\s+|,\s*|;\s*|\s+(?=(?:and\s+)?then\b)", text.strip())
-    keep = []
-    for c in clauses:
-        c = c.strip(" .;")
-        if not c:
+    # sprint in, vault up and gallop away" drops all three actions, not just the first clause). So does everything
+    # from a move to somewhere else or a change of pose ("She walks slowly to the wooden table and stops at its edge"):
+    # the Maya S2 frame painted her already at the table. Past that point a sentence about a person is dropped too
+    # ("She looks down at the phone" is at the table); a sentence about the place alone ("The blinds are half shut")
+    # is still true at frame 1 and stays. "has just stood up" is how frame 1 begins, not a later beat.
+    who = _person_ref(names)
+    keep, later = [], False
+    for sentence in re.split(r"(?<=[.!?])\s+", text.strip()):
+        if later:
+            if not (who.search(sentence) or _LATER.search(sentence) or _moves(sentence)):
+                keep += [c for c in (x.strip(" .;") for x in re.split(r",\s*|;\s*", sentence)) if c]
             continue
-        if _LATER.search(c):
-            break
-        keep.append(c)
+        for c in re.split(r"(?<=[;])\s+|,\s*|;\s*|\s+(?=(?:and\s+)?then\b)", sentence):
+            c = c.strip(" .;")
+            if not c:
+                continue
+            if _LATER.search(c) or _moves(c):
+                later = True
+                break
+            keep.append(c)
     return ", ".join(keep)
+
+
+# A move to somewhere else, or a change of pose or of what a hand holds: true only later in the shot. The subject is
+# in frame 1 on its first mark (the stage says where); the destination belongs to the motion prompt.
+_GO = (r"walk|stroll|run|jog|step|move|head(?:s|ed|ing)|go|goe|come|wander|hurr(?:y|ie)|rush|dash|sprint|pace|stride|march|"
+       r"climb|crawl|drive|ride|swim|gallop|drift|edge|lean|turn|spin|swing|roll")
+# Third-person verb forms only ("stops", not "a bus stop"; "opens", not "the door is open").
+_MOVES = re.compile(
+    rf"\b(?:{_GO})(?:s|es|ed|ing)?\b(?:\s+\w+ly)?\s+(?:over\s+|up\s+|back\s+|down\s+|right\s+|straight\s+)?"
+    r"(?:to|toward|towards|into|onto|up to|out of|away from|away|off|inside|outside|home)\b"
+    r"|\b(?:stops|stopping|halts|reaches|arrives|lands|settles|sits down|stands up|gets up|rises|kneels|lies down|"
+    r"picks (?:\w+ ){0,2}up|puts (?:\w+ ){0,2}down|sets (?:\w+ ){0,2}down|takes (?:\w+ )?steps?|glances|nods|"
+    r"looks (?:up|away|back|round|around|over)|"
+    r"(?:eyes|gaze) (?:go|goes|move|moves|drift|drifts|flick|flicks|dart|darts|lift|lifts|drop|drops)|"
+    r"folds (?:his|her|their) arms|opens|closes|grabs|lifts|throws)\b", re.I)
+_JUST = re.compile(r"\b(?:has|have|had)\s+just\b", re.I)
+
+
+def _moves(clause: str) -> bool:
+    """Does this clause move someone off their first mark, or change their pose ("walks to the table", "stops",
+    "stands up", "picks it up")? Not "has just stood up" (the state frame 1 starts in), not a negation."""
+    if _JUST.search(clause) or _NEGATED.search(clause):
+        return False
+    return bool(_MOVES.search(clause))
+
+
+def _person_ref(names=()) -> re.Pattern:
+    words = ["she", "he", "they", "her", "him", "his", "hers", "their", "them", *_PERSON_WORDS,
+             *[n for n in names if n]]
+    return re.compile(r"\b(?:" + "|".join(re.escape(w) for w in words) + r")\b", re.I)
 
 
 def _frag(field: str, look: dict, key: str) -> str:
@@ -556,7 +597,8 @@ def compile_still(look: dict, scene: dict, parts: dict, edit: bool = False,
     # crates and boxes in plain words: Klein letters "shipping crates" with gibberish stencils (look/identity.py)
     props = [f"{p['word'] if legacy else plain_word(p['word'], p.get('kind'))} {p['where']}" for p in f1["props"][:3]]
     seen = {e["id"] for e in f1["people"] + f1["others"]}   # in the shot camera's frame at frame 0, not hidden
-    desc = frame1_safe(look.get("description", ""), absent_words(scene, f1))
+    names = [a.get("name") for a in scene.get("actors") or [] if S.classify(a)[1] in ("biped", "quadruped")]
+    desc = frame1_safe(look.get("description", ""), absent_words(scene, f1), names)
     if one_phrase and people and not edit:
         desc = _drop_repeated_people(desc, people_words)
     vcam = S.vehicle_camera(scene)
@@ -583,7 +625,8 @@ def compile_still(look: dict, scene: dict, parts: dict, edit: bool = False,
         shot,
         "; ".join(who),
         SW.still_words(scene, seen),           # divers and swimmers: the kit, the regulator in the mouth (look/swim.py)
-        "; ".join(frame1_looks(scene)),
+        # where the eyes go means nothing with every head out of frame (an insert on the hands)
+        "" if f1["people"] and all(e.get("crop") for e in f1["people"]) else "; ".join(frame1_looks(scene)),
         "" if legacy else still_identity(scene, {e["id"] for e in f1["people"] + f1["others"]}),   # which car is which
         "" if legacy else body_words(scene, {e["id"] for e in f1["others"]}).rstrip("."),   # what the car is; a blank plate
         lock["still"] if lock else "",
