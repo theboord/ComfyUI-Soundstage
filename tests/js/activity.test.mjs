@@ -233,7 +233,8 @@ const LTX = {
 const defaults = { UNETLoader: "Load Diffusion Model", VAEDecodeTiled: "VAE Decode (Tiled)", SaveVideo: "Save Video", LatentUpscaleModelLoader: "Load Latent Upscale Model" };
 
 function ltxJob(c, { eta = new EtaBook({ storage: memStore() }) } = {}) {
-  const r = new ActivityRegistry({ clientId: "me", eta, now: c.now, defaultTitle: (ct) => defaults[ct] || null });
+  // est: null keeps these on the per-kind EtaBook path; the size-aware estimator is tested in tests/js/estimator.test.mjs.
+  const r = new ActivityRegistry({ clientId: "me", eta, est: null, now: c.now, defaultTitle: (ct) => defaults[ct] || null });
   r.note("p", { name: "Final · shot 1G", trigger: "Run" });
   r.graph("p", LTX);
   r.onEvent("execution_start", { prompt_id: "p" });

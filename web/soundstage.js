@@ -357,7 +357,7 @@ function createStageWidget(node, inputName) {
   keysBtn.style.marginLeft = "6px";
   tabs.append(undoBtn, redoBtn, keysBtn, guideBtn, expand, layoutBtn);
   // Activity: every job on the GPU queue, always in the row (never folded into "⋯"), next to Guide (web/ui/activity.mjs).
-  const activity = mountActivity({ api, row: tabs, before: guideBtn, theme: el, overlay: view });   // overlay: the big render countdown over the stage view
+  const activity = mountActivity({ api, row: tabs, before: guideBtn, theme: el, bigTimer: true });   // bigTimer: the render countdown band at the top
   node.ssActivity = activity;   // QA and tests
 
   let sceneJSON = JSON.parse(JSON.stringify(DEFAULT_SCENE));

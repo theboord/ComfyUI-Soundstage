@@ -27,6 +27,7 @@ import { openPopover, closePopover, isPopoverOpen } from "./popover.mjs";
 import { queueSummary } from "./queue.mjs";
 import { timerModel, queueLine, loadSound, saveSound, cuesFor, FinishWatcher, playChime } from "./jobTimer.mjs";
 import { createCountdown, COUNTDOWN_CSS } from "./countdown.mjs";
+import { Estimator, jobShape, isSampler, isLoader, isDecode, machineName } from "./estimator.mjs";
 
 export const JOB_EVENT = "soundstage:job";
 export const ETA_KEY = "ss_activity_eta";
@@ -237,9 +238,11 @@ function executingOf(d) {
 
 // ---- The registry.
 export class ActivityRegistry {
-  constructor({ clientId = null, eta = new EtaBook(), now = () => Date.now(), defaultTitle = null } = {}) {
+  constructor({ clientId = null, eta = new EtaBook(), est = new Estimator(), now = () => Date.now(), defaultTitle = null } = {}) {
     this.clientId = clientId;
     this.eta = eta;
+    this.est = est;             // the size-aware estimator (web/ui/estimator.mjs); null: the per-kind EtaBook only
+    this.shapes = new Map();    // prompt id -> jobShape(prompt): steps per stage, size, frames, batch, model
     this.now = now;
     this.defaultTitle = defaultTitle;
     this.jobs = new Map();
@@ -281,8 +284,13 @@ export class ActivityRegistry {
   /** The prompt this page queued (API format), seen once at queue time: node names for the events. */
   graph(pid, prompt) {
     if (!pid || pid === "blocked") return;
-    const g = prompt && typeof prompt === "object" && prompt.nodes && prompt.total ? prompt : graphOf(prompt, { defaultTitle: this.defaultTitle });
+    const pre = prompt && typeof prompt === "object" && prompt.nodes && prompt.total;
+    const g = pre ? prompt : graphOf(prompt, { defaultTitle: this.defaultTitle });
     if (!g) return;
+    if (!pre) {
+      const sh = jobShape(prompt);
+      if (sh) { this.shapes.set(pid, sh); if (this.shapes.size > 40) this.shapes.delete(this.shapes.keys().next().value); }
+    }
     this.graphs.set(pid, g);
     if (this.graphs.size > 40) this.graphs.delete(this.graphs.keys().next().value);
     this.job(pid).own = true;
@@ -424,7 +432,59 @@ export class ActivityRegistry {
     if (state === "done" && j.startedAt) {
       const kind = j.kind || kindOf(j.name || j.label);
       this.eta.record(etaKey(kind, j.width, j.height), t - j.startedAt);
+      const sh = this.shapes.get(j.id);
+      if (this.est && sh) { try { this.est.learn(sh, kind, this.measured(j, sh, t), j.pred?.ms ?? null, { width: j.width, height: j.height }); } catch { /* learning is never worth breaking the registry */ } }
     }
+  }
+
+  /** What a finished job of ours took, phase by phase, from its node timings: model loads (cold when a loader actually
+   *  ran, warm when ComfyUI had them cached), each sampler stage with its steps, VAE decodes. */
+  measured(j, sh, t) {
+    const dur = (id) => { const n = j.nodes.get(String(id)); return n && n.state === "done" && n.endedAt != null && n.startedAt != null ? n.endedAt - n.startedAt : null; };
+    const seenLoaders = sh.loaderIds.map((id) => j.nodes.get(String(id))).filter(Boolean);
+    const ran = sh.loaderIds.map(dur).filter((x) => x != null);
+    const loadMs = ran.length ? ran.reduce((a, b) => a + b, 0) : seenLoaders.length ? 0 : null;
+    return {
+      totalMs: t - j.startedAt, loadMs, cold: ran.length > 0,
+      stages: sh.stages.map((s) => { const n = j.nodes.get(String(s.id)); return { steps: n?.steps || s.steps, ms: dur(s.id) || 0 }; }),
+      decodeMs: sh.decodeIds.map(dur).filter((x) => x != null).reduce((a, b) => a + b, 0),
+    };
+  }
+
+  /** Where a running job of ours is, for the estimator's live refinement. */
+  progressOf(j, sh, now) {
+    const g = this.graphs.get(j.id);
+    const ct = j.cur ? g?.nodes?.[j.cur]?.ct : null;
+    const n = j.cur ? j.nodes.get(j.cur) : null;
+    const stage = j.cur ? sh.stages.findIndex((s) => String(s.id) === j.cur) : -1;
+    const phase = !j.cur ? null : stage >= 0 || isSampler(ct) ? "sample" : isLoader(ct) ? "load" : isDecode(ct) ? "decode" : "other";
+    const stagesDone = sh.stages.filter((s) => { const x = j.nodes.get(String(s.id)); return x && (x.state === "done" || x.state === "cached"); }).length;
+    const liveStepMs = n?.p0 && n.step > n.p0.step ? (n.pt - n.p0.t) / (n.step - n.p0.step) : null;
+    // This run's speed on the stages already done, against the book (carries to the stages still to come).
+    let speed = null;
+    const st = j.pred?.phases?.stages;
+    if (st) sh.stages.forEach((s, i) => { const x = j.nodes.get(String(s.id)); if (x?.state === "done" && x.endedAt && st[i]?.ms > 0) speed = Math.max(0.33, Math.min(3, (x.endedAt - x.startedAt) / st[i].ms)); });
+    return { elapsedMs: j.startedAt ? now - j.startedAt : 0, phase, stage: stage >= 0 ? stage : null, step: n?.step ?? null, steps: n?.steps ?? null,
+      liveStepMs, phaseElapsedMs: n ? now - n.startedAt : 0, stagesDone, speed };
+  }
+
+  /** The estimator's prediction for a job of ours, or null: made afresh while it waits (a run finishing ahead of it
+   *  teaches the book and warms the model), then kept from the moment it starts (what it is measured against). */
+  predictionOf(j) {
+    if (!this.est) return null;
+    const sh = this.shapes.get(j.id);
+    if (!sh) return null;
+    if (j.pred === undefined || j.state === "queued") {
+      try { j.pred = this.est.predict(sh, j.kind || kindOf(j.name || j.label), { width: j.width, height: j.height }); } catch { j.pred = null; }
+    }
+    return j.pred;
+  }
+
+  fromPrediction(j, pred, now) {
+    const base = { atLeast: false, pm: pred.pm, sure: pred.sure, runs: pred.runs, predMs: pred.ms };
+    if (j.state === "queued") return { ...base, ms: pred.ms, over: false };
+    const l = this.est.live(pred, this.progressOf(j, this.shapes.get(j.id), now));
+    return { ...base, ms: l.ms, pm: l.pm, over: l.over };
   }
 
   /** Nothing left on the server: our jobs still marked running or queued are looked up; other sessions' leave. */
@@ -508,6 +568,10 @@ export class ActivityRegistry {
   remaining(j, now = this.now()) {
     const kind = j.kind || kindOf(j.name || j.label);
     const avg = this.eta.get(etaKey(kind, j.width, j.height));
+    // The size-aware estimate first when it has this machine's history; the per-kind average next; its rough first
+    // guess (the docs' numbers, scaled to the job) only when nothing has been measured here.
+    const pred = this.predictionOf(j);
+    if (pred && (pred.sure !== "rough" || avg == null)) return this.fromPrediction(j, pred, now);
     if (j.state === "queued") return { ms: avg, atLeast: false, over: false };
     const el = j.startedAt ? now - j.startedAt : 0;
     if (avg != null && avg - el > 0) return { ms: avg - el, atLeast: false, over: false };
@@ -601,6 +665,7 @@ export class ActivityRegistry {
       if (pct != null) pct = Math.max(0, Math.min(99, pct));
     }
     return { id: j.id, kind, name: base, state: j.state, own: !!j.own, position: j.position, trigger: j.trigger || "",
+      over: !!rem.over, estPm: rem.pm ?? null, estSure: rem.sure ?? null, estRuns: rem.runs ?? null, predMs: rem.predMs ?? null,
       elapsedMs, etaRuns: this.eta.runs(etaKey(kind, j.width, j.height)), etaAvgMs: this.eta.get(etaKey(kind, j.width, j.height)), shot: j.shot || null, remainingMs: rem.ms, remainingAtLeast: rem.atLeast, overdue: rem.over && rem.ms == null, pct,
       step: j.state === "running" ? j.step : null, steps: j.state === "running" ? j.steps : null,
       endedAt: j.endedAt, error: j.error, outputs: j.outputs.slice(), preview: j.preview, detail,
@@ -945,7 +1010,7 @@ export function watchQueueing(api, reg) {
         r.clone().json().then((j) => {
           if (!j?.prompt_id || j.prompt_id === "blocked") return;
           const p = JSON.parse(body)?.prompt;
-          reg.graph(j.prompt_id, graphOf(p, { defaultTitle: reg.defaultTitle }));
+          reg.graph(j.prompt_id, p);   // node names and the estimator's job shape
         }).catch(() => { /* not JSON: nothing to name */ });
       }
     } catch { /* naming a job is never worth breaking the queue */ }
@@ -969,6 +1034,8 @@ function sharedFor(api, win) {
   let s = shared.get(api);
   if (s) return s;
   const reg = new ActivityRegistry({ clientId: api.clientId || api.initialClientId || null, defaultTitle: liveDefaultTitle });
+  // The estimator's book is per machine: the GPU's name, asked once.
+  machineName(api).then((n) => { if (n && reg.est) reg.est.machine = n; }).catch(() => {});
   s = { reg, refs: 0, pills: new Set(), timer: 0, inflight: false, stopped: false, sound: { prefs: loadSound() } };
   // Browsers keep audio locked until the first click or key: make the context then (before that, the chime is skipped).
   const audio = s.audio = { c: null, ctx: () => audio.c,
@@ -1100,7 +1167,7 @@ function readRaw() { try { return globalThis.localStorage?.getItem(RAW_KEY) === 
 function writeRaw(on) { try { globalThis.localStorage?.setItem(RAW_KEY, on ? "1" : "0"); } catch { /* this page only */ } }
 
 /** The live wiring: a pill before `before` in `row` (outside the ⋯ fold order) and its panel, on the shared registry. */
-export function mountActivity({ api, row, before = null, theme = null, overlay = null, win = globalThis.window }) {
+export function mountActivity({ api, row, before = null, theme = null, bigTimer = false, win = globalThis.window }) {
   if (!document.getElementById("ss-activity-css")) {
     const st = h("style");
     st.id = "ss-activity-css";
@@ -1123,8 +1190,9 @@ export function mountActivity({ api, row, before = null, theme = null, overlay =
   btn.append(dot, lbl, mini);
   btn.addEventListener("pointerdown", (e) => e.stopPropagation());
   row.insertBefore(btn, before && before.parentNode === row ? before : null);
+  // The running-job timer: the big countdown band above the top bar (bigTimer, the App), else the thin strip under it.
   const timer = createJobTimer();
-  row.parentNode?.insertBefore(timer.el, row.nextSibling);
+  if (!bigTimer) row.parentNode?.insertBefore(timer.el, row.nextSibling);
   let pulseT = 0;
 
   let panel = null, pressed = false, pending = 0, raw = readRaw();
@@ -1177,16 +1245,17 @@ export function mountActivity({ api, row, before = null, theme = null, overlay =
       mini.hidden = pct == null;
       if (pct != null) miniFill.style.width = `${pct}%`;
     }
-    timer.update(v);
-    countdown?.update(v);
+    if (countdown) countdown.update(v); else timer.update(v);
     if (isOpen() && !pending) pending = setTimeout(paint, 250);
     clock(busy || v.running.length > 0 || isOpen());
   };
   const onCancel = async (r) => { await cancelJob(api, r); s.poll(); };
-  // The big countdown over a corner of the stage view (web/ui/countdown.mjs): same draw, same clock, same Cancel.
-  const countdown = overlay ? createCountdown({ host: overlay, win, onStop: onCancel,
+  // The big countdown band at the top of the App (web/ui/countdown.mjs): same draw, same clock, same Cancel.
+  const countdown = bigTimer ? createCountdown({ onStop: onCancel,
     onWhy: () => { if (!isOpen()) btn.click(); },
     sound: { on: () => !!s.sound.prefs.on, toggle: () => setSound({ on: !s.sound.prefs.on }) } }) : null;
+  // Just above the top bar, in the page flow (outside the bar, so its ticking text never re-runs the bar's fold check).
+  if (countdown) { if (row.parentNode) row.parentNode.insertBefore(countdown.el, row); else row.append(countdown.el); }
   btn.addEventListener("click", () => {
     if (isOpen()) { closePopover(panel); draw(); return; }
     panel = renderPanel(reg.view(), opts());
