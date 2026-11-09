@@ -14,6 +14,7 @@ import { APPEARANCE_OPTIONS, DEFAULT_APPEARANCE, SKIN_TONES, MOUNTS } from "./st
 import { SETS, WEATHER } from "./stage/environments.mjs";
 import { TIME_PRESETS, LIGHT_TYPES, clock } from "./stage/lighting.mjs";
 import { LadderViewer, RUNG_NAMES } from "./ladder/ladder.mjs";
+import { shotReviewSources } from "./review/sources.mjs";
 import { LookPanel } from "./look/look.mjs";
 import { SceneAgent, loadScene } from "./agent/agent.mjs";
 import { CutPanel, savedFields } from "./cut/cut.mjs";
@@ -403,6 +404,8 @@ function createStageWidget(node, inputName) {
   }
 
   const ladder = new LadderViewer(ladderView, stage);
+  // ⑥ Review's Sync 4-up: the shot's clay preview, the colour stage (live), Draft and Final (web/review/sources.mjs).
+  ladder.reviewSources = () => shotReviewSources(rendersFor(stage.activeShot().id), stage);
   const fid = slider("Fidelity", 0, RUNG_NAMES.length - 1, 0.01, 1, (v) => RUNG_NAMES[Math.round(v)], (v) => ladder.setFidelity(v));
   fid.input.style.width = "260px";
   ladder.onFidelity = (v) => { fid.input.value = v; fid.out.textContent = RUNG_NAMES[Math.round(v)]; };

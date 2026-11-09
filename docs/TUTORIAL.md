@@ -842,6 +842,17 @@ Shot length comes from **Length** in ③ Set, frame size from **Aspect**, and th
 
 ### ⑥ Review
 
+**Watch the clay and the renders play together.** Review opens on **▦ Sync 4-up**, which plays four tiles at once on one transport, locked to the same frame:
+
+<p align="center"><img src="media/review_sync_grid.jpg" width="860" alt="Sync 4-up: Clay, Colour clay, Draft and Final, all on f 93"></p>
+
+1. The four tiles are **Clay** (the stage preview video from ③ Set), **Colour clay** (the colour stage, drawn live), **Draft** and **Final**, all from the current shot. Each label shows the frame on screen, such as **f 93**. When you pause, all four read the same number.
+2. Press **▶ Play** (Space). Use **◀** / **▶|** (← / →, Shift for 10 frames) to step, and drag the scrub bar to move. **In** / **Out** (I / O) set a loop, and the speed menu goes from 0.25× to 1×.
+3. Pick a view: **Grid** (1) shows all four. **Wipe** (2) splits any two tiles with a handle you drag. **Onion** (3) puts a render over the clay at an **Opacity**, and **Difference** turns everything that matches black, so any drift from the blocking shows up bright.
+4. **⤢ Full window** fills the screen (Esc to come back). **Add files…**, or dropping files on the tiles, compares any four videos of your own. **By frame** / **By time** sets how files with different frame rates line up.
+
+Details and limits: [docs/review.md](review.md). The older one-picture views are still on the same bar:
+
 **Compare the same frame across the stages.** The Ladder shows a shot at every stage it has been through, on one picture: the stage previz, the painted frame, the draft and the final. Drag across the picture to slide between them, and scrub or play the timeline to compare any moment.
 
 <p align="center"><img src="media/step4_ladder.jpg" width="860" alt="Review on the Ladder"></p>
@@ -852,7 +863,8 @@ The bar above the picture picks what you compare and how:
 
 | Control | What it does |
 |---|---|
-| **3-way** (default) | The same frame cut into three slices, **Left** \| **Middle** \| **Right**, with two handles you drag across it. Left is **Stage** (or **Wire**, **Frame**), Middle is **Frame** or **Draft** (click it again to drop the middle), Right is **Draft** or **Final**. Every layer is cropped to the render's own aspect, so they line up while you drag: what changes between them is only what the model changed. |
+| **▦ Sync 4-up** (default) | Clay, colour clay, Draft and Final playing together, frame-locked, as a grid, a wipe or an onion skin (above). |
+| **3-way** | The same frame cut into three slices, **Left** \| **Middle** \| **Right**, with two handles you drag across it. Left is **Stage** (or **Wire**, **Frame**), Middle is **Frame** or **Draft** (click it again to drop the middle), Right is **Draft** or **Final**. Every layer is cropped to the render's own aspect, so they line up while you drag: what changes between them is only what the model changed. |
 | **Wipe** | Two stages, **A** and **vs B** (any of Wire, Stage, Frame, Draft, Final), split by one handle. |
 | **Side by side** | A and B next to each other. |
 | **Fade** | Drag to mix from A to B. |

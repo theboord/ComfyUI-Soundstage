@@ -1,9 +1,13 @@
 // Soundstage preview ladder: compare one shot across stages on one picture.
 //   3-way (default): Stage (or Wire / Frame) | Draft | Final, with two handles you drag on the picture.
 //   A/B: any two stages as a wipe, side by side, or a fade.
+//   Sync 4-up (web/review/syncreview.mjs): clay, colour clay, Draft and Final playing together, frame-locked.
 // Every layer is drawn the way the generators saw it: the stage render centre-cropped to the render's own aspect
 // (the same crop the router uses to fit a guide to the model's size), at the same moment of the shot. So the layers
 // line up while you drag; what moves between them is only what the model changed.
+
+import { SyncReview } from "../review/syncreview.mjs";
+import { coversDuration, loadClip } from "../review/media.mjs";
 
 export const RUNG_NAMES = ["Wire", "Stage", "Look", "Draft", "Final"];
 // "color" is the stage layer, labelled "Stage" (the lifelike stage). The retired "clay" layer id reads as it (rungId).
@@ -25,7 +29,9 @@ export class LadderViewer {
     this.stage = stage;
     this.fidelity = 1; // the old single slider (0..4); still honoured in A/B modes
     this.frame = 0;
-    this.mode = "three";
+    let saved = null;
+    try { saved = localStorage.getItem("ss_ladder_mode"); } catch { /* storage blocked */ }
+    this.mode = ["sync", "three", "wipe", "side", "fade"].includes(saved) ? saved : "sync";
     this.sources = { 2: null, 3: null, 4: null }; // Look image, Draft video, Final video
     // 3-way: left / middle / right. null = automatic (the best render that exists).
     this.a = "color"; this.m = null; this.b = null;
@@ -39,7 +45,8 @@ export class LadderViewer {
 .ss-lcmp button{font:inherit;font-size:12px;border-radius:999px;padding:3px 10px;cursor:pointer;background:rgba(255,255,255,.06);color:inherit;border:1px solid rgba(255,255,255,.14)}
 .ss-lcmp button:disabled{opacity:.35;cursor:default}.ss-lcmp button[aria-pressed=true]{background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.28);font-weight:600}.ss-lcmp .sep{width:1px;height:18px;background:rgba(255,255,255,.14)}
 .ss-ladder:not([hidden]){display:flex;flex-direction:column;align-self:stretch;width:100%;height:100%;min-height:0;min-width:0}
-.ss-ladder > *{flex:none}.ss-ladder > canvas.ss-lcv{flex:1 1 auto;min-height:0;width:100%;height:100%;object-fit:contain}`;
+.ss-ladder > *{flex:none}.ss-ladder > canvas.ss-lcv{flex:1 1 auto;min-height:0;width:100%;height:100%;object-fit:contain}
+.ss-ladder > canvas.ss-lcv[hidden]{display:none}.ss-ladder > .ssr{flex:1 1 auto;min-height:0;height:auto}.ss-ladder > .ssr[hidden]{display:none}`;
       document.head.append(st);
     }
     this.bar = document.createElement("div");
@@ -82,7 +89,32 @@ export class LadderViewer {
     const end = () => { drag = -1; };
     this.canvas.addEventListener("pointerup", end);
     this.canvas.addEventListener("pointercancel", end);
+    // Sync 4-up: its own player in the same view. The host sets reviewSources() (the shot's clay / colour / renders).
+    this.sync = new SyncReview(container, { getSources: () => this.reviewSources?.() || null });
+    this._applyMode();
     this._drawBar();
+  }
+
+  /** Show the canvas or the synced player for the current mode (the synced player pauses when it is not on view). */
+  _applyMode() {
+    const sync = this.mode === "sync";
+    this.canvas.hidden = sync;
+    if (sync) { this.sync.show(); this.sync.refresh(); } else this.sync.hide();
+  }
+
+  setMode(m) {
+    this.mode = m;
+    try { localStorage.setItem("ss_ladder_mode", m); } catch { /* storage blocked */ }
+    this._applyMode();
+    this._drawBar();
+    this.draw();
+  }
+
+  /** The shot's sources changed: the synced player re-reads them (once per task, however many rungs changed). */
+  _syncSoon() {
+    if (this.mode !== "sync" || this._syncQueued) return;
+    this._syncQueued = true;
+    queueMicrotask(() => { this._syncQueued = false; try { this.sync.refresh(); } catch { /* not ready */ } });
   }
 
   _has(id) {
@@ -129,7 +161,9 @@ export class LadderViewer {
       return g;
     };
     const parts = [];
-    if (this.mode === "three") {
+    if (this.mode === "sync") {
+      // the synced player has its own bar (view, sources, full window); only the mode chips and extras here
+    } else if (this.mode === "three") {
       const [A, M, B] = this._layers().length === 3 ? this._layers() : [this._layers()[0], null, this._layers()[1]];
       parts.push(group("Left", ["color", "wire", "look"], A, (id) => (this.a = id)));
       parts.push(group("Middle", ["look", "draft"], M, (id) => (this.m = this.m === id ? "none" : id)));
@@ -142,8 +176,9 @@ export class LadderViewer {
     parts.push(Object.assign(document.createElement("span"), { className: "sep" }));
     const modes = document.createElement("span");
     modes.className = "grp";
-    for (const [m, label] of [["three", "3-way"], ["wipe", "Wipe"], ["side", "Side by side"], ["fade", "Fade"]]) {
-      modes.append(chip(label, this.mode === m, true, label, () => { this.mode = m; this._drawBar(); this.draw(); }));
+    for (const [m, label, tip] of [["sync", "▦ Sync 4-up", "Clay, colour clay, Draft and Final playing together, frame-locked (grid, wipe, onion)"],
+      ["three", "3-way", "3-way"], ["wipe", "Wipe", "Wipe"], ["side", "Side by side", "Side by side"], ["fade", "Fade", "Fade"]]) {
+      modes.append(chip(label, this.mode === m, true, tip, () => this.setMode(m)));
     }
     parts.push(modes);
     // ✦ One-click on the layer on view (web/oneclick/oneclick.mjs sets extraBar)
@@ -164,18 +199,41 @@ export class LadderViewer {
       v.preload = "auto";
       v.playsInline = true;
       v.crossOrigin = "anonymous";
-      v.addEventListener("seeked", () => this.draw());
+      const s = { kind, el: v, url };
+      v.addEventListener("seeked", () => this._onSeeked(s));
       v.addEventListener("loadeddata", () => { this.seek(); this._drawBar(); this.draw(); }); // at frame 0 there is no seek, so draw now
+      // A server without HTTP Range support (Python's http.server, the local test build) gives a video that can only
+      // sit on frame 0: every seek snaps back. Read it into memory once so every frame is reachable.
+      v.addEventListener("loadedmetadata", () => {
+        if (s.blobbed || coversDuration(v)) return;
+        s.blobbed = true;
+        loadClip(url).then((c) => { if (this.sources[rung] === s && c.blob) { s.revoke = c.revoke; v.src = c.src; } else c.revoke(); });
+      });
       v.src = url;
-      this.sources[rung] = { kind, el: v, url };
+      this.sources[rung] = s;
     }
+    this._syncSoon();
+  }
+
+  /** A seek landed: go on to the newest target if the frame moved meanwhile, else draw (once per animation frame). */
+  _onSeeked(s) {
+    if (s.pending != null) { const t = s.pending; s.pending = null; s.el.currentTime = t; return; }
+    this._drawSoon();
+  }
+
+  _drawSoon() {
+    if (this._drawQueued) return;
+    this._drawQueued = true;
+    const go = () => { this._drawQueued = false; this.draw(); };
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(go); else queueMicrotask(go);
   }
 
   /** Forget a rung's media (a shot without that render yet), so another shot's video never shows in its place. */
   clearSource(rung) {
     const s = this.sources[rung];
-    if (s?.kind === "video") { try { s.el.pause(); s.el.removeAttribute("src"); s.el.load(); } catch { /* gone */ } }
+    if (s?.kind === "video") { try { s.el.pause(); s.el.removeAttribute("src"); s.el.load(); s.revoke?.(); } catch { /* gone */ } }
     delete this.sources[rung];
+    this._syncSoon();
     this._drawBar();
     this.draw();
   }
@@ -201,17 +259,30 @@ export class LadderViewer {
 
   setFrame(frame) {
     this.frame = Math.max(0, Math.round(frame));
+    if (this.mode === "sync") {
+      // The synced player has its own transport; a jump from the App (a take-check chip, the timeline) moves it when paused.
+      if (this.sync && !this.sync.playing && this.sync.clock.frame !== this.frame) this.sync.seek(this.frame);
+      return;
+    }
     this.seek();
     this.draw();
   }
 
+  /**
+   * Put the Draft / Final videos on this.frame. While a seek is still decoding, the newest target waits (s.pending)
+   * and is applied when it lands: playing the timeline asked for a new seek every frame and they piled up, so the
+   * videos lagged seconds behind the stage layer and the picture showed a mix of moments.
+   */
   seek() {
     const fps = this.stage.state?.shot?.fps || 24;
     for (const r of [3, 4]) {
       const s = this.sources[r];
       if (s?.kind === "video" && s.el.readyState >= 1) {
-        const t = Math.min(this.frame / fps, Math.max(0, s.el.duration - 1 / fps));
-        if (Math.abs(s.el.currentTime - t) > 0.5 / fps) s.el.currentTime = t;
+        // The middle of the frame: a seek to its very start can decode the frame before.
+        const t = Math.min((this.frame + 0.5) / fps, Math.max(0, s.el.duration - 0.25 / fps));
+        if (s.el.seeking) { s.pending = t; continue; }
+        s.pending = null;
+        if (Math.abs(s.el.currentTime - t) > 0.25 / fps) s.el.currentTime = t;
       }
     }
   }
@@ -278,6 +349,7 @@ export class LadderViewer {
   draw() {
     // Hidden (the ladder view is not open): every live layer here is two full stage re-renders, so a scene switch
     // drew the hidden ladder four times over. Showing the view draws it (setFrame / draw on show).
+    if (this.mode === "sync") return;   // the synced player draws itself; no stage re-render for a hidden canvas
     if (this.canvas.isConnected && !this.canvas.getClientRects().length) { this.stale = true; return; }
     this.stale = false;
     const [cw, ch] = this._size();

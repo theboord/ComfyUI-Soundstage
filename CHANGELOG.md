@@ -5,6 +5,45 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-08
 
+**⑥ Review plays clay, colour clay, Draft and Final together, frame-locked (Sync 4-up), and the old Review slider's frozen layer is fixed (private branch `private/lifelike`, 20:20 by this machine's clock)**
+
+Mike: "I wanna be able to get a really good review side-by-side where the clay video, the colour clay video, the draft render and the final render are all playing simultaneously ... that view right now, the slider review section, doesn't work at all."
+
+- **Still wrong or not verified (read first):**
+  1. **Not tried in a real ComfyUI tab on a GPU machine.** All tests ran on the try-it build in headless Chrome with Metal. On a real ComfyUI `/view`, Range requests work, so the frozen-layer bug below may never have shown there. The pile-up of seeks did.
+  2. **Colour clay is the stage as it is now**, drawn live, not a recording. On the J-turn demo shot it does not match the recorded clay preview: the car sits closer and points a different way at the same frame. This is a real difference between the demo's stage and its recorded preview, not a sync error, but it makes that tile misleading for an old take.
+  3. **Sync is ±1 frame, not exact, while playing.** 613 checks of a playing video against the master at display time: 610 were within ±1 frame, and 3 were 2 frames out during the full-window resize and were corrected on the next check. When paused or stepping, every tile lands on the exact frame (all four labels showed f 87, then f 92 after five → presses).
+  4. **No sound** in the player. A take's audio is not played.
+  5. The colour tile re-renders the stage for every frame while playing (about 10 ms a frame on this Mac), so on a slow machine it can fall behind and jump. The videos stay synced.
+  6. The fps of a dropped WebM (or an MP4 with a damaged header) cannot be read. It falls back to the shot's frame rate.
+- **What made the old slider fail** (reproduced on the local test build):
+  - (a) The test build's server (Python `http.server`) ignores HTTP Range requests. The Draft video's `seekable` range was `[0, 0]`, so `currentTime = 2.5` snapped back to 0: the Draft layer sat on frame 0 while Stage and Final moved. Measured: `setFrame(60)` left draft `currentTime` at 0.
+  - (b) Videos were never played, only seeked. Playing the timeline asked each video for a new seek on every frame, the seeks piled up, and the picture redrew about 4 times a second (9 draws in 2 s, frames jumping 0, 10, 22, 34).
+- **Fixes in the old views** ([web/ladder/ladder.mjs](web/ladder/ladder.mjs)):
+  - A video that cannot seek across its length is read into memory once (a `blob:` URL) and swapped in.
+  - While a seek decodes, only the newest target is kept and applied when the seek lands.
+  - The draw after a seek is limited to one per animation frame.
+  - Seeks go to the middle of a frame, so they never land on the frame before.
+- **New: Sync 4-up** ([web/review/syncreview.mjs](web/review/syncreview.mjs), [syncclock.mjs](web/review/syncclock.mjs), [mp4info.mjs](web/review/mp4info.mjs), [media.mjs](web/review/media.mjs), [sources.mjs](web/review/sources.mjs)). It is the first button on the Review bar and the default view.
+  - **Tiles:** up to four labelled tiles under one transport: play/pause, scrub, ←/→ frame steps, In/Out loop, 0.25× to 1×.
+  - **Views:** Grid (2×2, four across on a wide screen, one column on a phone), Wipe (between any two tiles), and Onion (opacity, or a Difference blend).
+  - **Sources:** filled from the shot's takes (`previz` as the clay, the live colour stage, Draft, Final). **Add files…** or a drop loads any four files.
+  - **Frame mapping:** By frame or By time. The fps and frame count are read from the MP4/MOV header.
+  - **Sync:** a master clock plus `requestVideoFrameCallback`. A tile more than one frame out is re-seeked, and a buffering tile holds the clock.
+  - **Idle:** while paused, no timer and no animation frame runs.
+  - **Layout:** works full-window and at phone width (390 px: page `scrollWidth` 390, nothing past the edge).
+  - App hook: one line in [web/soundstage.js](web/soundstage.js) (`ladder.reviewSources`).
+- **Docs:** [docs/review.md](docs/review.md), and the ⑥ Review section of [docs/TUTORIAL.md](docs/TUTORIAL.md).
+- **Tests:** [tests/js/syncreview.test.mjs](tests/js/syncreview.test.mjs), 15 tests (full JS run: 1941 tests, 1940 passed; the other is `footplant.test.mjs` "a key edit rebuilds the plan fast", a 3.5 s timing test in the walk lane, untouched here):
+  - the MP4 header reader on hand-built headers (moov first or last, an audio track first, 29.97, truncated files);
+  - frame and time mapping, hold, rates and the master clock (speed, loop, hold, a late file lengthening the loop: the first build looped on frame 0 forever);
+  - layout, keys and drop slots;
+  - the no-Range blob fallback;
+  - the old slider's seek pile-up and its sync-mode guard;
+  - the shot's sources;
+  - a source check that the player has no timers.
+- **Proof:** a 41 s screen recording of the try-it build (grid at 1× and 0.5×, arrow-key steps, wipe drag, onion 50 % and Difference, full window), with screenshots, is in the session scratchpad (`review_sync/`). It is not in the repo.
+
 **100STYLE mocap onto the Rocketbox people: the BVH reader and the retarget, not wired into the App (private branch `private/lifelike`, 20:06 by this machine's clock)**
 
 - **Still wrong or not done (read first):**

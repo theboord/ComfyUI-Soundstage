@@ -541,6 +541,20 @@ Each line: **control**: what it does.
 - **Copy every file this project uses into one organised folder**: Copy every file this project uses into one organised folder (scenes / shots / cast) and download it as a zip
 - **Home**: Home: every project, newest first (the start screen)
 
+## review/syncreview
+- **Grid**
+- **Wipe**
+- **Onion**
+- **Opacity of the top layer**
+- **Difference**
+- **↺ This shot**
+- **Add files…**
+- **⤢ Full window**
+- **Frame**
+- **Loop between In and Out**: Loop between In and Out (L)
+- **Speed**: Playback speed
+- **Line files up by**: By frame: frame N of every file together (renders of one shot). By time: the same second (files at different rates).
+
 ## Soundstage App
 - **Fill the window with the stage**: Fill the window with the stage (Esc to return)
 - **Guide**: Guide: a one-minute tour of how a shot gets made here (6 steps; Esc to leave it)
