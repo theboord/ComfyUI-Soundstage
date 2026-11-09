@@ -91,7 +91,8 @@ def test_a_close_on_the_hands_is_an_insert_not_a_face_close_up():
     still = compile_look({"description": SET + " Close on Jane's right hand resting on the edge of the table."},
                          sc)["still_prompt"]
     assert "insert close-up" in still and "close-up of the face" not in still and "head and shoulders," not in still
-    assert "head and shoulders out of frame above" in still or "head out of frame above" in still
+    # hands only (2026-11-09): the hands, the surface and the object, never the body's place, stance or shoes
+    assert "only her hands and forearms in frame" in still and "standing" not in still
 
 
 def test_a_face_in_frame_keeps_its_shot_size():

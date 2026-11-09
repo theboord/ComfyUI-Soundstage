@@ -364,7 +364,17 @@ def head_out_words(pr: dict, body_h: float) -> str:
         return "seen from the shoulders down, the face out of frame above"
     if cut >= 0.5:
         return "seen from the chest down, the head out of frame above"
-    return "only the hands and hips in frame, the head and shoulders out of frame above"
+    return HANDS_ONLY
+
+
+HANDS_ONLY = "only the hands and hips in frame, the head and shoulders out of frame above"
+
+
+def hands_only(e: dict) -> bool:
+    """Frame 1 holds only this person's hands (an insert on the hands, head_out_words): no placement, stance, shoes or
+    face to describe (Maya S3, 2026-11-09: "standing at the right third, facing the camera ... dark shoes" painted legs
+    standing on the table)."""
+    return (e or {}).get("crop") == HANDS_ONLY
 
 
 def shot_size(z: float, height: float, focal_mm: float) -> str:
@@ -554,6 +564,14 @@ def _person_clause(e: dict, cam: dict, wear: str) -> str:
     wearing a pink button-up shirt and blue jeans, fully clothed'."""
     box = (e.get("layout") or {}).get("box")
     sx, h = (((box[0] + box[2]) - 1.0), box[3] - box[1]) if box else (e["sx"], e["screen_h"])
+    if hands_only(e):
+        # An insert on the hands: the hands, the surface and the object; no place in frame, stance, facing or face.
+        pron = {"woman": "her", "man": "his"}.get((e.get("actor") or {}).get("kind"), "their")
+        noun = re.sub(r" (?:sitting on|on|riding) an? [\w ]+$", "", e["noun"])   # the chair is out of the picture
+        at = e.get("hands_surface")
+        hands = f"{pron} hands resting on the edge of {at}" if at else f"{pron} hands in the foreground"
+        return ", ".join(b for b in [noun, f"only {pron} hands and forearms in frame, the rest of {pron} body out of frame",
+                                     _join_and([hands, *(e.get("hands_objects") or [])]), wear] if b)
     bits = [e["noun"]]
     if e.get("crop"):
         bits.append(e["crop"])          # the head out of frame (head_out_words), seated or not
@@ -958,6 +976,56 @@ def _ride_noun(noun: str, host: dict, seat: int | None = None) -> str:
     return f"{noun} sitting on {_article(hnoun)}" if kind in mounts() else f"{noun} on {_article(hnoun)}"
 
 
+# ---- timed sits (stage sit_spans, web/stage/people/sitstand.mjs) ---------------------------------------------------
+# A span {on: seat id, at, to}: at = the frame they start to sit (standing at the stand spot in front of the seat, they
+# turn round over SIT_TURN_S, then sit down over SIT_DOWN_S; None = seated from the first frame); to = the frame they
+# start to stand up (over SIT_UP_S; None = seated to the end). The same constants as sitstand.mjs.
+SIT_TURN_S, SIT_DOWN_S, SIT_UP_S = 0.9, 1.1, 1.2
+
+
+def sit_spans(scene: dict, a: dict) -> list[dict]:
+    """A person's timed sits in the active shot, as stage._sitSpans picks them: a shot with its own blocking
+    (by_shot[shot].keys) has its own sit_spans there (none = none in that shot); else the person's own sit_spans.
+    Only spans whose seat is in the scene."""
+    if (a or {}).get("kind") not in ("man", "woman", "child") or a.get("mount_id"):
+        return []
+    own = (a.get("by_shot") or {}).get(scene.get("active_shot")) or {}
+    spans = (own.get("sit_spans") or []) if own.get("keys") else (a.get("sit_spans") or [])
+    return [s for s in spans if isinstance(s, dict) and _by_id(scene, s.get("on")) is not None]
+
+
+def sit_window(span: dict, fps: float = 24) -> dict:
+    """sitstand.window: {start (the turn), down (sitting down), seated, up (standing up), end (standing again)}."""
+    def num(v):
+        try:
+            return None if v is None else float(v)
+        except (TypeError, ValueError):
+            return None
+    at, to = num(span.get("at")), num(span.get("to"))
+    turn, down, up = (max(1, round(s * fps)) for s in (SIT_TURN_S, SIT_DOWN_S, SIT_UP_S))
+    start = -math.inf if at is None else at
+    upf = math.inf if to is None else to
+    return {"start": start, "down": start + turn, "seated": start + turn + down, "up": upf, "end": upf + up}
+
+
+def seated_at(scene: dict, a: dict, frame: float, fps: float = 24) -> dict | None:
+    """The timed sit a person is seated in at `frame` (from halfway down to halfway up: the body reads as sitting),
+    or None: {span, host (the seat), w (sit_window)}."""
+    for s in sit_spans(scene, a):
+        w = sit_window(s, fps)
+        if (w["down"] + w["seated"]) / 2 <= frame < (w["up"] + w["end"]) / 2:
+            return {"span": s, "host": _by_id(scene, s.get("on")), "w": w}
+    return None
+
+
+def seat_point(host: dict, frame: int, last: int) -> tuple:
+    """The seat top of a chair / bench / sofa (MOUNTS[kind].seat, scaled like seat_of), in the world at `frame`."""
+    kind = host.get("kind", "")
+    _, sp, ref = mounts().get(kind) or ("sit", (0.0, float(host.get("height_m") or 1) * 0.6, 0.0), None)
+    k = float(host.get("scale") or 1) * ((float(host.get("height_m") or ref) / ref) if ref else 1.0)
+    return local_to_world(host, frame, last)(tuple(v * k for v in sp))
+
+
 def mocap_yaw0(a: dict) -> float | None:
     """The yaw (radians) a mocap-driven clay figure has at frame 0, as web/stage/mocap.mjs place() poses it: the
     Video -> Stage world track when there is one, else the actor's own facing (the take starts turned to it)."""
@@ -1016,6 +1084,33 @@ def _occluded(e: dict, others: list[dict], cam: dict) -> bool:
     return False
 
 
+_SURFACES = ("table", "coffee_table", "dining_table", "desk", "counter", "bar", "workbench", "bench", "crate", "box",
+             "cube", "bed", "single_bed", "sofa")
+
+
+def _hands_at(scene: dict, a: dict, pos, frame: int, solid: list[dict], crop: str) -> dict:
+    """For a hands-only insert: {hands_surface: 'the table' | '', hands_objects: ['a phone', ...]}: the surface the
+    hands are at (the nearest table-like prop the person stands at) and the small things in hand or on it."""
+    if crop != HANDS_ONLY:
+        return {}
+    near = [q for q in solid if q.get("kind") in _SURFACES and q.get("id") != a.get("id") and _inside(pos, q, margin=0.45)]
+    near.sort(key=lambda q: G.length((pos[0] - q["position"][0], 0.0, pos[2] - q["position"][2])))
+    surf = near[0] if near else None
+    objs = []
+    for o in scene.get("actors") or []:
+        if o is a or (surf is not None and o.get("id") == surf.get("id")):
+            continue
+        noun, rig, h = classify(o)
+        if rig != "static" or h > 0.45:
+            continue
+        held = any(isinstance(x, dict) and x.get("actor") == a.get("id") and float(x.get("from") or 0) <= frame
+                   <= float(x.get("to") if x.get("to") is not None else 1e9) for x in (o.get("hold") or []))
+        lying = surf is not None and _inside(_pos_at(o, frame), surf, margin=0.05)
+        if held or lying:
+            objs.append(("holding " if held else "beside ") + noun)
+    return {"hands_surface": definite(surf["word"]) if surf else "", "hands_objects": objs}
+
+
 def frame_facts(scene: dict, cam: dict, frame: int) -> dict:
     """Who and what is on screen through `cam` at `frame`.
 
@@ -1029,6 +1124,9 @@ def frame_facts(scene: dict, cam: dict, frame: int) -> dict:
         if ride is not None and c["id"] == ride.get("id"):
             continue                                   # the camera is in / on it: vehicle_camera() says where
         pos, host = world_pos(scene, c["actor"], frame, last)
+        sat = seated_at(scene, c["actor"], frame, frame_range(scene)[1]) if host is None and c["rig"] == "biped" else None
+        if sat is not None:   # a timed sit (sit_spans): on the seat, facing the seat's way (stage._sitSpec)
+            host, pos = sat["host"], seat_point(sat["host"], frame, last)
         seated = host is not None
         if seated and c["enclosed"] and not (ride is not None and host.get("id") == ride.get("id")):
             occupied.add(host.get("id"))               # behind the glass of a car seen from outside
@@ -1060,7 +1158,7 @@ def frame_facts(scene: dict, cam: dict, frame: int) -> dict:
             # alone called the Maya S3 hand close "close-up of the face, head and shoulders" and Krea 2 painted a wide.
             size = "INSERT"
         entry = {**c, "noun": noun, "heading": heading, "pos": pos, **pr, "where": screen_words(pr["sx"]),
-                 "size": size, "seated": seated, "crop": crop,
+                 "size": size, "seated": seated, "crop": crop, **_hands_at(scene, c["actor"], pos, frame, solid, crop),
                  "riding": seated and not c["enclosed"] and host.get("kind") not in SEAT_ROWS + SEAT_FURNITURE, "host_id": host.get("id") if seated else None,
                  # Riding along: they sit still in the frame however fast the car goes.
                  "moves": not (ride is not None and seated and host.get("id") == ride.get("id"))}
@@ -1496,6 +1594,94 @@ def camera_move(scene: dict) -> dict:
             "rides": rides}
 
 
+def _way_words(d, cam: dict) -> str:
+    fwd, right, _ = G.basis(cam["position"], cam["target"])
+    a, r = G.dot(G.flat(d), G.flat(fwd)), G.dot(G.flat(d), G.flat(right))
+    if a > 0.6:
+        return "away from the camera"
+    if a < -0.6:
+        return "toward the camera"
+    return f"across frame toward screen-{'right' if r > 0 else 'left'}"
+
+
+def _secs(frame: float, fps: float) -> str:
+    return f"{frame / fps:.1f}".rstrip("0").rstrip(".") + " s"
+
+
+def _sit_mark(scene: dict, c: dict, cam0: dict) -> dict | None:
+    """A person's timed sits (sit_spans) as LTX words: "walks to the front of the chair, turns round with her back to
+    the seat, and at 1.8 s she sits down in the chair, facing the camera ...", "at 4 s she stands up from the chair and
+    walks ...". The facing is the SEATED body's (the seat's way) through the camera at that moment, never the walk's:
+    Maya S4 (2026-11-09) said "walks away from the camera into the chair" for a sit facing the lens, and LTX turned
+    her back and walked her off without ever sitting."""
+    frames, fps = frame_range(scene)
+    last = frames - 1
+    a = c["actor"]
+    kind = a.get("kind")
+    pron, poss, refl = {"woman": ("she", "her", "herself"), "man": ("he", "his", "himself")}.get(kind, ("they", "their", "themselves"))
+    sg = pron != "they"
+    v = lambda s, p: s if sg else p   # noqa: E731
+    spans = sorted(sit_spans(scene, a), key=lambda s: -1 if s.get("at") is None else float(s["at"]))
+    clauses: list[str] = []
+    way, prev = "", 0
+    for s in spans:
+        w = sit_window(s, fps)
+        if w["start"] > last:
+            break
+        host = _by_id(scene, s.get("on"))
+        hn = definite(classify(host)[0])
+        sf = int(min(last, max(0, w["seated"])))
+        sy = _yaw_at(host, sf, last)
+        facing = _facing_words((math.sin(sy), 0.0, math.cos(sy)), camera_at(scene, sf))
+        if w["start"] == -math.inf:
+            clauses.append(f"{v('sits', 'sit')} in {hn}, {facing}" if not clauses else f"{pron} {v('sits', 'sit')} in {hn}, {facing}")
+        else:
+            at = int(w["start"])
+            d = G.sub(_pos_at(a, at, last), _pos_at(a, prev, last))
+            dist = G.length((d[0], 0.0, d[2]))
+            speed = dist / max(0.1, (at - prev) / fps)
+            go = (f"{v('walks', 'walk') if speed < 2.6 else v('hurries', 'hurry')} to the front of {hn}" if dist > 0.6
+                  else f"{v('steps', 'step')} to the front of {hn}" if dist > 0.15 else f"{v('stands', 'stand')} in front of {hn}")
+            turn = abs(math.atan2(math.sin(sy - body_yaw(a, at, last, fps)), math.cos(sy - body_yaw(a, at, last, fps))))
+            turn_w = (f"{v('turns', 'turn')} round with {poss} back to the seat" if turn > math.radians(100)
+                      else f"{v('turns', 'turn')} to face {'the camera' if facing == 'facing the camera' else 'out from the seat'}"
+                      if turn > math.radians(30) else "")
+            sit = (f"at {_secs(w['down'], fps)} {pron} {v('sits', 'sit')} down in {hn}, {facing}, lowering {refl} onto the seat"
+                   if w["down"] <= last else f"{pron} {v('begins', 'begin')} to sit down in {hn}")
+            lead = ", ".join(x for x in (go, turn_w) if x)
+            body = f"{lead}, and {sit}" if lead else sit
+            clauses.append(body if not clauses else f"{pron} {body}" if body.startswith(("walk", "hurr", "step", "stand", "turn")) else body)
+        if w["up"] > last:
+            seated_from = max(0, w["seated"]) if w["start"] != -math.inf else 0
+            stay = (f"{pron} {v('stays', 'stay')} seated in {hn} to the end of the shot" if seated_from <= 0
+                    else f"from {_secs(seated_from, fps)} {pron} {v('stays', 'stay')} seated in {hn} to the end of the shot")
+            clauses.append(stay)
+            clauses.append(f"{pron} {v('does', 'do')} not stand up again and {v('does', 'do')} not walk away")
+            prev = last
+            break
+        up = f"at {_secs(w['up'], fps)} {pron} {v('stands', 'stand')} up from {hn}"
+        nxt = next((float(x["at"]) for x in spans if x.get("at") is not None and float(x["at"]) > w["up"]), last)
+        e0 = int(min(last, w["end"]))
+        d = G.sub(_pos_at(a, int(min(last, nxt)), last), _pos_at(a, e0, last))
+        if G.length((d[0], 0.0, d[2])) > 0.3:
+            way = _way_words(d, camera_at(scene, e0))
+            up += f" and {v('walks', 'walk')} {way}"
+        clauses.append(up)
+        prev = e0
+    if not clauses:
+        return None
+    end = c["end"]
+    sat_end = seated_at(scene, a, last, fps)
+    if sat_end is not None:
+        end = seat_point(sat_end["host"], last, last)
+    cam1 = camera_at(scene, last)
+    startp, endp = _project_body(c["start"], c["height"], cam0), _project_body(end, c["height"], cam1)
+    text = ". ".join(x[:1].upper() + x[1:] if i else x for i, x in enumerate(clauses)) + "."
+    return {**c, "verb": "", "verb_pl": "", "way": way, "dest": "", "sit_text": text, "inside_at_end": False,
+            "end_visible": bool(endp and endp["visible"]), "end_where": screen_words(endp["sx"]) if endp else "",
+            "sx0": startp["sx"] if startp else 0.0}
+
+
 def actor_marks(scene: dict) -> list[dict]:
     """Each mover's walk: verb, direction in the opening frame's terms, destination."""
     frames, fps = frame_range(scene)
@@ -1515,6 +1701,11 @@ def actor_marks(scene: dict) -> list[dict]:
             continue                       # fixed in the frame: the camera rides with them
         if c["enclosed"] or c["id"] in ridden:
             continue                       # inside a car (the car's mark) / under a rider (the rider's mark)
+        if host is None and c["rig"] == "biped" and sit_spans(scene, c["actor"]):
+            m = _sit_mark(scene, c, cam0)
+            if m is not None:
+                out.append(m)
+            continue
         start = c["start"]
         timed = host is not None and float(c["actor"].get("mount_at") or 0) > 0
         if timed:   # on foot, then up into the saddle: the way they go is the mount's way after that

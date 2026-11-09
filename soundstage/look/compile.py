@@ -447,13 +447,24 @@ def _garments(wear: str) -> list[str]:
     return found
 
 
+def top_wear(wear: str) -> str:
+    """The upper garment of a wardrobe text ('a pink button-up shirt with rolled-up sleeves' from 'wearing a pink
+    button-up shirt with rolled-up sleeves, blue jeans and dark shoes, fully clothed'), '' when none is named: all a
+    hands-only insert shows."""
+    text = re.sub(r"^wearing\s+", "", (wear or "").strip())
+    text = re.sub(r",?\s*fully clothed\s*$", "", text)
+    first = re.split(r",\s*|\s+and\s+", text)[0].strip()
+    return first if first and first.lower() != "fully clothed" else ""
+
+
 def skin_fabric_tail(scene: dict, f1: dict, look: dict, short: bool = False) -> str:
     """'real skin texture with pores and fine lines, visible fabric weave and creases in the shirt and jeans': the
     garments are the ones the people phrase already names (identity.known_wear), never new clothes."""
     by_id = {a.get("id"): a for a in scene.get("actors") or []}
     garments: list[str] = []
     for e in f1["people"]:
-        for g in _garments(known_wear(by_id.get(e["id"]) or e["actor"], look)):
+        wear = known_wear(by_id.get(e["id"]) or e["actor"], look)
+        for g in _garments(top_wear(wear) if S.hands_only(e) else wear):   # an insert on the hands: the sleeves only
             if g not in garments:
                 garments.append(g)
     if short:
@@ -473,6 +484,11 @@ REAL_PEOPLE = ("real actors, natural skin texture, real hair and fabric with cre
                "natural expressions")
 # Vocabulary still fragments as they were before Milestone 5, for re-rendering a frame picked then.
 LEGACY_STILL = {"kodak_200t": "Kodak Vision3 200T film stock, tungsten balance, fine grain, smooth skin"}
+# An insert on the hands (every person in frame is hands only, scene.hands_only): no body language, no expressions
+# (Maya S3, 2026-11-09: "candid unposed body language, natural expressions" with "standing" painted whole figures).
+REAL_HANDS = "real hands, natural skin texture with knuckles, veins and fine creases, real fabric with creases"
+# what the frame models painted on the Maya S3 insert: legs and shoes standing on the table
+HANDS_ONLY_NEG = "legs, feet, shoes, standing figure, full body, face, person standing on the table"
 REAL_PEOPLE_NEG = "plastic skin, mannequin, doll-like faces, wax figure, CGI character, 3D render, video game character"
 
 # A look that asks for a drawn or rendered world keeps its people stylised too.
@@ -561,7 +577,12 @@ def compile_still(look: dict, scene: dict, parts: dict, edit: bool = False,
     # Krea 2 painted a second woman; no clothes were named and the woman came out bare-chested). A frame picked before
     # Milestone 5 keeps the words it was painted with, plus the clothes; so do the seats of a car the camera rides in.
     by_id = {a.get("id"): a for a in scene.get("actors") or []}
-    wear_of = lambda e: wardrobe(scene, by_id.get(e["id"]) or e["actor"], look)   # noqa: E731
+    def wear_of(e):
+        w = wardrobe(scene, by_id.get(e["id"]) or e["actor"], look)
+        if S.hands_only(e):   # an insert on the hands: the sleeves show, never the jeans or the shoes
+            top = top_wear(w)
+            return f"wearing {top}" if top else ""
+        return w
     one_phrase = not legacy and S.ride_host(scene) is None
     if one_phrase:
         # kept whole through _dedupe: two people both "full figure, mid-distance" each keep their own words
@@ -588,6 +609,9 @@ def compile_still(look: dict, scene: dict, parts: dict, edit: bool = False,
             facing_neg += f", rear of {g['nouns']} toward the camera, tail lights toward the camera, driving in reverse"
         elif "nose pointing" in fw and "revers" not in fw:   # the J-turn's frame 1 IS reversing: never negate it
             facing_neg += f", {g['nouns']} driving backwards, reversing"
+    hands = bool(f1["people"]) and all(S.hands_only(e) for e in f1["people"])
+    if hands:
+        facing_neg += ", " + HANDS_ONLY_NEG
     facing_neg = facing_neg.lstrip(", ")
     who = people + others
     n = len(f1["people"])
@@ -632,7 +656,9 @@ def compile_still(look: dict, scene: dict, parts: dict, edit: bool = False,
         lock["still"] if lock else "",
         # The count line stays: C22c's ablation F2 (count kept, group phrase gone) painted one person on both seeds.
         _still_count(n) if count else "",
-        REAL_PEOPLE if n and real else "",
+        # no face in frame (every head out of it): no expressions; only hands: no body language either
+        (REAL_HANDS if hands else REAL_PEOPLE.replace(", natural expressions", "")
+         if all(e.get("crop") for e in f1["people"]) else REAL_PEOPLE) if n and real else "",
         _only_blocking(n, sum(1 for e in f1["others"] if e.get("rig") == "vehicle")) if count and not lock else
         ("nobody else in the car, nobody else in the background" if count and vcam else ""),
         # The bumper and over-the-tyre mounts lead with "low camera hard-mounted": never "eye-level" after that.
@@ -689,7 +715,9 @@ def _edit_instruction(look: dict, scene: dict, f1: dict, cam: dict, prompt: str,
     inside = f1["location"]["int_ext"] == "INT"
     place = "room" if inside else "location"
     others = f1["others"]
-    if n == 1 and not others:
+    if n == 1 and not others and S.hands_only(f1["people"][0]):   # an insert on the hands: there is no body to keep
+        marks = f"{S.definite(re.sub(r' (?:sitting on|on|riding) an? [\w ]+$', '', f1['people'][0]['noun']))}'s hands"
+    elif n == 1 and not others:
         marks = f"{S.definite(f1['people'][0]['noun'])}'s position, size and pose"
     elif n or others:
         marks = "every person's and object's position, size and pose"
@@ -699,7 +727,9 @@ def _edit_instruction(look: dict, scene: dict, f1: dict, cam: dict, prompt: str,
             f"camera, and {marks} exactly.")
     block = _cap(cam["text"].replace("photograph shot on", "Shot on", 1)) + "."
     dressed = [f"{S.definite(e['noun'])} {wear_of(e)}".strip() for e in sorted(f1["people"], key=lambda e: e["sx"])]
-    if n == 1:
+    if n == 1 and S.hands_only(f1["people"][0]):
+        who = _join([f"Only the hands of one {re.sub(r'^(?:a|an|the) ', '', f1['people'][0]['noun'])}", wear_of(f1["people"][0])])
+    elif n == 1:
         who = f"Exactly one {re.sub(r'^(?:a|an|the) ', '', f1['people'][0]['noun'])}, {wear_of(f1['people'][0])}"
     elif n:
         who = f"Exactly {NUM.get(n, n)} people: " + "; ".join(dressed)
@@ -808,9 +838,13 @@ def _marks_sentence(mf: dict, introduced: set | None = None) -> str:
         return ""
     # Group movers that share verb, direction and destination ("a man and a woman walk ... together").
     groups: dict[tuple, list[dict]] = {}
-    for m in marks:
-        groups.setdefault((m["verb"], m["way"], m["dest"]), []).append(m)
     out = []
+    for m in marks:
+        if m.get("sit_text"):   # a timed sit / stand (scene._sit_mark): its own sentences, never grouped
+            again = bool(introduced) and {m["id"]} == introduced
+            out.append(_cap(f"{S.definite(m['noun']) if again else m['noun']} {m['sit_text']}"))
+            continue
+        groups.setdefault((m["verb"], m["way"], m["dest"]), []).append(m)
     for (verb, way, dest), ms in groups.items():
         again = bool(introduced) and {m["id"] for m in ms} == introduced
         who = ("they" if len(ms) > 1 else S.definite(ms[0]["noun"])) if again else S._group_nouns([m["noun"] for m in ms])
