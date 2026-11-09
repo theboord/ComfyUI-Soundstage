@@ -3,6 +3,12 @@
 Soundstage is updated continuously on `main`. Newest first. Times are US Pacific.
 Each entry links to the code; every milestone ships with tests.
 
+## 2026-11-09 01:30 PST · ④ Frame: Krea 2 + depth back to euler_ancestral; FLUX.2 Klein 9B drops a carried-over depth lock
+
+**Still wrong / not tested:** no render here; the Klein 9B lock reset has no unit test (checked by reading the change only). Found by Jon's Claude's visible C31 checks on Jon's machine.
+- Krea 2 + depth default sampler is euler_ancestral / beta again (CFG 1, 12 steps kept). C31 A/B: dpmpp_2m left a speckled crust on walls and ceiling with or without the film/grain words; euler_ancestral was clean at 8 and 12 steps. The six example App workflows and the tutorial row follow.
+- Switching ④ Frame from FLUX 3 Klein to FLUX.2 Klein 9B kept the Light depth lock, and the run errored ("Lock to the stage depth needs Krea 2 Turbo"). The lock now goes back to the model's own default (Off) on that switch.
+
 ## 2026-11-09
 
 **C28 applied: ④ Frame's first frame opens with a real camera setup, and each frame model gets the defaults Jon measured (private branch `private/lifelike`, 00:10 by this machine's clock)**

@@ -77,14 +77,15 @@ const STEPS = [
 ];
 const STILL_KREA = "__krea_depth__";
 /** ④ Frame's model defaults (C28, Jon's RTX 5080 sweep through this path, 2026-11-08; outbox claude_C28.md).
- *  Krea 2 + depth: dpmpp_2m / beta, CFG 1 (1.5 and up burns), 12 steps (8 left blotchy corners with the camera
+ *  Krea 2 + depth: euler_ancestral / beta, CFG 1 (1.5 and up burns), 12 steps (C31: dpmpp_2m left a speckled crust
+ *  on walls and ceiling, with or without the grain words; 8 steps left blotchy corners with the camera
  *  block's vignetting). Never karras (8 of 8 handed the stage back), avoid sgm_uniform (a second person).
  *  FLUX 3 Klein: Lock to the stage depth Light (Off hands the stage back with every prompt), CFG 2 (1.5-3 clean, real
  *  plaster and wood at 2; a negative only acts above CFG 1), 12 steps, sampler / scheduler auto (euler / simple).
  *  FLUX.2 Klein 9B: a 4-step distilled model (its card and ComfyUI's template: 4 steps, CFG 1); C28 never ran it,
  *  and Light is wired for FLUX 3 Klein only, so it keeps 4 steps, CFG 1, depth lock Off. */
 export const FRAME_DEFAULTS = {
-  krea: { steps: 12, cfg: 1, sampler: "dpmpp_2m", scheduler: "beta", label: "Krea 2 Turbo" },
+  krea: { steps: 12, cfg: 1, sampler: "euler_ancestral", scheduler: "beta", label: "Krea 2 Turbo" },
   klein: { steps: 12, cfg: 2, sampler: "auto", scheduler: "auto", depth: "light", label: "FLUX 3 Klein" },
   klein9b: { steps: 4, cfg: 1, sampler: "auto", scheduler: "auto", depth: "off", label: "FLUX.2 Klein 9B" },
   other: { steps: 20, cfg: 1, sampler: "auto", scheduler: "auto", depth: "off", label: "" },
@@ -587,7 +588,14 @@ export class Pipeline {
     this.f = {};
     const f = this.f;
     f.clay = h("canvas", { class: "clay" });
-    f.model = h("select", { on: { change: () => { const sw = this.node(9082); if (sw) (sw.properties ||= {}).ssStillPicked = true; this._applyStillModel(); } } });
+    f.model = h("select", { on: { change: () => {
+      const sw = this.node(9082); if (sw) (sw.properties ||= {}).ssStillPicked = true;
+      // FLUX.2 Klein 9B has no Krea 2 depth pass: a Light / Strict lock carried over from FLUX 3 Klein would error
+      // ("Lock to the stage depth needs Krea 2 Turbo"), so it goes back to the model's own default (C31).
+      if (frameDefaultsKey(f.model.value) === "klein9b" && this._dmode && this._dmode !== "off") {
+        this._dmode = null; const fn = this.node(9081); if (fn?.properties) delete fn.properties.ssDepthMode;
+      }
+      this._applyStillModel(); } } });
     f.follow = h("input", { type: "range", min: "0.55", max: "1", step: "0.01", value: "0.85", "aria-label": "Follow the blocking",
       on: { input: () => { f.followOut.textContent = this._followLabel(); this._applyStillModel(); } } });
     f.followOut = h("span", { class: "status" });

@@ -1,5 +1,5 @@
 // C28: ④ Frame's model defaults from Jon's measured sweep (outbox claude_C28.md, "Recommended defaults per model").
-//   Krea 2 + depth: dpmpp_2m / beta, CFG 1, 12 steps, never karras.
+//   Krea 2 + depth: euler_ancestral / beta (C31: dpmpp_2m speckled), CFG 1, 12 steps, never karras.
 //   FLUX 3 Klein: Lock to the stage depth Light (Off hands the stage back), CFG 2, 12 steps, sampler auto.
 //   FLUX.2 Klein 9B: 4-step distilled, kept at 4 steps CFG 1, no depth lock (C28 never ran it).
 import { test } from "node:test";
@@ -12,7 +12,7 @@ import { DEFAULT_LOOK } from "../../web/look/look.mjs";
 const KLEIN = "FLUX 3 Klein · local [<$5M]", K9B = "FLUX.2 Klein 9B · local [non-commercial]", TURBO = "Krea 2 Turbo · local [<$1M]";
 
 test("the measured defaults per model", () => {
-  assert.deepEqual(frameDefaultsFor("__krea_depth__"), { steps: 12, cfg: 1, sampler: "dpmpp_2m", scheduler: "beta", label: "Krea 2 Turbo" });
+  assert.deepEqual(frameDefaultsFor("__krea_depth__"), { steps: 12, cfg: 1, sampler: "euler_ancestral", scheduler: "beta", label: "Krea 2 Turbo" });
   const k = frameDefaultsFor(KLEIN);
   assert.equal(k.steps, 12); assert.equal(k.cfg, 2); assert.equal(k.sampler, "auto"); assert.equal(k.depth, "light");
   const n = frameDefaultsFor(K9B);
@@ -55,7 +55,7 @@ test("an App workflow on the old Krea 2 defaults takes C28's once; a user's own 
   const a = fake();
   a.p._frameDefaultsOnce();
   assert.equal(a.w(9056, "steps").value, 12);
-  assert.equal(a.w(9056, "sampler_name").value, "dpmpp_2m");
+  assert.equal(a.w(9056, "sampler_name").value, "euler_ancestral");
   assert.equal(a.w(9056, "scheduler").value, "beta");
   assert.equal(a.w(9056, "cfg").value, 1);
   assert.equal(a.w(9081, "steps").value, 12);
@@ -78,7 +78,7 @@ test("FLUX.2 Klein 9B on the frame node gets its own 4 steps, CFG 1", () => {
   assert.equal(a.w(9081, "cfg").value, 1);
 });
 
-test("Krea 2 + depth never sends karras; auto is dpmpp_2m / beta", () => {
+test("Krea 2 + depth never sends karras; auto is euler_ancestral / beta", () => {
   const a = fake();
   a.p.f.model.value = "__krea_depth__";
   a.p._syncSampling = () => {};
@@ -87,7 +87,7 @@ test("Krea 2 + depth never sends karras; auto is dpmpp_2m / beta", () => {
   a.p._samplingNote = () => {};
   a.p._applySampling();
   assert.equal(a.w(9056, "scheduler").value, "beta");
-  assert.equal(a.w(9056, "sampler_name").value, "dpmpp_2m");
+  assert.equal(a.w(9056, "sampler_name").value, "euler_ancestral");
   a.p.f.sched.value = "simple";
   a.p._applySampling();
   assert.equal(a.w(9056, "scheduler").value, "simple");
@@ -152,7 +152,7 @@ test("the shipped App workflows carry the C28 defaults and the edit_prompt link"
   for (const name of ["Soundstage_App", "Soundstage_App_Full", "Soundstage_Car_Chase", "Soundstage_In_The_Car", "Soundstage_Three_In_A_Car", "Soundstage_Western"]) {
     const wf = JSON.parse(readFileSync(new URL(`../../example_workflows/${name}.json`, import.meta.url), "utf8"));
     const node = (id) => wf.nodes.find((n) => n.id === id);
-    assert.deepEqual(node(9056).widgets_values.slice(2, 6), [12, 1, "dpmpp_2m", "beta"], name);
+    assert.deepEqual(node(9056).widgets_values.slice(2, 6), [12, 1, "euler_ancestral", "beta"], name);
     assert.equal(node(9079).outputs[4].name, "edit_prompt", name);
     const link = wf.links.find((l) => l[3] === 9081 && l[4] === node(9081).inputs.findIndex((i) => i.name === "prompt"));
     assert.deepEqual([link[1], link[2]], [9079, 4], name);

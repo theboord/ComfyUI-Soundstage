@@ -2038,7 +2038,7 @@
     "fixed",
     12,
     1,
-    "dpmpp_2m",
+    "euler_ancestral",
     "beta",
     0.85
    ],
