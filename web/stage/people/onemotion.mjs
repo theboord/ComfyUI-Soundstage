@@ -114,13 +114,17 @@ export function rigWeight(f, owner, last, fade = FADE_FRAMES) {
  * gaze keys turn the neck and head, Pose keys the joints they name (fingers excepted), a carrier's arms hold the load
  * (stage.setFrame poses them round it). A holder's prop hand follows the clip (stage._handGrip reads the visible hand). poseJoints: the joint ids the person's Pose keys name.
  */
-export function layerJoints({ gazeKeyed = false, poseJoints = null, carries = false } = {}, layerable = () => true) {
+export function layerJoints({ gazeKeyed = false, poseJoints = null, carries = false, seated = false } = {}, layerable = () => true) {
   const s = new Set();
   if (gazeKeyed) { s.add("neck"); s.add("head"); }
   if (carries) for (const lr of ["l", "r"]) for (const j of ["shoulder", "elbow", "wrist"]) s.add(`${lr}_${j}`);
-  for (const id of poseJoints || []) if (layerable(id)) s.add(id);
+  for (const id of poseJoints || []) if (layerable(id) && !(seated && LEG_JOINT.test(id))) s.add(id);
   return s;
 }
+
+/** The leg joints a seated base keeps (a timed sit: Pose keys layer the upper body on the seated idle, the legs stay
+ *  folded onto the seat and planted feet). */
+export const LEG_JOINT = /^[lr]_(?:hip|knee|ankle|foot|toe)/;
 
 /** The joint ids every Pose key of a person names (whole shot). */
 export function poseKeyJoints(a) {

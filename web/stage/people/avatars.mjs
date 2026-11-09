@@ -841,13 +841,39 @@ export function avatarsAt(stage) {
     }
     // the rig is the source: the body follows it; only the rig's joints are put on the body's (its proportions)
     if (mix.w.rig >= 1) { fitRig(g, skin, undo); continue; }
-    if (mix.own === "seat" && mix.w.seat >= 1) { solveRig(stage, skin, g, null, undo); continue; }
+    // a timed sit (sit_spans) with the seat in the body: Pose keys and gaze layer on the seated base (upper body only,
+    // the legs stay seated). Maya S4 (2026-11-09): "Lean in" and "Thinking" keys on her seated body did nothing.
+    const sitLayer = mix.w.seat > 1e-9 && !!stage._sitSpanAt?.(a, f) && (O.poseKeyJoints(a).size > 0 || gazeKeys(a).length > 0);
+    if (mix.own === "seat" && mix.w.seat >= 1 && !sitLayer) { solveRig(stage, skin, g, null, undo); continue; }
     // layers over the clip: gaze turns the head, Pose keys the joints they name, a carrier's arms hold the load
-    const layer = O.layerJoints({ gazeKeyed: gazeKeys(a).length > 0, poseJoints: O.poseKeyJoints(a), carries: users.carriers.has(a.id) }, R.layerable);
+    const layer = O.layerJoints({ gazeKeyed: gazeKeys(a).length > 0, poseJoints: O.poseKeyJoints(a), carries: users.carriers.has(a.id), seated: sitLayer }, R.layerable);
     // the rig follows the body first (its layered joints left as the stage posed them), then the layered bones follow
     // those joints, which now hang off the solved parents (a Pose key is a turn relative to its parent)
     solveRig(stage, skin, g, layer, undo);
-    if (layer.size) { R.retargetFromRig(skin, g, { only: layer }); fitRig(g, skin, undo); }   // (the layered bones moved: the rig's joints back on them)
+    if (layer.size) {
+      const B = skin.bones, keepSpine = sitLayer && layer.has("spine") && B.Bip01_Spine1 ? B.Bip01_Spine.quaternion.clone() : null;
+      R.retargetFromRig(skin, g, { only: layer });
+      if (keepSpine) seatedTrunk(B, keepSpine);
+      fitRig(g, skin, undo);   // (the layered bones moved: the rig's joints back on them)
+    }
+  }
+}
+
+const _stq = new THREE.Quaternion();
+/** A seated body's trunk key without moving the legs: Rocketbox hangs the thighs off Bip01_Spine, so the trunk turn
+ *  a "spine" layer put there swung the seated legs off the chair (14 cm at the hip, 50 cm at the feet). Bip01_Spine
+ *  goes back to its seated turn (q0, local) and the upper body (Spine1 and everything above it) keeps the world turns
+ *  the layer gave it: the trunk leans from just above the pelvis, the legs stay seated. */
+function seatedTrunk(B, q0) {
+  const want = [];
+  B.Bip01_Spine1.updateWorldMatrix(true, true);
+  B.Bip01_Spine1.traverse((o) => { if (o.isBone) want.push([o, o.getWorldQuaternion(new THREE.Quaternion())]); });
+  B.Bip01_Spine.quaternion.copy(q0);
+  B.Bip01_Spine.updateWorldMatrix(false, true);
+  for (const [o, q] of want) {   // parents first (traverse order)
+    o.parent.updateWorldMatrix(true, false);
+    o.quaternion.copy(o.parent.getWorldQuaternion(_stq).invert().multiply(q));
+    o.updateWorldMatrix(false, true);
   }
 }
 
