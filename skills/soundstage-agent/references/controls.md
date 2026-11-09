@@ -335,6 +335,8 @@ Each line: **control**: what it does.
 - **Close**
 
 ## App steps (④ Frame / ⑤ Motion / ⑥ Review)
+- **Prompt source**
+- **The prompt sent to the image model**
 - **Comparing this frame with your blocking**: Comparing this frame with your blocking (SAM 3.1)
 - **None**
 - **Remove this LoRA**

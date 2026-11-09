@@ -2646,6 +2646,8 @@ function createStageWidget(node, inputName) {
     setFrameLock: (on) => { node.ssFrameLock = !!on; },
     setBatch: (on) => { batchDepth = Math.max(0, batchDepth + (on ? 1 : -1)); batchRendering = batchDepth > 0; },
     renderPreviewFrame: (id, f) => stage.renderFrameTo("color", f, { shot: id }),
+    // the scene as the stage node sends it at queue time (④ Frame's Auto prompt is checked against this, look/autoprompt.py)
+    frameScene: () => ({ ...stage.toJSON(), camera_track: stage.cameraTrack(), lighting_prompt: stage.lightingPrompt(), id_colors: stage.idColors(), shot_id: stage.activeShot().id, shot_name: stage.activeShot().name }),
     loadChosen: () => {
       try { return node.properties?.ss_chosen || JSON.parse(localStorage.getItem(`${lsKey()}:chosen`) || "{}"); } catch { return {}; }
     },

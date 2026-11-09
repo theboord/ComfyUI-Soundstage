@@ -13,6 +13,7 @@ import { downloadDCCKit } from "../stage/interop/exportdcc.mjs";
 import { FrameCheck, badgeOf, flagged, rank, depthTip, REROLLS, FRAMECHECK_CSS } from "./framecheck.mjs";
 import { stillLoraGroups, stillLoraWarning, LORA_MATCH_LABEL, LORA_OTHER_LABEL, normalizeStack, stackFromLegacy } from "./loras.mjs";
 import { createLoraStack } from "./lorastack.mjs";
+import { FramePrompt, frameTarget, canvasDataUrl } from "./autoprompt.mjs";
 import { setStyles, setProp } from "../ui/domwrite.mjs";   // polls write only what changed
 
 /** ④'s look box placeholder: optional, and no example that fights the scene (QA 2026-11-02: a western example on a rainy night chase). */
@@ -616,12 +617,19 @@ export class Pipeline {
       if (frameDefaultsKey(f.model.value) === "klein9b" && this._dmode && this._dmode !== "off") {
         this._dmode = null; const fn = this.node(9081); if (fn?.properties) delete fn.properties.ssDepthMode;
       }
-      this._applyStillModel(); } } });
+      this._applyStillModel(); this.fp?.show(); } } });
     f.follow = h("input", { type: "range", min: "0.55", max: "1", step: "0.01", value: "0.85", "aria-label": "Follow the blocking",
       on: { input: () => { f.followOut.textContent = this._followLabel(); this._applyStillModel(); } } });
     f.followOut = h("span", { class: "status" });
     f.desc = h("textarea", { placeholder: FRAME_DESC_PLACEHOLDER,
-      on: { change: () => this._setDescription(f.desc.value) } });
+      on: { change: () => { this._setDescription(f.desc.value); this.fp?.show(); } } });
+    // The prompt the frame model gets: Auto (a local vision LLM writes it) / Compiled / Manual (web/pipeline/autoprompt.mjs)
+    const ctx = this.ctx;
+    this.fp = new FramePrompt({ h, fetchApi: (u, o) => ctx.api.fetchApi(u, o), get look() { return ctx.look; },
+      shotId: () => this.ctx.stage.activeShot().id,
+      scene: () => this.ctx.frameScene?.() || { ...this.ctx.stage.toJSON(), shot_id: this.ctx.stage.activeShot().id },
+      frame: () => { try { return canvasDataUrl(this.ctx.renderPreviewFrame?.(this.ctx.stage.activeShot().id, 0)); } catch { return ""; } },
+      refFiles: () => this._refFilesNow(), target: () => this._frameTarget(), steps: () => Math.round(+f.steps?.value || 0) });
     f.count = 4;
     f.countSeg = h("span", { class: "seg row", title: "Variations: how many frames one Generate makes" }, ...[1, 2, 4].map((n) => h("button", { type: "button", "aria-pressed": String(n === 4),
       on: { click: (e) => { f.count = n; for (const b of f.countSeg.children) b.setAttribute("aria-pressed", String(b === e.currentTarget)); } } }, `${n}`)));
@@ -689,6 +697,7 @@ export class Pipeline {
           h("div", { class: "card" },
             h("label", { class: "f" }, "Image model", f.model),
             h("label", { class: "f" }, "Prompt: describe the frame (the Look tab adds camera, lens and style to it)", f.desc),
+            this.fp.el,
             // a div, not a label: it holds two labelled check boxes of its own (the canvas panel moves this whole block)
             h("div", { class: "f" }, h("span", { class: "row" }, "Follow the blocking", f.followOut), f.follow,
               h("div", { class: "ss-chk ss-dlock status", title: DEPTH_TITLE },
@@ -1140,6 +1149,7 @@ export class Pipeline {
     f.useTouch.checked = !!this.touched[sid];
     this.set(9086, "switch", f.useTouch.checked);
     f.clayCap.textContent = `${this.ctx.stage.activeShot().name}: your stage, frame 1`;
+    if (this.fp) (this.fp.status ? this.fp.show() : this.fp.refreshStatus().then(() => this.fp.show())).catch?.(() => {});
     this._drawCastRefs();
     this._drawShotRows();
     try {
@@ -1272,6 +1282,14 @@ export class Pipeline {
     const n = this.node(9081);
     if (n) (n.properties ||= {}).ssDepthMode = k;
     this._applyStillModel();
+    this.fp?.show();
+  }
+
+  /** Which Look output the frame model reads now (the same rule as _wireFramePrompt): "edit" or "still". */
+  _frameTarget() {
+    const f = this.f, krea = f?.model?.value === STILL_KREA;
+    const strict = !krea && isKreaTurbo(this.w(9081, "model")?.value) && (this._dmode === "strict");
+    return frameTarget(f?.model?.value, { krea, strict });
   }
 
   _kreaTurboKey() {
@@ -1304,6 +1322,8 @@ export class Pipeline {
       const cast = this._applyShotCast(shot.id);
       if (cast.dropped.length && n === 1) this._say(`Only ${REF_LIMIT} references go to the model: ${cast.dropped.map((x) => x.name).join(", ")} left out.`);
       const refFiles = this._refFilesNow();
+      if (this.fp?.source() === "auto") this._tick(f.status, `Writing the frame prompt for ${shot.name} from your stage…`);
+      try { await this.fp?.ensure(); } catch { /* the compiled prompt stays */ }
       for (let i = 0; i < f.count; i++) {
         const seed = base + i * 7919;
         this.set(seedNode, "seed", seed);
@@ -2334,7 +2354,7 @@ export class Pipeline {
     const { wrap, media, bottom, panel } = this._cvShell(v);
     const left = panel("frame_l", "④ Frame settings", "left");
     const sec = (title, nodes, open, skey) => { const s = left.section(title, nodes, { open, skey }); for (const n of nodes) mv.move(n, s.box); };
-    sec("Prompt", [f.desc.parentElement, f.follow.parentElement], true, "prompt");
+    sec("Prompt", [f.desc.parentElement, this.fp.el, f.follow.parentElement], true, "prompt");
     sec("Cast in this shot", [f.refsCard], false, "cast");
     sec("Style or character add-on", [f.loras.el.parentElement], false, "lora");
     // Style and Camera were long pickers squeezed into small scrolling boxes (QA round 02): each is now a button that

@@ -996,7 +996,7 @@ def compile_look(look_in: dict | None, scene: dict | None) -> dict:
     from ..router.edit_graph import frame_instruction
     edit_prompt = edit_still if edit_still.startswith("Turn image 1") else frame_instruction(edit_still)
     f1 = S.frame1_facts(scene)
-    return {
+    result = {
         "look": look,
         "still_prompt": still,
         "still_negative": negative,
@@ -1009,6 +1009,9 @@ def compile_look(look_in: dict | None, scene: dict | None) -> dict:
                    "focal_mm": f1["focal_mm"]},
         "palette_words": palette_words((look.get("palette") or {}).get("swatches") or []),
     }
+    # ④ Frame's prompt source (Auto / Manual) for this shot replaces the compiled frame prompt (look/autoprompt.py)
+    from .autoprompt import apply_override
+    return apply_override(result, look_in, scene)
 
 
 from .default_scene import DEFAULT_SCENE  # noqa: E402  (after the functions: the module is data only)

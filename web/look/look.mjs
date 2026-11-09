@@ -110,6 +110,9 @@ export const DEFAULT_LOOK = Object.freeze({
   // ④ Frame's step count for the frame model, written by the pipeline (0 = unknown, the compiler assumes 12):
   // soundstage/look/compile.py keeps "slight vignetting" only at 12 steps or more (C28)
   frame_steps: 0,
+  // ④ Frame's prompt source per shot id: {source: auto | compiled | manual, text, target: edit | still, sig}
+  // (web/pipeline/autoprompt.mjs; soundstage/look/autoprompt.py apply_override)
+  frame_prompts: {},
 });
 
 // Restyle brief (after 3D Jutsu's final-render brief): one line per aspect of the target world.
