@@ -368,6 +368,22 @@ const OBS_LRU_MAX = 64;
 /** _walkHeightAt: a rise or drop of the footing up to this share of the person's leg is walked as a step, a bigger one is
  *  a jump (0.45 m for a 1.8 m person; a fixed 45 cm had a 1.2 m child walk up a 40 cm box with a shoe 12-17 cm into it). */
 const WALK_STEP_LEG = 0.5;
+/** A parked prop's top is ground for a person walking by only when it is climbable (CLIMB_KINDS, or the prop's own
+ *  `climbable: true`), when the person is put on it (one of their keys stands inside its footprint: placeInFrame on a
+ *  table or a car keys them at 0 there), or when it is at most this far (m) above their footing: a human step. Furniture
+ *  is not ground otherwise: a walk 0.25 m past a chair hopped the woman onto the chair's bounding-box top (0.92 m, its
+ *  back) for frames 16-44. A person keyed up onto a table (a drag onto it) stands on it: the footing is the table's. */
+export const STEP_UP = 0.3;
+/** Props a person walking into them climbs (vaults onto): blocks and boulders, the stunt furniture of the stage. */
+const CLIMB_KINDS = new Set(["crate", "rock", "cube", "cylinder"]);
+const climbableProp = (o) => (typeof o.climbable === "boolean" ? o.climbable : CLIMB_KINDS.has(o.kind));
+/** The obstacles (_obstacles) a person's keys put them on: a key inside the box's footprint, at or under its top. */
+const keyedOnto = (obs, keys) => new Set(obs.filter((o) => !o.climb && keys.some((k) => {
+  const p = k.position || [];
+  return p[0] >= o.box.min.x && p[0] <= o.box.max.x && p[2] >= o.box.min.z && p[2] <= o.box.max.z && (p[1] || 0) <= o.top + 0.05;
+})));
+/** Is obstacle o ground for feet at height `from` (onto: keyedOnto's set for this person)? */
+const standsOn = (o, from, onto) => o.climb || onto.has(o) || o.top - from <= STEP_UP + 1e-6;
 /** _walkHeightAt: the leg's length as a share of the person's height (Rocketbox: hip joint to sole ~0.5). */
 const LEG_OF_HEIGHT = 0.5;
 /** _walkHeightAt: the ground is looked at every this far (m) along the path between two frames... */
@@ -2083,7 +2099,7 @@ export class Stage {
     const parts = [this.setFx?.id || ""];
     const parked = [];
     for (const o of this.state.actors) {
-      parts.push(`${o.id}:${o.kind}:${keysHash([{ k: o.keys?.length > 1 ? o.keys : null, p: o.keys?.[0]?.position || o.position, r: o.rotation_deg, s: o.scale, h: o.height_m, c: o.carry_id, m: o.mount_spans?.length ? this._mountSig(o) : o.mount_id, y: o.key_y, l: o.physics?.lift }])}`);
+      parts.push(`${o.id}:${o.kind}:${keysHash([{ k: o.keys?.length > 1 ? o.keys : null, p: o.keys?.[0]?.position || o.position, r: o.rotation_deg, s: o.scale, h: o.height_m, c: o.carry_id, m: o.mount_spans?.length ? this._mountSig(o) : o.mount_id, y: o.key_y, l: o.physics?.lift, cl: o.climbable }])}`);
       if (PERSON_KINDS.has(o.kind) || o.mount_id || o.carry_id || this._keyedMoving(o, parts[parts.length - 1])) continue;
       const g = this.actorMeshes.get(o.id);
       if (!g) continue;
@@ -2118,7 +2134,7 @@ export class Stage {
       // rise: how far the top is above the floor it stands on (a crate on a 0.92 m station platform rises 0.8 m),
       // for the "too tall to climb" cut-off; top stays the world height people stand at.
       const rise = box.max.y - this._floorUnder((box.min.x + box.max.x) / 2, (box.min.z + box.max.z) / 2);
-      list.push({ id: o.id, kind: o.kind, box, top: box.max.y, rise });
+      list.push({ id: o.id, kind: o.kind, box, top: box.max.y, rise, climb: climbableProp(o) });
     }
     lru.set(sig, list);
     const keep = obsKeep(parked.length);
@@ -2161,12 +2177,15 @@ export class Stage {
     }
     if (!c || c.sig !== sig) {
       const kk = 0.5 * 9.8 / (fps * fps), R = 0.18;
+      const onto = keyedOnto(obs, keys);
       const S = [];
       for (let f = 0; f <= last; f++) {
         const p = this._actorPosAt(a, f);
         let s = Math.max(0, p[1] || 0, floor ? floor(p[0], p[2]) : 0);
+        const from = s;
         for (const o of obs) {
           if (o.rise > 1.7) continue;                        // walls and cars aren't climbed by walking into them (height above the local floor)
+          if (!standsOn(o, from, onto)) continue;                  // furniture isn't either: only a climbable prop or a step (STEP_UP)
           if (p[0] > o.box.min.x - R && p[0] < o.box.max.x + R && p[2] > o.box.min.z - R && p[2] < o.box.max.z + R) s = Math.max(s, o.top);
         }
         S.push(s);
@@ -2176,7 +2195,7 @@ export class Stage {
         for (let q = 0; q <= last; q++) { const d = f - q; const v = S[q] - kk * d * d; if (v > y) y = v; }
         return +y.toFixed(3);
       });
-      c = { sig, Y, S, obs };
+      c = { sig, Y, S, obs, onto };
       this._yCache.set(a, c);
     }
     return c.Y[Math.max(0, Math.min(c.Y.length - 1, Math.round(frame)))] || 0;
@@ -2215,15 +2234,16 @@ export class Stage {
     const tall = (a.height_m || LIBRARY[a.kind]?.height || 1.8) * (a.scale || 1), walkStep = WALK_STEP_LEG * LEG_OF_HEIGHT * tall;
     if (c.walk && c.walk.shapes === shapes && c.walk.walkStep === walkStep) return c.walk;
     const n = c.S.length, fps = this.state.shot?.fps || 24, kk = 0.5 * 9.8 / (fps * fps), win = Math.max(1, Math.round(0.25 * fps));
-    const floor = this.setFx?.floorAt || null, obs = c.obs || [], R = 0.18;
+    const floor = this.setFx?.floorAt || null, obs = c.obs || [], R = 0.18, onto = c.onto || new Set();
     // the footing at (x, z) for a body keyed at y0, as c.S (_heightAt) and the set's boxes looked for from `from`
     // (the set's floor looked at 2 mm either way too: keyed exactly on a platform's edge, x 1.62, the interpolated key
     // was 1e-15 off it every other frame and the body fell 92 cm off the platform and back)
     const floorE = (x, z) => (floor ? Math.max(floor(x, z) || 0, floor(x + EDGE_EPS, z) || 0, floor(x - EDGE_EPS, z) || 0, floor(x, z + EDGE_EPS) || 0, floor(x, z - EDGE_EPS) || 0) : 0);
     const footing = (x, z, y0, from) => {
       let s = Math.max(0, y0, floorE(x, z));
+      const from0 = s;
       for (const o of obs) {
-        if (o.rise > 1.7) continue;
+        if (o.rise > 1.7 || !standsOn(o, from0, onto)) continue;
         if (x > o.box.min.x - R && x < o.box.max.x + R && z > o.box.min.z - R && z < o.box.max.z + R) s = Math.max(s, o.top);
       }
       return shapes ? Math.max(s, this._supportAt(x, z, Math.max(s, from), 0.6, shapes)) : s;
@@ -2327,6 +2347,7 @@ export class Stage {
     const top = fromY + reach, o = [x, top, z];
     for (const sh of shapes) {
       if (x < sh.min[0] || x > sh.max[0] || z < sh.min[2] || z > sh.max[2] || sh.max[1] <= y) continue;
+      if (sh.prop && !sh.climb && sh.max[1] - fromY > STEP_UP + 1e-6) continue;   // a furniture top over a step up (STEP_UP)
       const hit = raycastShapes([sh], o, [0, -1, 0], top + 50);
       if (hit && hit.distance > 1e-4 && hit.normal[1] > 0.7 && hit.point[1] > y) y = hit.point[1];
     }
@@ -2406,7 +2427,7 @@ export class Stage {
     for (const o of obs) {
       if (o.rise > 1.75) continue;                             // walls and cars aren't stood on (height above the local floor)
       const b = o.box, c = b.getCenter(new THREE.Vector3()), sz = b.getSize(new THREE.Vector3());
-      list.push({ id: o.id, shape: "box", pos: c.toArray(), rot: [0, 0, 0, 1], size: sz.toArray(), min: b.min.toArray(), max: b.max.toArray() });
+      list.push({ id: o.id, shape: "box", pos: c.toArray(), rot: [0, 0, 0, 1], size: sz.toArray(), min: b.min.toArray(), max: b.max.toArray(), prop: true, climb: o.climb });
     }
     this._supCache = { set, obs, list };
     return list;

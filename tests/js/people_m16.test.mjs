@@ -356,7 +356,9 @@ test("obstacles: a parked car keyed with roll 0 -> 10 deg and a crate keyed with
     for (let f = 0; f <= 48; f++) { st.frame = f; top = Math.max(top, st._heightAt(walker, f)); }
     return { top };
   };
-  const car = { id: "c1", kind: "car", position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0], roll_deg: 0 }, { frame: 48, position: [0, 0, 0], roll_deg: 10 }] };
+  // (climbable: true: since 2026-11-08 a walk does not vault a car or furniture unless the prop says so; the car is
+  // still an obstacle, which is what this checks)
+  const car = { id: "c1", kind: "car", climbable: true, position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0], roll_deg: 0 }, { frame: 48, position: [0, 0, 0], roll_deg: 10 }] };
   const c = run(car);
   assert.ok(c.top > 0.5, `a parked car keyed with a 10 deg roll: the walker's feet reach ${c.top.toFixed(2)} m`);
   const crate = { id: "c2", kind: "crate", position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0], pitch_deg: 0 }, { frame: 48, position: [0, 0, 0], pitch_deg: 15 }] };
