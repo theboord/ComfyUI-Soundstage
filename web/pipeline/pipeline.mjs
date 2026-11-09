@@ -1229,7 +1229,8 @@ export class Pipeline {
     const l = id != null && (typeof links?.get === "function" ? links.get(id) : links?.[id]);
     if (!l) return;   // typed on the node: left alone
     const origin = l.origin_id ?? l[1], oslot = l.origin_slot ?? l[2];
-    if (origin === 9079 && oslot !== out) look.connect(out, n, slot);
+    // Live graphs carry link ids as strings ("9079"), saved ones as numbers.
+    if (Number(origin) === 9079 && Number(oslot) !== out) look.connect(out, n, slot);
   }
 
   _setDepthMode(k) {
@@ -1809,7 +1810,7 @@ export class Pipeline {
     if (!n || !src || slot < 0) return;
     const l = n.inputs[slot].link != null && this.ctx.app.graph.links?.[n.inputs[slot].link];
     const origin = l && (l.origin_id ?? l[1]);
-    if (origin !== 9086) src.connect(0, n, slot);
+    if (Number(origin) !== 9086) src.connect(0, n, slot);
   }
 
   /** LTX speaks the line itself: the line goes into the motion prompt as dialogue, the audio-driven LTX final

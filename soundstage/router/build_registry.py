@@ -147,7 +147,7 @@ WIRED = [
            "EmptyFlux2LatentImage", "KSampler", "VAEDecode", "ReferenceLatent", "VAEEncode", "ImageScaleBy",
            "ImageScaleToTotalPixels", "GetImageSize", "clip_type:flux2"],
           [{"role": "unet", "folder": "diffusion_models",
-            "any": ["flux-2-klein-9b.safetensors", "flux-2-klein-9b-fp8.safetensors", "flux-2-klein-base-9b.safetensors"]},
+            "any": ["flux-2-klein-9b.safetensors", "flux-2-klein-9b-fp8.safetensors", "flux-2-klein-9b-kv-fp8.safetensors", "flux-2-klein-base-9b.safetensors"]},
            {"role": "text_encoder", "folder": "text_encoders",
             "any": ["qwen_3_8b.safetensors", "qwen_3_8b_fp8mixed.safetensors", "qwen_3_8b_fp8_scaled.safetensors"]},
            {"role": "vae", "folder": "vae", "any": ["flux2-vae.safetensors"]}],
