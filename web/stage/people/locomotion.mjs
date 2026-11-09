@@ -40,7 +40,7 @@ export const START_S = TIMING.start, STOP_S = TIMING.stop;
 export const BODY_LEAD_S = 0.2;
 export const HEAD_LEAD_S = 0.4;
 /** The body's turn is eased over about this long either way (seconds, a Gaussian's sigma). */
-export const TURN_EASE_S = 0.15;
+export const TURN_EASE_S = 0.12;
 export const HEADING = { lead: BODY_LEAD_S, ease: TURN_EASE_S };
 
 // ------------------------------------------------------------------------------------------------ timing

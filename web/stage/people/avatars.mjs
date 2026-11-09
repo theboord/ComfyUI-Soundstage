@@ -380,10 +380,10 @@ function humanLayer(skin, w, move, frame, fps) {
   const means = clipMeans(skin.kit);
   // (a holder's or carrier's arms are the prop's: their swing is left as the clip has it)
   const arms = move.holds ? 1 : 1 + (Loco.armScale(move.speed, move.style.arms) - 1) * Math.min(1, mw / 0.5);
-  if (mw > 1e-3 && Loco.OPTS.stride) {
+  if (mw > 1e-3 && (Loco.OPTS.stride || Loco.OPTS.layer)) {
     for (const [name, kind, share] of SWING) {
       const bone = b[name];
-      if (!bone) continue;
+      if (!bone || (kind === "leg" ? !Loco.OPTS.stride : !Loco.OPTS.layer)) continue;
       // the blended mean of the clips playing
       _mq.set(0, 0, 0, 0);
       let ref = null;
