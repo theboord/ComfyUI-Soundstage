@@ -60,10 +60,51 @@ def badges_for(m):
     return out
 
 
-def label_for(m):
+def label_for(m, edit=False):
+    """The dropdown label (also the value a workflow stores). edit=True: the entry's `edit_name` (Krea 2 Turbo with the
+    Identity Edit LoRA installed, on the edit stage); find_model accepts both."""
     where = "local" if m.get("kind") in LOCAL_KINDS else m.get("provider", "")
     b = badges_for(m)
-    return f"{m['name']} · {where}" + (f" [{' '.join(b)}]" if b else "")
+    name = m.get("edit_name") if edit and m.get("edit_name") else m["name"]
+    return f"{name} · {where}" + (f" [{' '.join(b)}]" if b else "")
+
+
+# Requirements that are not node classes, as pseudo class names in the loaded set: "clip_type:<t>" = the CLIPLoader
+# offers text-encoder type <t> (FLUX 3 Klein's "flux3" arrived with ComfyUI 0.39; the pods run 0.38).
+CLIP_TYPE = "clip_type:"
+
+
+def loaded_classes(mappings) -> set:
+    """The loaded node classes plus a clip_type:<t> entry for each CLIPLoader text-encoder type (from its INPUT_TYPES)."""
+    out = set(mappings)
+    try:
+        types = mappings["CLIPLoader"].INPUT_TYPES()["required"]["type"][0]
+        out |= {CLIP_TYPE + str(t) for t in types}
+    except Exception:  # noqa: BLE001 - no CLIPLoader, or a shape we don't know: no clip types
+        pass
+    return out
+
+
+def need_label(c: str) -> str:
+    """What a missing requirement is, in words."""
+    if c.startswith(CLIP_TYPE):
+        t = c[len(CLIP_TYPE):]
+        return (f"the \"{t}\" text-encoder type in ComfyUI's Load CLIP node (update ComfyUI"
+                + (": FLUX 3 Klein needs 0.39 or newer)" if t == "flux3" else ")"))
+    return c
+
+
+def edit_label_wanted(m, stage, list_files, loaded_classes=None):
+    """The edit label is shown on the edit stage when the entry's `edit_role` weight (and its node classes) is installed."""
+    role = m.get("edit_role")
+    if not role or not m.get("edit_name") or stage != "edit_image":
+        return False
+    spec = next((s for s in m.get("optional_weights", []) if s["role"] == role), None)
+    if spec is None:
+        return False
+    if loaded_classes is not None and any(c not in loaded_classes for c in spec.get("classes", [])):
+        return False
+    return bool(resolve_weight(spec, list_files))
 
 
 def resolve_weight(spec, list_files):
@@ -112,7 +153,7 @@ def find_model(key, registry=None):
     """Look a dropdown value up by label (what the workflow stores) or by registry id."""
     reg = registry or load_registry()
     for m in reg["models"]:
-        if m.get("adapter") and (label_for(m) == key or m["id"] == key):
+        if m.get("adapter") and (label_for(m) == key or m["id"] == key or (m.get("edit_name") and label_for(m, True) == key)):
             return m
     return None
 
@@ -138,4 +179,5 @@ def stage_options(stage, loaded_classes, list_files, open_only=None, registry=No
     models = available_models(stage, loaded_classes, list_files, open_only, registry)
     if not models:
         return [(NONE_KEY, [], None)]
-    return [(label_for(m), option_widgets(m, stage), m) for m in models]
+    return [(label_for(m, edit_label_wanted(m, stage, list_files, loaded_classes)), option_widgets(m, stage), m)
+            for m in models]

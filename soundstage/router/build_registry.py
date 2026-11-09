@@ -60,11 +60,19 @@ def partner(id, name, provider, stages, adapter, classes, variant=None, params=N
 
 
 def local(id, name, provider, stages, adapter, classes, weights, license, params=None, notes="",
-          source_ids=None, kind="local", optional_weights=None, auto_download=False, variant=None):
-    return {"id": id, "name": name, "provider": provider, "kind": kind, "stages": stages,
-            "adapter": adapter, "variant": variant, "classes": classes, "weights": weights,
-            "optional_weights": optional_weights or [], "auto_download": auto_download,
-            "params": params or {}, "license": license, "notes": notes, "source_ids": source_ids or []}
+          source_ids=None, kind="local", optional_weights=None, auto_download=False, variant=None, edit_name=None,
+          edit_role=None, optional_classes=None):
+    """edit_name / edit_role: on the edit stage the dropdown says edit_name when the optional weight edit_role is
+    installed (registry.edit_label_wanted)."""
+    m = {"id": id, "name": name, "provider": provider, "kind": kind, "stages": stages,
+         "adapter": adapter, "variant": variant, "classes": classes, "weights": weights,
+         "optional_weights": optional_weights or [], "auto_download": auto_download,
+         "params": params or {}, "license": license, "notes": notes, "source_ids": source_ids or []}
+    if edit_name:
+        m.update(edit_name=edit_name, edit_role=edit_role)
+    if optional_classes:   # used when this ComfyUI has them, never required (ReferenceMultiLatent: 0.39+)
+        m["optional_classes"] = optional_classes
+    return m
 
 
 def res(options, default=None):
@@ -85,12 +93,20 @@ WIRED = [
           "Krea 2 Community License: commercial only if company revenue <$1M; moderation required",
           params={"denoise": {"min": 0.0, "max": 1.0, "default": 0.85, "stages": ["edit_image"]}},
           optional_weights=[{"role": "depth_lora", "folder": "loras", "any": ["depth-control-lora.safetensors"],
-                             "classes": ["Krea2ControlLoRALoader", "Krea2ControlImageEncode", "Krea2ControlApply"]}],
+                             "classes": ["Krea2ControlLoRALoader", "Krea2ControlImageEncode", "Krea2ControlApply"]},
+                            # Paint Studio's Whole frame / Replace / Fill (fill_graph.py, edit_graph.krea_edit): the
+                            # Krea 2 Identity Edit LoRA (v1_2 on Jon's machine in loras/Krea2/, v1_1 on the pods in
+                            # loras/krea2/) and the comfyui-krea2edit nodes
+                            {"role": "edit_lora", "folder": "loras",
+                             "any": ["krea2_identity_edit_v1_2.safetensors", "krea2_identity_edit_v1_1.safetensors"],
+                             "classes": ["Krea2EditModelPatch", "Krea2EditGroundedEncode"]}],
           notes="8 steps cfg 1. control_image = stage depth steers the layout (Krea2 depth-control LoRA). "
+                "Paint Studio (Whole frame, Replace, Fill) edits through the Krea 2 Identity Edit LoRA (10 steps "
+                "euler/simple, the source as the aligned scene reference); without it Whole frame and Replace refuse. "
                 "Edit stage = the proven Soundstage look-still: img2img from the stage guide frame @0.85 + depth. "
                 "Depth control needs the comfyui-krea2-controlnet pack. depth_lock (④ Frame \"Lock to the stage "
                 "depth\"): start from the blurred Color pass at stage_denoise, held to the depth pass (no cast pictures).",
-          source_ids=["open.krea_2"]),
+          source_ids=["open.krea_2"], edit_name="Krea 2 Turbo + Identity Edit", edit_role="edit_lora"),
     local("open.z_image_turbo", "Z-Image Turbo", "Alibaba Tongyi-MAI", ["generate_image"], "z_image",
           ["UNETLoader", "CLIPLoader", "VAELoader", "CLIPTextEncode", "ConditioningZeroOut",
            "EmptySD3LatentImage", "ModelSamplingAuraFlow", "KSampler", "VAEDecode"],
@@ -101,8 +117,11 @@ WIRED = [
           "Apache 2.0", notes="Fastest commercial-safe previz model. 8 steps res_multistep.",
           source_ids=["open.z_image"]),
     local("open.flux3_klein", "FLUX 3 Klein", "Black Forest Labs", ["generate_image", "edit_image"], "flux3_klein",
+          # ReferenceLatent, not ReferenceMultiLatent (0.39+ only): the adapters chain it when the newer node is missing.
+          # The "flux3" text-encoder type is the honest gate: it also arrived with 0.39 (registry.CLIP_TYPE).
           ["UNETLoader", "CLIPLoader", "VAELoader", "CLIPTextEncode", "ConditioningZeroOut",
-           "EmptyFlux2LatentImage", "KSampler", "VAEDecode", "ReferenceMultiLatent", "VAEEncode", "ImageScaleBy"],
+           "EmptyFlux2LatentImage", "KSampler", "VAEDecode", "ReferenceLatent", "VAEEncode", "ImageScaleBy",
+           "ImageScaleToTotalPixels", "GetImageSize", "clip_type:flux3"],
           [{"role": "unet", "folder": "diffusion_models", "any": ["flux3-image-klein-int8-convrot.safetensors"]},
            {"role": "text_encoder", "folder": "text_encoders",
             "any": ["qwen3vl_4b_int8_convrot.safetensors", "qwen3vl_4b_fp8_scaled.safetensors"]},
@@ -115,10 +134,27 @@ WIRED = [
               {"role": "krea_vae", "folder": "vae", "any": ["qwen_image_vae.safetensors"]},
               {"role": "depth_lora", "folder": "loras", "any": ["depth-control-lora.safetensors"],
                "classes": ["Krea2ControlLoRALoader", "Krea2ControlImageEncode", "Krea2ControlApply"]}],
-          notes="Edit = ReferenceMultiLatent (image + refs, 1 MP). Distilled template settings. depth_lock (④ Frame "
+          notes="Edit = ReferenceMultiLatent (image + refs, 1 MP), or chained ReferenceLatent on a ComfyUI without it. "
+                "Distilled template settings. depth_lock (④ Frame "
                 "\"Lock to the stage depth\"): a Krea 2 Turbo + depth-control LoRA pass on the Klein frame, held to the "
                 "stage depth pass (optional krea_* weights).",
-          source_ids=["open.flux3_klein"]),
+          source_ids=["open.flux3_klein"], optional_classes=["ReferenceMultiLatent"]),
+    # FLUX.2 Klein 9B: the same reference-latent edit wiring as FLUX 3 Klein (adapters.flux3_klein with clip type
+    # "flux2"), and it runs on ComfyUI 0.38 (the pods). Its LoRAs (Instapic, KLEIN-DETAILER, lenovo_flux_klein9b …) go on
+    # through ④ Frame's add-on stack (lora_check family "klein"). 4-step distilled.
+    local("open.flux2_klein_9b", "FLUX.2 Klein 9B", "Black Forest Labs", ["generate_image", "edit_image"], "flux2_klein",
+          ["UNETLoader", "CLIPLoader", "VAELoader", "CLIPTextEncode", "ConditioningZeroOut",
+           "EmptyFlux2LatentImage", "KSampler", "VAEDecode", "ReferenceLatent", "VAEEncode", "ImageScaleBy",
+           "ImageScaleToTotalPixels", "GetImageSize", "clip_type:flux2"],
+          [{"role": "unet", "folder": "diffusion_models",
+            "any": ["flux-2-klein-9b.safetensors", "flux-2-klein-9b-fp8.safetensors", "flux-2-klein-base-9b.safetensors"]},
+           {"role": "text_encoder", "folder": "text_encoders",
+            "any": ["qwen_3_8b.safetensors", "qwen_3_8b_fp8mixed.safetensors", "qwen_3_8b_fp8_scaled.safetensors"]},
+           {"role": "vae", "folder": "vae", "any": ["flux2-vae.safetensors"]}],
+          "FLUX Non-Commercial License (FLUX.2 [klein] 9B): non-commercial use only; a commercial licence is sold by BFL",
+          notes="Edit = ReferenceMultiLatent, or chained ReferenceLatent on a ComfyUI without it (0.38). 4 steps cfg 1 "
+                "euler/simple by default. Its LoRAs go on with ④ Frame's add-on stack. No depth lock (Krea 2 only).",
+          source_ids=["open.flux2_klein_9b"], optional_classes=["ReferenceMultiLatent"]),
     partner("api.nano_banana_2_1", "Nano Banana 2.1", "Google", ["generate_image", "edit_image"], "nano_banana",
             ["GeminiNanoBanana2V2"], variant="Gemini Nano Banana 2.1", params=res(["1K", "2K", "4K"], "2K")),
     partner("api.nano_banana_2", "Nano Banana 2 (Gemini 3.1 Flash Image)", "Google", ["generate_image", "edit_image"],

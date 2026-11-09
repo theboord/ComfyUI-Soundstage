@@ -558,23 +558,62 @@ def ref_canvas(w: int, h: int, mp: float) -> tuple[int, int]:
     return max(1, round(w * s)), max(1, round(h * s))
 
 
+def has_class(p, name):
+    """Does this ComfyUI have node class `name`? p["classes"] is set by the router (nodes_router._prepare); a p without
+    it (tests, older callers) assumes the newest ComfyUI."""
+    cl = p.get("classes")
+    return cl is None or name in cl
+
+
+def snapped_canvas(w: int, h: int, mp: float, step: int = 16) -> tuple[int, int]:
+    """The size ImageScaleToTotalPixels(megapixels=mp, resolution_steps=step) gives a w x h image: a multiple of 16, so
+    the latent and the decoded picture are the same size (edit_graph._scaled; 1 left an 8 px noise band)."""
+    s = math.sqrt(mp * 1024 * 1024 / (w * h))
+    return max(step, round(w * s / step) * step), max(step, round(h * s / step) * step)
+
+
+def klein_refs(g, p, pos, neg, vae, images, mp, resolution="resize"):
+    """Reference latents for a Klein edit: (pos, neg, latent on the first reference's canvas, canvas size or None).
+    ReferenceMultiLatent when this ComfyUI has it (0.39+); else what it does, chained by hand as ComfyUI's own FLUX.2
+    Klein edit templates do: ImageScaleToTotalPixels -> VAEEncode -> ReferenceLatent on positive and negative, and an
+    empty latent at the first reference's (16-snapped) size."""
+    if has_class(p, "ReferenceMultiLatent"):
+        kw = {"positive": pos, "negative": neg, "vae": vae, "resolution": resolution}
+        if resolution == "resize":
+            kw["resolution.megapixels"] = mp
+        for i, link in enumerate(images):
+            kw[f"images.image{i}"] = link
+        r = g.node("ReferenceMultiLatent", **kw)
+        return r.out(0), r.out(1), r.out(2), None
+    from .edit_graph import klein_references   # edit_graph imports this module
+    pos, neg, first = klein_references(g, vae, pos, neg, images, mp if resolution == "resize" else None)
+    size = g.node("GetImageSize", image=first)
+    latent = g.node("EmptyFlux2LatentImage", width=size.out(0), height=size.out(1), batch_size=1).out(0)
+    return pos, neg, latent, "snapped"
+
+
+KLEIN_CLIP = {"flux3_klein": "flux3", "flux2_klein": "flux2"}
+KLEIN_NAME = {"flux3_klein": "FLUX 3 Klein", "flux2_klein": "FLUX.2 Klein 9B"}
+KLEIN_STEPS = {"flux3_klein": (16, 15), "flux2_klein": (4, 4)}   # (edit, text-to-image) when the node says 0
+
+
 def flux3_klein(g, m, p):
-    """Templates image_flux3_klein_distilled_t2i / _image_edit."""
-    model, clip, vae = _loaders(g, p["weights"], "flux3")
+    """Templates image_flux3_klein_distilled_t2i / _image_edit; FLUX.2 Klein 9B (adapter flux2_klein) the same way with
+    its own text-encoder type and 4 steps."""
+    ad = m.get("adapter") or "flux3_klein"
+    name, (edit_steps, t2i_steps) = KLEIN_NAME.get(ad, "FLUX 3 Klein"), KLEIN_STEPS.get(ad, (16, 15))
+    model, clip, vae = _loaders(g, p["weights"], KLEIN_CLIP.get(ad, "flux3"))
     model = _with_shift(g, _with_lora(g, model, p), p)
     pos = g.node("CLIPTextEncode", text=p["prompt"], clip=clip).out(0)
-    images = ([need(p, "image", "FLUX 3 Klein edit", "an image")] if p["stage"] == "edit_image" else [])
+    images = ([need(p, "image", f"{name} edit", "an image")] if p["stage"] == "edit_image" else [])
     images += list(p.get("refs") or [])
     if images:
         # A negative prompt only does anything with CFG above 1 (Klein is distilled for CFG 1).
         neg = (g.node("CLIPTextEncode", text=p["negative"], clip=clip).out(0) if p.get("negative") and (p.get("cfg") or 1) > 1
                else g.node("ConditioningZeroOut", conditioning=pos).out(0))
         mp = round(max(0.25, p["width"] * p["height"] / 1e6), 2) if p["width"] and p["height"] else 1.0
-        kw = {"positive": pos, "negative": neg, "vae": vae, "resolution": "resize", "resolution.megapixels": mp}
-        for i, link in enumerate(images):
-            kw[f"images.image{i}"] = link
-        r = g.node("ReferenceMultiLatent", **kw)
-        latent, denoise = r.out(2), 1.0
+        rpos, rneg, latent, chained = klein_refs(g, p, pos, neg, vae, images, mp)
+        denoise = 1.0
         lock = stage_denoise((p.get("params") or {}).get("stage_denoise"))
         if lock < 1.0 and p["stage"] == "edit_image" and p.get("control") is not None and p["width"] and p["height"]:
             # ④ Frame from the stage (the frame node has the stage depth on control_image): start from the Color
@@ -583,18 +622,19 @@ def flux3_klein(g, m, p):
             src = blur_start(g, images[0])
             # on the reference's own canvas, the one a from-noise frame is painted on: the snapped 1680x896 canvas
             # (the reference sat on 1712x912) gave dark rounded borders and a porthole vignette (M27 frame 1)
-            src = resize(g, src, *ref_canvas(p["width"], p["height"], mp))
+            canvas = (snapped_canvas if chained else ref_canvas)(p["width"], p["height"], mp)
+            src = resize(g, src, *canvas)
             latent, denoise = g.node("VAEEncode", pixels=src, vae=vae).out(0), lock
         sampler, scheduler = _sampling(p, "euler", "simple")
-        s = g.node("KSampler", model=model, seed=int(p["seed"]), steps=p.get("steps") or 16, cfg=p.get("cfg") or 1.0,
-                   sampler_name=sampler, scheduler=scheduler, positive=r.out(0), negative=r.out(1), latent_image=latent,
+        s = g.node("KSampler", model=model, seed=int(p["seed"]), steps=p.get("steps") or edit_steps, cfg=p.get("cfg") or 1.0,
+                   sampler_name=sampler, scheduler=scheduler, positive=rpos, negative=rneg, latent_image=latent,
                    denoise=denoise).out(0)
     else:
         neg = g.node("CLIPTextEncode", text=p.get("negative") or "", clip=clip).out(0)
         latent = g.node("EmptyFlux2LatentImage", width=snap(p["width"], 16), height=snap(p["height"], 16),
                         batch_size=1).out(0)
-        sampler, scheduler = _sampling(p, "er_sde", "simple")
-        s = g.node("KSampler", model=model, seed=int(p["seed"]), steps=p.get("steps") or 15, cfg=p.get("cfg") or 1.0, sampler_name=sampler,
+        sampler, scheduler = _sampling(p, "er_sde" if ad == "flux3_klein" else "euler", "simple")
+        s = g.node("KSampler", model=model, seed=int(p["seed"]), steps=p.get("steps") or t2i_steps, cfg=p.get("cfg") or 1.0, sampler_name=sampler,
                    scheduler=scheduler, positive=pos, negative=neg, latent_image=latent, denoise=1.0).out(0)
     img = g.node("VAEDecode", samples=s, vae=vae).out(0)
     if (p["stage"] == "edit_image" and p.get("control") is not None
@@ -1005,7 +1045,7 @@ def birefnet_pack(g, m, p):
 
 ADAPTERS = {
     # images
-    "krea2": krea2, "z_image": z_image, "flux3_klein": flux3_klein, "nano_banana": nano_banana,
+    "krea2": krea2, "z_image": z_image, "flux3_klein": flux3_klein, "flux2_klein": flux3_klein, "nano_banana": nano_banana,
     "gpt_image": gpt_image, "flux3_api": flux3_api, "seedream": seedream, "krea2_api": krea2_api,
     "z_image_cloud": z_image_cloud,
     # video

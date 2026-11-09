@@ -2804,6 +2804,83 @@
 "IMAGE"
 ]
 },
+"ImageScaleToTotalPixels": {
+"input": {
+"required": {
+"image": [
+"IMAGE",
+{}
+],
+"upscale_method": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"nearest-exact",
+"bilinear",
+"area",
+"bicubic",
+"lanczos"
+]
+}
+],
+"megapixels": [
+"FLOAT",
+{
+"default": 1.0,
+"min": 0.01,
+"max": 16.0,
+"step": 0.01
+}
+],
+"resolution_steps": [
+"INT",
+{
+"advanced": true,
+"default": 1,
+"min": 1,
+"max": 256
+}
+]
+}
+},
+"input_order": {
+"required": [
+"image",
+"upscale_method",
+"megapixels",
+"resolution_steps"
+]
+},
+"is_input_list": false,
+"output": [
+"IMAGE"
+],
+"output_is_list": [
+false
+],
+"output_name": [
+"IMAGE"
+],
+"output_tooltips": [
+null
+],
+"output_matchtypes": null,
+"name": "ImageScaleToTotalPixels",
+"display_name": "Scale Image to Total Pixels",
+"description": "",
+"python_module": "comfy_extras.nodes_post_processing",
+"category": "image/upscaling",
+"output_node": false,
+"deprecated": false,
+"experimental": false,
+"dev_only": false,
+"api_node": false,
+"price_badge": null,
+"search_aliases": null,
+"essentials_category": null,
+"has_intermediate_output": false
+},
 "ImageToMask": {
 "input": {
 "required": {
@@ -3743,6 +3820,198 @@
 "output": [
 "MODEL"
 ]
+},
+"Krea2EditGroundedEncode": {
+"input": {
+"required": {
+"clip": [
+"CLIP"
+],
+"prompt": [
+"STRING",
+{
+"multiline": true,
+"default": ""
+}
+]
+},
+"optional": {
+"image": [
+"IMAGE"
+],
+"image_b": [
+"IMAGE",
+{
+"tooltip": "2nd reference (subject) for multi-ref LoRAs; vision blocks in training order: scene, subject"
+}
+],
+"grounding_px": [
+"INT",
+{
+"default": 768,
+"min": 0,
+"max": 4096,
+"step": 64,
+"tooltip": "cap longest side fed to Qwen3-VL; 0 = native"
+}
+],
+"system_prompt": [
+"STRING",
+{
+"multiline": true,
+"default": "",
+"tooltip": "advanced (optional): override the grounding system prompt (empty = training default). Steers what the vision encoder attends to, e.g. facial identity detail."
+}
+]
+}
+},
+"input_order": {
+"required": [
+"clip",
+"prompt"
+],
+"optional": [
+"image",
+"image_b",
+"grounding_px",
+"system_prompt"
+]
+},
+"is_input_list": false,
+"output": [
+"CONDITIONING"
+],
+"output_is_list": [
+false
+],
+"output_name": [
+"CONDITIONING"
+],
+"name": "Krea2EditGroundedEncode",
+"display_name": "Krea2 Edit (grounded encode)",
+"description": "Encodes the edit instruction grounded on the source image (training-matched semantic path).",
+"python_module": "custom_nodes.comfyui-krea2edit",
+"category": "krea2edit",
+"output_node": false,
+"has_intermediate_output": false,
+"search_aliases": []
+},
+"Krea2EditModelPatch": {
+"input": {
+"required": {
+"model": [
+"MODEL"
+],
+"source_latent": [
+"LATENT"
+]
+},
+"optional": {
+"source_latent_b": [
+"LATENT",
+{
+"tooltip": "2nd reference (subject photo) for multi-ref LoRAs -> RoPE frame=2, training-matched order: scene first, subject second"
+}
+],
+"ref_boost": [
+"FLOAT",
+{
+"default": 1.0,
+"min": 0.0,
+"max": 1000.0,
+"step": 0.01,
+"round": 0.001,
+"tooltip": "reference-fidelity dial: multiplies target->reference attention. Applies to the LAST ref (= the subject in two-ref workflows, the only ref in single-ref). 1.0 = off, >1 pulls harder toward the reference's appearance, <1 loosens. Optimal value is model-specific"
+}
+],
+"ref_boost_a": [
+"FLOAT",
+{
+"default": 1.0,
+"min": 0.0,
+"max": 1000.0,
+"step": 0.01,
+"round": 0.001,
+"tooltip": "same dial for the FIRST ref (= the scene in two-ref workflows). No effect in single-ref workflows. 1.0 = off"
+}
+],
+"fit_mode": [
+[
+"fit",
+"crop (legacy)"
+],
+{
+"default": "fit",
+"tooltip": "how an image source fits a mismatched output aspect ratio (needs vae + source_image connected): fit = resample the source to the target grid at a centered offset \u2014 matches how this model was trained (default, use this); crop (legacy) = center-crop to the target AR then resize (v1/v1.1 geometry, only for older weights)"
+}
+],
+"ref_boost_mask": [
+"MASK",
+{
+"tooltip": "optional region on the (last) reference to boost, e.g. the face; empty = whole reference"
+}
+],
+"vae": [
+"VAE",
+{
+"tooltip": "RECOMMENDED with source_image: enables the blur-proof pixel-space path (crop+resize in pixels, encode internally) \u2014 immune to input/output resolution mismatches"
+}
+],
+"source_image": [
+"IMAGE",
+{
+"tooltip": "source as IMAGE (with vae connected): overrides source_latent with exact pixel-space fitting \u2014 fixes blurry results from mismatched resolutions"
+}
+],
+"source_image_b": [
+"IMAGE",
+{
+"tooltip": "2nd reference as IMAGE (with vae)"
+}
+],
+"target_latent": [
+"LATENT",
+{
+"tooltip": "RECOMMENDED with vae + source_image: wire the SAME latent you feed KSampler.latent_image. Lets the node VAE-encode the source here, before sampling starts, instead of on the first step \u2014 otherwise the VAE is pulled onto the GPU mid-sampling and can evict part of the diffusion model, slowing every remaining step on VRAM-tight setups"
+}
+]
+}
+},
+"input_order": {
+"required": [
+"model",
+"source_latent"
+],
+"optional": [
+"source_latent_b",
+"ref_boost",
+"ref_boost_a",
+"fit_mode",
+"ref_boost_mask",
+"vae",
+"source_image",
+"source_image_b",
+"target_latent"
+]
+},
+"is_input_list": false,
+"output": [
+"MODEL"
+],
+"output_is_list": [
+false
+],
+"output_name": [
+"MODEL"
+],
+"name": "Krea2EditModelPatch",
+"display_name": "Krea2 Edit (source patch)",
+"description": "Adds the krea2_edit in-context source-preservation path (source latent as frame=1 tokens) to a Krea2 model.",
+"python_module": "custom_nodes.comfyui-krea2edit",
+"category": "krea2edit",
+"output_node": false,
+"has_intermediate_output": false,
+"search_aliases": []
 },
 "Krea2ImageNode": {
 "input": {
@@ -6595,6 +6864,58 @@
 "output": [
 "NOISE"
 ]
+},
+"ReferenceLatent": {
+"input": {
+"required": {
+"conditioning": [
+"CONDITIONING",
+{}
+]
+},
+"optional": {
+"latent": [
+"LATENT",
+{}
+]
+}
+},
+"input_order": {
+"required": [
+"conditioning"
+],
+"optional": [
+"latent"
+]
+},
+"is_input_list": false,
+"output": [
+"CONDITIONING"
+],
+"output_is_list": [
+false
+],
+"output_name": [
+"CONDITIONING"
+],
+"output_tooltips": [
+null
+],
+"output_matchtypes": null,
+"name": "ReferenceLatent",
+"display_name": "Set Reference Latent",
+"description": "This node sets the guiding latent for an edit model. If the model supports it you can chain multiple to set multiple reference images.",
+"python_module": "comfy_extras.nodes_edit_model",
+"category": "model/conditioning",
+"output_node": false,
+"deprecated": false,
+"experimental": false,
+"dev_only": false,
+"api_node": false,
+"price_badge": null,
+"search_aliases": null,
+"essentials_category": null,
+"has_intermediate_output": false
 },
 "ReferenceMultiLatent": {
 "input": {

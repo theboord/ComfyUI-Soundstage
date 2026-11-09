@@ -2,7 +2,8 @@
 
 SoundstageLook   look JSON (filled by the Look tab, or a typed look like "Korean thriller, anamorphic,
                  teal-orange") + optional scene_json from SoundstageStage
-                 -> still_prompt (frame 1 only), still_negative, motion_prompt (LTX), look_json.
+                 -> still_prompt (frame 1 only), still_negative, motion_prompt (LTX), look_json,
+                 edit_prompt (④ Frame on FLUX Klein: an edit instruction, no placement words).
 
 The stage owns the physical shot (blocking, lens, time of day, weather); the look owns how it is photographed.
 Changing only the look leaves SoundstageStage's value untouched, so the ladder re-runs from rung 2.
@@ -67,6 +68,11 @@ class SoundstageLook(IO.ComfyNode):
                                  tooltip="LTX paragraph: blocking, marks, the camera move and its end frame, look."),
                 IO.String.Output("out_look_json", display_name="look_json",
                                  tooltip="Normalised look + prompts + KB refs + notes."),
+                # Last on purpose: workflows saved with four outputs keep their links on the same slots.
+                IO.String.Output("out_edit_prompt", display_name="edit_prompt",
+                                 tooltip="For an edit model that sees the stage's Color pass as image 1 (FLUX Klein on "
+                                         "④ Frame): 'Turn image 1 … into a real photograph of the same shot', then "
+                                         "the look without the shot-size and placement words."),
             ],
         )
 
@@ -79,7 +85,7 @@ class SoundstageLook(IO.ComfyNode):
                                f"MOTION (LTX)\n{result['motion_prompt']}"]
                               + ([f"NOTES\n" + "\n".join(result["notes"])] if result["notes"] else []))
         return IO.NodeOutput(result["still_prompt"], result["still_negative"], result["motion_prompt"],
-                             json.dumps(result, ensure_ascii=False), ui={"text": [summary]})
+                             json.dumps(result, ensure_ascii=False), result["edit_prompt"], ui={"text": [summary]})
 
 
 NODES = [SoundstageLook]

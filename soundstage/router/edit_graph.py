@@ -1,45 +1,44 @@
-"""One image-edit builder for every App path that changes a picture: ④ Frame, Paint Studio's Whole frame, Generative
-Fill / Remove / Replace / Extend, the Ripple "Edit first frame" (Paint Studio on frame 1 of a clip) and cast-picture edits.
+"""Image-edit building blocks shared by the App paths that change a picture (C25 diagnosis, C26 verification).
 
-Before this module each path wired the edit models its own way, and two of them did not edit at all
-(docs/decisions.md 2026-11-08, share/QA/klein_fix):
+What is wired (2026-11-08):
+- ④ Frame on FLUX Klein: the Look node's `edit_prompt` output is `frame_instruction(...)` around the look without the
+  shot-size and placement words (look/compile.py compile_still(edit=True)). Klein is an edit model: with a plain
+  description it kept image 1, the grey clay (Jon's machine, FLUX 3 Klein, C26 root cause A), or recomposed the shot
+  (FLUX.2 Klein 9B, C25). The App points the frame node's prompt at it.
+- Paint Studio on Krea 2 Turbo (fill_graph._krea2): Whole frame, Replace and Fill go through `krea_edit`, the Krea 2
+  Identity Edit LoRA with the source as the aligned "scene" reference. Before, Whole frame (a white mask at denoise 1)
+  was plain text-to-image and the source never reached the model (C26 root cause B); Replace dropped the cast picture.
+  Without the LoRA, Whole frame and Replace refuse with NO_KREA_EDIT.
+- Klein's references (adapters.klein_refs, fill_graph._klein) chain ReferenceLatent through `klein_references` when
+  ComfyUI has no ReferenceMultiLatent (before 0.39: the pods), as ComfyUI's own FLUX.2 Klein edit templates do.
 
-- Krea 2 Turbo is a text-to-image model. Paint Studio ran it on a masked latent with a plain description and no
-  reference, so Whole frame (a white mask at denoise 1) and therefore Ripple's "new reference" threw the picture away
-  and painted a new one from the words. Now Krea 2 edits through the Krea 2 Identity Edit LoRA
-  (krea2_identity_edit_v1_1, Krea2EditModelPatch + Krea2EditGroundedEncode): the source picture is the position-aligned
-  "scene" reference, a cast picture the "subject". Without the LoRA a whole-frame edit is refused with a sentence.
-- FLUX 3 Klein saw the clay Color pass as image 1 with a plain description of the shot. An edit model keeps image 1
-  unless it is told what to change, so it kept the grey mannequins (share/OneClick/C gaze_A0). Every Klein prompt is
-  now an instruction ("Turn image 1 ... into a real photograph ..."), and ④ Frame also hands Klein the stage depth
-  pass as image 2, the only structure control a reference-latent edit model takes.
-- Klein's references go through ReferenceLatent (in ComfyUI since FLUX.1 Kontext, the wiring of the official
-  FLUX.2 Klein edit templates) instead of ReferenceMultiLatent, which only ComfyUI >= 0.39 has: on an older ComfyUI
-  Klein vanished from every model list and Paint Studio fell back to Krea 2.
+`klein_edit` is the one-builder version of the Klein paths; nothing calls it yet. Every canvas is 16-snapped (_scaled).
 
-Structure control per path: ④ Frame has the stage, so its depth pass goes in (Klein: as a reference; Krea 2: the Krea2
-depth-control LoRA). Paint Studio paths edit any picture (a frame of an imported clip has no stage): there the source
-picture itself is the aligned reference that holds the layout, and the instruction says to keep it.
+Structure control: Klein takes none. control_image never reaches its conditioning (adapters.flux3_klein); its layout
+comes only from the source picture as an aligned reference plus an instruction that says to keep it. Real depth control
+is Krea 2 only (the Krea2 depth-control LoRA: ④ Frame's Krea 2 + depth, and Lock to the stage depth Light / Strict).
 
 No ComfyUI imports: built against a GraphBuilder-like `g`, checked against an /object_info snapshot in tests.
 """
 from __future__ import annotations
 
-from .adapters import (RouterError, _loaders, _sampling, _with_lora, _with_shift, blur_start, depth_control,
-                       KREA_STEPS)
+from .adapters import (RouterError, _loaders, _sampling, _with_lora, _with_shift, blur_start, depth_control)
 
-KREA_EDIT_LORA = "krea2_identity_edit_v1_1.safetensors"   # registry role "edit_lora" (loras/krea2/ on the pods)
+# registry role "edit_lora" (open.krea_2_turbo): v1_2 in loras/Krea2/ on Jon's machine, v1_1 in loras/krea2/ on the pods
+KREA_EDIT_LORAS = ("krea2_identity_edit_v1_2.safetensors", "krea2_identity_edit_v1_1.safetensors")
+KREA_EDIT_STEPS = 10     # the comfyui-krea2edit pack's recipe: LoRA 1.0, 10 steps, euler / simple, cfg 1 (C26 on Jon's machine)
 SCENE_BOOST = 1.0        # Krea2EditModelPatch ref_boost_a: the source picture (the layout). research/11_posestudio_hack.md
 SUBJECT_BOOST = 4.0      # ref_boost: the cast picture (the likeness), the Pose Studio recipe's CHARACTER strength
+RES_STEP = 16            # every edit canvas is a multiple of 16: latent and decoded picture the same size, no noise band
 
-NO_KREA_EDIT = ("Krea 2 Turbo is a text-to-image model: to change a whole picture it needs the Krea 2 Identity Edit LoRA "
-                "(loras/krea2/krea2_identity_edit_v1_1.safetensors) and the comfyui-krea2edit nodes. Pick FLUX 3 Klein, "
-                "or mask an area and use Generative Fill.")
+NO_KREA_EDIT = ("Krea 2 Turbo only paints new pictures from words: to change a whole picture, or to put a cast member "
+                "in, it needs the Krea 2 Identity Edit LoRA (krea2_identity_edit_v1_2 or v1_1 in models/loras) and the "
+                "comfyui-krea2edit nodes. Pick FLUX 3 Klein instead, or mask an area and use Generative Fill.")
 
 
 # ---------------------------------------------------------------- prompts
 
-def frame_instruction(description: str, depth: bool, n_refs: int = 0) -> str:
+def frame_instruction(description: str, depth: bool = False, n_refs: int = 0) -> str:
     """④ Frame: the clay Color pass (image 1) becomes a photograph of the same shot. An edit model needs the change
     spelled out: with a description alone it keeps image 1, mannequins and all."""
     d = (description or "").strip().rstrip(".")
@@ -52,20 +51,26 @@ def frame_instruction(description: str, depth: bool, n_refs: int = 0) -> str:
             "camera, the framing and every person, vehicle and object exactly where they are in image 1, at the same "
             "size, pose and facing" + (", in the depth layout shown by the depth map in image 2" if depth else "") + ". "
             "Replace every grey mannequin with a real person in real clothes with natural skin and hair, every plain "
-            "shape with the real object, and the flat walls and ground with real materials. No grey clay anywhere."
+            "shape with the real object, and the flat walls and ground with real materials. No grey clay anywhere."   # clay-prompt: model words
             + refs + (f" The photograph: {d}." if d else ""))
 
 
 # ---------------------------------------------------------------- references
 
 def _scaled(g, image, mp):
+    """`image` at about `mp` megapixels (1 MP = 1024 x 1024 px), aspect kept, both sides snapped to a multiple of 16
+    (resolution_steps): with 1 a 1312x704 source came back 1392x744 with an 8 px band of noise along the bottom (C26).
+    mp None = as it is (ReferenceMultiLatent's "keep resolution")."""
+    if mp is None:
+        return image
     return g.node("ImageScaleToTotalPixels", image=image, upscale_method="lanczos", megapixels=float(mp),
-                  resolution_steps=1).out(0)
+                  resolution_steps=RES_STEP).out(0)
 
 
 def klein_references(g, vae, pos, neg, images, mp):
-    """Each image scaled to `mp` megapixels (aspect kept), VAE-encoded and appended to positive and negative with
-    ReferenceLatent: what ReferenceMultiLatent "resize" does, on any ComfyUI. Returns (pos, neg, first scaled image)."""
+    """Each image scaled to `mp` megapixels (aspect kept, 16-snapped; None = kept as it is), VAE-encoded and appended to
+    positive and negative with ReferenceLatent: what ReferenceMultiLatent does, on any ComfyUI (the pods run 0.38,
+    which has no ReferenceMultiLatent). Returns (pos, neg, first scaled image)."""
     first = None
     for im in images:
         im = _scaled(g, im, mp)
@@ -94,7 +99,7 @@ def klein_edit(g, p, *, source, prompt, refs=(), depth=None, start=None, mask=No
     """FLUX 3 Klein edit. References: the source (image 1, unless source_ref=False as for Extend), the depth pass
     (image 2, ④ Frame), then the cast pictures. Latent: masked source (mask), `start` resized to the source canvas
     (img2img at `denoise`), else empty on the source canvas."""
-    model, clip, vae = _loaders(g, p["weights"], "flux3")
+    model, clip, vae = _loaders(g, p["weights"], p.get("clip_type") or "flux3")
     model = _with_shift(g, _with_lora(g, model, p), p)
     cfg = p.get("cfg") or 1.0
     pos = g.node("CLIPTextEncode", text=prompt, clip=clip).out(0)
@@ -119,15 +124,17 @@ def krea_can_edit(p) -> bool:
 
 
 def krea_edit(g, p, *, source, prompt, refs=(), depth=None, start=None, mask=None, denoise=1.0, mp=1.0):
-    """Krea 2 Turbo as an edit model: the Identity Edit LoRA with the source as the aligned "scene" reference
-    (ref_boost_a) and the first cast picture as the "subject" (ref_boost), the instruction grounded on both
-    (Krea2EditGroundedEncode). depth = the Krea2 depth-control LoRA on top (④ Frame, the stage's depth pass).
-    Latent as klein_edit."""
+    """Krea 2 Turbo as an edit model, the comfyui-krea2edit pack's recipe: the Identity Edit LoRA at 1.0; the source
+    (scaled to `mp`, 16-snapped) as source_image / source_latent, fit, ref_boost_a 1 (the aligned "scene" reference)
+    and target_latent = the KSampler's latent; the first cast picture as the "subject" (source_image_b, ref_boost
+    SUBJECT_BOOST, else 1); the instruction grounded on the source (and subject) with Krea2EditGroundedEncode;
+    10 steps euler / simple, cfg 1. depth = the Krea2 depth-control LoRA on top (not used by any path yet: on ④ Frame
+    identity edit + depth broke the depth hold, share/OneClick/C). Latent as klein_edit (masked / img2img / empty)."""
     w = p["weights"]
     if not krea_can_edit(p):
         raise RouterError(NO_KREA_EDIT)
     model, clip, vae = _loaders(g, w, "krea2")
-    model = g.node("LoraLoaderModelOnly", model=model, lora_name=w["edit_lora"], strength_model=1.0).out(0)
+    model = g.node("LoraLoaderModelOnly", model=model, lora_name=w["edit_lora"], strength_model=1.0).out(0)   # 1.0: the pack
     model = _with_lora(g, model, p)
     canvas = _scaled(g, source, mp)
     if start is not None:
@@ -149,8 +156,8 @@ def krea_edit(g, p, *, source, prompt, refs=(), depth=None, start=None, mask=Non
         model = depth_control(g, model, vae, depth, latent, w["depth_lora"])
     pos = g.node("Krea2EditGroundedEncode", **enc).out(0)
     neg = g.node("ConditioningZeroOut", conditioning=pos).out(0)
-    sampler, scheduler = _sampling(p, "euler_ancestral", "beta")
-    s = g.node("KSampler", model=model, seed=int(p["seed"]), steps=p.get("steps") or KREA_STEPS, cfg=p.get("cfg") or 1.0,
+    sampler, scheduler = _sampling(p, "euler", "simple")
+    s = g.node("KSampler", model=model, seed=int(p["seed"]), steps=p.get("steps") or KREA_EDIT_STEPS, cfg=p.get("cfg") or 1.0,
                sampler_name=sampler, scheduler=scheduler, positive=pos, negative=neg, latent_image=latent,
                denoise=float(denoise) if (start is not None or mask is not None) else 1.0).out(0)
     return g.node("VAEDecode", samples=s, vae=vae).out(0)

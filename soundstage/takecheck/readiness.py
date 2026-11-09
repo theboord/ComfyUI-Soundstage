@@ -35,7 +35,8 @@ def _model_needs(label: str, loaded: set, list_files) -> list[dict]:
     out = []
     for c in m.get("classes") or []:
         if c not in loaded:
-            out.append({"what": f"node {c}", "detail": f"needed by {m['name']} (update ComfyUI or install its node pack)", "required": True})
+            what = REG.need_label(c) if c.startswith(REG.CLIP_TYPE) else f"node {c}"
+            out.append({"what": what, "detail": f"needed by {m['name']} (update ComfyUI or install its node pack)", "required": True})
     for spec in m.get("weights") or []:
         if not REG.resolve_weight(spec, list_files):
             out.append({"what": spec["any"][0], "folder": spec["folder"], "detail": f"{m['name']} · {spec['role']}", "required": True})

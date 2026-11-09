@@ -184,10 +184,11 @@ def test_node_schema_and_execute():
     ids = [getattr(x, "id", None) for x in list(schema.inputs) + list(schema.outputs)]
     assert len(ids) == len(set(ids))
     assert [c.__name__ for c in nodes_look.NODES] == ["SoundstageLook"]
-    still, neg, motion, look_json = _values(nodes_look.SoundstageLook.execute(
+    still, neg, motion, look_json, edit_prompt = _values(nodes_look.SoundstageLook.execute(
         look="Korean thriller, anamorphic, teal-orange"))
     data = json.loads(look_json)
     assert data["look"]["movement"] == "korean_thriller" and data["still_prompt"] == still
+    assert data["edit_prompt"] == edit_prompt and edit_prompt.startswith("Turn image 1")
     assert any(n.startswith("typed look") for n in data["notes"])
 
 

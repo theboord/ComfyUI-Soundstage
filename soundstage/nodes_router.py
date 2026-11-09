@@ -38,7 +38,7 @@ def _stage_options(stage: str) -> list:
     hit = _cache.get(stage)
     if hit and time.time() - hit[0] < _TTL_S:
         return hit[1]
-    opts = R.stage_options(stage, set(nodes.NODE_CLASS_MAPPINGS), _list_files)
+    opts = R.stage_options(stage, R.loaded_classes(nodes.NODE_CLASS_MAPPINGS), _list_files)
     _cache[stage] = (time.time(), opts)
     return opts
 
@@ -113,8 +113,9 @@ class _Router(IO.ComfyNode):
             if not (cls.hidden.auth_token_comfy_org or cls.hidden.api_key_comfy_org):
                 raise RouterError(f"{m['name']} is a paid partner model: sign in to Comfy (Settings > User) "
                                   "or pick a local model.")
-        missing = [c for c in m["classes"] if c not in nodes.NODE_CLASS_MAPPINGS]
-        weights = R.resolve_weights(m, _list_files, set(nodes.NODE_CLASS_MAPPINGS))
+        loaded = R.loaded_classes(nodes.NODE_CLASS_MAPPINGS)
+        missing = [R.need_label(c) for c in m["classes"] if c not in loaded]
+        weights = R.resolve_weights(m, _list_files, loaded)
         missing += [s["any"][0] for s in m.get("weights", []) if not weights.get(s["role"])]
         if missing:
             raise RouterError(f"{m['name']} is missing: {', '.join(missing)}")
@@ -129,6 +130,8 @@ class _Router(IO.ComfyNode):
              "refs": [v[k] for k in ("ref_1", "ref_2", "ref_3") if v.get(k) is not None],
              "image": v.get("image"), "images": v.get("images"), "mask": v.get("mask"),
              "params": params, "weights": weights, "variant": m.get("variant"),
+             # what this ComfyUI has: the Klein adapters chain ReferenceLatent when ReferenceMultiLatent (0.39+) is missing
+             "classes": loaded,
              "steps": int(v.get("steps") or 0), "cfg": float(v.get("cfg") or 0.0),
              "sampler": v.get("sampler") if v.get("sampler") in IMAGE_SAMPLERS else "auto",
              "scheduler": v.get("scheduler") if v.get("scheduler") in IMAGE_SCHEDULERS else "auto",

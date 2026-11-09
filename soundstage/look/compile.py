@@ -295,7 +295,10 @@ def _drop_repeated_people(desc: str, people_words: str) -> str:
     return re.sub(r",\s*$", "", text)
 
 
-def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
+def compile_still(look: dict, scene: dict, parts: dict, edit: bool = False) -> tuple[str, str]:
+    """The frame-1 still prompt and negative. edit=True is the text for an edit model that sees the stage's Color pass
+    as image 1 (FLUX Klein, the Look's `edit_prompt`): the shot-size and the who-is-where slots go, because the picture
+    already says where everyone is and those words made Klein recompose the shot (share/QA/klein_fix s_nopos)."""
     f1 = S.frame1_facts(scene)
     c = parts["chosen"]
     style = [_style_head(parts)]
@@ -345,11 +348,14 @@ def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
     props = [f"{p['word'] if legacy else plain_word(p['word'], p.get('kind'))} {p['where']}" for p in f1["props"][:3]]
     seen = {e["id"] for e in f1["people"] + f1["others"]}   # in the shot camera's frame at frame 0, not hidden
     desc = frame1_safe(look.get("description", ""), absent_words(scene, f1))
-    if one_phrase and people:
+    if one_phrase and people and not edit:
         desc = _drop_repeated_people(desc, people_words)
     vcam = S.vehicle_camera(scene)
     lock = S.traffic_lock(scene, seen)
     shot = vcam["still"] if vcam else SIZE_STILL[f1["size"]] + ("" if who else " of the location")
+    if edit:   # image 1 holds the framing and every mark: no shot size, no placement words; the clothes stay
+        dressed = [f"{S.definite(e['noun'])} {wear_of(e)}" for e in sorted(f1["people"], key=lambda e: e["sx"])]
+        shot, who = "", (["; ".join(dressed)] if dressed else [])
     # A head count only when people show: seen from outside, a car's driver is part of the car and a count of
     # zero (or one) makes Krea paint pedestrians; seen from inside, the riders ARE the people in frame.
     count = not lock or n > 0
@@ -654,21 +660,29 @@ def compile_look(look_in: dict | None, scene: dict | None) -> dict:
     scene = without_rigs(scene)   # SFX rigs are crew equipment, never things in the shot (their effects get beats)
     parts = look_parts(look, look_context(scene))
     still, negative = compile_still(look, scene, parts)
+    edit_still, _ = compile_still(look, scene, parts, edit=True)
     sw = sfx_still_words(scene)
     if sw:
         still = f"{still.rstrip(' .')}. {sw}"
+        edit_still = f"{edit_still.rstrip(' .')}. {sw}"
     motion = compile_motion(look, scene, parts)
     # The Director's Book (Milestone 23): Imagery & Tone as style words, Pitfalls said positively (CFG 1: no negatives).
     from ..book.prompting import prompt_words
     bw = prompt_words((look_in or {}).get("book") if isinstance(look_in, dict) else None)
     if bw:
         still, motion = f"{still.rstrip(' .')}. {bw}", f"{motion.rstrip(' .')}. {bw}"
+        edit_still = f"{edit_still.rstrip(' .')}. {bw}"
+    # ④ Frame on FLUX Klein: an instruction to turn the clay (image 1) into a photograph of the same shot, then the
+    # look without placement words (soundstage/router/edit_graph.py; local import: the router imports look.frame_lock).
+    from ..router.edit_graph import frame_instruction
+    edit_prompt = frame_instruction(edit_still)
     f1 = S.frame1_facts(scene)
     return {
         "look": look,
         "still_prompt": still,
         "still_negative": negative,
         "motion_prompt": motion,
+        "edit_prompt": edit_prompt,
         "kb_refs": parts["kb_refs"],
         "kb": [_kb_card(r) for r in parts["kb_refs"]],
         "notes": notes + parts["notes"],

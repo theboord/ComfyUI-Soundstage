@@ -20,7 +20,7 @@ import re
 import struct
 
 # The image models ④ Frame paints with, by router adapter (soundstage/router/registry.json).
-ADAPTER_FAMILY = {"flux3_klein": "klein", "krea2": "krea"}
+ADAPTER_FAMILY = {"flux3_klein": "klein", "flux2_klein": "klein", "krea2": "krea"}   # FLUX.2 Klein 9B: "klein" too (keys alone cannot tell 9B from FLUX 3)
 FAMILY_LABEL = {"klein": "FLUX 3 Klein", "krea": "Krea 2", "sd": "Stable Diffusion 1.x/2.x", "sdxl": "SDXL",
                 "ltx": "LTX video", "flux1": "FLUX.1", "wan": "Wan video", "hunyuan": "HunyuanVideo",
                 "qwen": "Qwen-Image"}

@@ -170,7 +170,8 @@ def register(routes=None) -> bool:
         q = request.query
         chosen = {"still": q.get("still") or None, "video": q.get("video") or None,
                   "l2r": q.get("l2r", "1") not in ("0", "false"), "krea": q.get("krea", "0") in ("1", "true")}
-        res = RD.needs(chosen, set(nodes.NODE_CLASS_MAPPINGS), folder_paths.get_filename_list, shutil.which)
+        from ..router.registry import loaded_classes
+        res = RD.needs(chosen, loaded_classes(nodes.NODE_CLASS_MAPPINGS), folder_paths.get_filename_list, shutil.which)
         return web.json_response({"steps": res, "doc": RD.MODELS_DOC})
 
     _REGISTERED = True

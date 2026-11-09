@@ -11,7 +11,13 @@ SoundstageFill (nodes_fill.py) expands into
   SoundstageFillStitch             -> the picture with only the feathered mask area replaced, colour-matched
 No ComfyUI imports: built against a GraphBuilder-like `g`, so tests check it against an /object_info snapshot.
 """
-from .adapters import ADAPTERS, RouterError, _loaders, _text, _with_lora
+from .adapters import ADAPTERS, KLEIN_CLIP, RouterError, _loaders, _text, _with_lora, klein_refs
+from .edit_graph import NO_KREA_EDIT, krea_can_edit, krea_edit
+
+# Krea 2 modes that edit through the Identity Edit LoRA (the source picture as the aligned scene reference). Remove stays
+# a masked repaint (a reference that still shows the thing would bring it back); Extend has no source reference at all.
+KREA_EDIT_MODES = ("edit", "replace", "fill")
+KREA_NEEDS_EDIT = ("edit", "replace")    # without the LoRA these refuse: plain Krea 2 ignores the picture / the cast ref
 
 FILL_DEFAULTS = {"grow": 8, "feather": 24, "context": 0.6, "megapixels": 1.0, "overlap": 48, "denoise": 1.0,
                  "color_match": True}
@@ -60,7 +66,7 @@ def fill_prompt(mode: str, prompt: str, n_refs: int = 0, edit: bool = True) -> s
 
 
 def _klein(g, m, p, crop_img, crop_mask):
-    model, clip, vae = _loaders(g, p["weights"], "flux3")
+    model, clip, vae = _loaders(g, p["weights"], KLEIN_CLIP.get(m.get("adapter"), "flux3"))
     model = _with_lora(g, model, p)
     pos = g.node("CLIPTextEncode", text=p["prompt"], clip=clip).out(0)
     cfg = p.get("cfg") or 1.0
@@ -68,25 +74,34 @@ def _klein(g, m, p, crop_img, crop_mask):
            else g.node("ConditioningZeroOut", conditioning=pos).out(0))
     # Fill / Remove / Replace: the crop at its own size is image 1, so the edit model keeps what is around the area.
     # Extend: no crop reference (the model would copy the empty border); the masked latent carries the context.
+    # ReferenceMultiLatent on ComfyUI 0.39+, else chained ReferenceLatent (adapters.klein_refs).
     if p.get("fill_mode") != "extend":
-        r = g.node("ReferenceMultiLatent", positive=pos, negative=neg, vae=vae, resolution="keep resolution",
-                   **{"images.image0": crop_img})
-        pos, neg = r.out(0), r.out(1)
+        pos, neg, _, _ = klein_refs(g, p, pos, neg, vae, [crop_img], None, resolution="keep resolution")
     refs = list(p.get("refs") or [])
     if refs:
-        kw = {f"images.image{i}": link for i, link in enumerate(refs)}
-        r2 = g.node("ReferenceMultiLatent", positive=pos, negative=neg, vae=vae, resolution="resize",
-                    **{"resolution.megapixels": 1.0}, **kw)
-        pos, neg = r2.out(0), r2.out(1)
+        pos, neg, _, _ = klein_refs(g, p, pos, neg, vae, refs, 1.0)
     latent = g.node("VAEEncode", pixels=crop_img, vae=vae).out(0)
     latent = g.node("SetLatentNoiseMask", samples=latent, mask=crop_mask).out(0)
-    s = g.node("KSampler", model=model, seed=int(p["seed"]), steps=p.get("steps") or 16, cfg=cfg,
+    s = g.node("KSampler", model=model, seed=int(p["seed"]), steps=p.get("steps") or (4 if m.get("adapter") == "flux2_klein" else 16), cfg=cfg,
                sampler_name="euler", scheduler="simple", positive=pos, negative=neg, latent_image=latent,
                denoise=float(p.get("denoise") or 1.0)).out(0)
     return g.node("VAEDecode", samples=s, vae=vae).out(0)
 
 
+def krea_edits(m, p, mode) -> bool:
+    """Does this Krea 2 fill go through the Identity Edit LoRA?"""
+    return m.get("adapter") == "krea2" and mode in KREA_EDIT_MODES and krea_can_edit(p)
+
+
 def _krea2(g, m, p, crop_img, crop_mask):
+    mode = p.get("fill_mode")
+    if krea_edits(m, p, mode):
+        # Whole frame (a white mask at denoise 1), Replace (the cast picture is the subject) and Fill: the crop is the
+        # aligned scene reference, so the layout and the light stay (C26: "keep the night" kept night, rain, street)
+        return krea_edit(g, p, source=crop_img, prompt=p["prompt"], refs=p.get("refs") or [], mask=crop_mask,
+                         denoise=float(p.get("denoise") or 1.0), mp=1.0)
+    if mode in KREA_NEEDS_EDIT:
+        raise RouterError(NO_KREA_EDIT)
     model, clip, vae = _loaders(g, p["weights"], "krea2")
     model = _with_lora(g, model, p)
     pos, neg = _text(g, clip, p["prompt"], p.get("negative"))
@@ -98,7 +113,7 @@ def _krea2(g, m, p, crop_img, crop_mask):
     return g.node("VAEDecode", samples=s, vae=vae).out(0)
 
 
-FILL_BUILDERS = {"flux3_klein": _klein, "krea2": _krea2}
+FILL_BUILDERS = {"flux3_klein": _klein, "flux2_klein": _klein, "krea2": _krea2}
 
 
 def build_fill(g, m, p, settings=None):
@@ -117,7 +132,8 @@ def build_fill(g, m, p, settings=None):
                   feather=int(s["feather"]))
     crop_img, crop_mask = crop.out(0), crop.out(1)
     q = dict(p)
-    edit = m["adapter"] != "krea2"
+    # Krea 2 gets an instruction too once it edits through the Identity Edit LoRA; plain Krea 2 a description
+    edit = m["adapter"] != "krea2" or krea_edits(m, p, mode)
     n_refs = len(p.get("refs") or [])
     if "user_prompt" in s:   # the router put only the reference labels in p["prompt"]
         q["prompt"] = f"{fill_prompt(mode, s['user_prompt'], n_refs, edit)} {p.get('prompt', '')}".strip()

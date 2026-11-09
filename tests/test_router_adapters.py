@@ -207,7 +207,7 @@ def test_adapter_builds_valid_graph(mid, stage, i):
         assert output_type(g, outs[k]) == want, (k, outs[k])
     assert check_graph(g) == []
     for c in {n.class_type for n in g.nodes.values()} - {"CreateVideo", "GetVideoComponents"}:
-        assert c in m["classes"] or c in {"ResizeImageMaskNode"} | set(
+        assert c in m["classes"] or c in m.get("optional_classes", []) or c in {"ResizeImageMaskNode"} | set(
             itertools.chain.from_iterable(s.get("classes", []) for s in m.get("optional_weights", []))), \
             f"{m['id']} emits {c} but does not list it in classes (availability check would miss it)"
 
