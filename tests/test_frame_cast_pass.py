@@ -139,3 +139,10 @@ def test_the_frame_models_carry_klein_9b_as_their_cast_pass_weights():
         assert {"id_unet", "id_text_encoder", "id_vae"} <= roles, mid
     assert CP.id_weights(entry("open.flux2_klein_9b"), {"unet": "u", "text_encoder": "t", "vae": "v"}) == \
         {"unet": "u", "text_encoder": "t", "vae": "v"}
+
+
+def test_a_person_seated_on_a_chair_is_still_the_one_person():
+    # Maya S4 / S5 sit on the chair (mount_id): the first version skipped every mounted person and the pass never ran
+    seated = {**SCENE, "actors": [{**SCENE["actors"][0], "mount_id": "chair_main", "pose": "sit"}, SCENE["actors"][1]]}
+    hit = CP.one_person(id_pass((60, MAYA)), seated)
+    assert hit is not None and hit[0]["id"] == "maya"

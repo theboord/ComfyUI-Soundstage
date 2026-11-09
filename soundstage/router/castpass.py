@@ -41,7 +41,7 @@ def instruction(noun: str = "person") -> str:
 
 def _people(scene: dict) -> list[dict]:
     from ..look import scene as S
-    return [a for a in scene.get("actors") or [] if S.classify(a)[1] == "biped" and not a.get("mount_id")]
+    return [a for a in scene.get("actors") or [] if S.classify(a)[1] == "biped"]   # seated on a chair or not
 
 
 def one_person(id_rgb: np.ndarray, scene: dict) -> tuple[dict, np.ndarray] | None:

@@ -198,7 +198,7 @@ def _cast_pass(hidden, labels) -> dict | None:
         if passes.get("grid"):
             tw, th = passes["grid"]["tile"]
             img = img[:th, :tw]
-    except (OSError, KeyError, TypeError, ValueError):
+    except Exception:   # noqa: BLE001 - a missing / huge atlas (PIL's decompression-bomb limit) skips the pass
         return None
     cp = CP.prepare(data["scene"], img, labels)
     if not cp.get("ok"):
