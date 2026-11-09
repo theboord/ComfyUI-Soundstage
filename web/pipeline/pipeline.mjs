@@ -1171,10 +1171,15 @@ export class Pipeline {
       if (v != null) { f.follow.value = String(v); f.followOut.textContent = this._followLabel(); }
     }
     this.set(9082, "switch", !krea);
+    // the model the frame node had before this pick (Strict leaves Krea 2 Turbo on it: that is FLUX 3 Klein's frame)
+    const before = this.w(9081, "model")?.value;
     if (!krea) this.set(9081, "model", f.model.value);
     // switching between frame-node models (FLUX 3 Klein 12 steps CFG 2, FLUX.2 Klein 9B 4 steps CFG 1): a step count
-    // and CFG still on the old model's defaults move to the new model's; anything the user set stays
-    const key = frameDefaultsKey(f.model.value), prev = this._defKey;
+    // and CFG still on the old model's defaults move to the new model's; anything the user set stays. The old model
+    // is the frame node's own, not the last pick this view saw: ④ Frame opened on FLUX 3 Klein without one (and via
+    // Krea 2 + depth, whose KSampler is another node), so picking FLUX.2 Klein 9B kept 12 steps CFG 2 (Maya, 2026-11-09).
+    const key = frameDefaultsKey(f.model.value);
+    const prev = before ? frameDefaultsKey(isKreaTurbo(before) ? this._kleinKey() || before : before) : this._defKey;
     if (prev && prev !== key && key !== "krea" && prev !== "krea" && this.w(9081, "steps")) {
       const a = FRAME_DEFAULTS[prev], b = FRAME_DEFAULTS[key];
       if (+this.w(9081, "steps").value === a.steps && (+this.w(9081, "cfg")?.value || 0) === a.cfg) {

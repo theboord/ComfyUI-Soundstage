@@ -142,6 +142,37 @@ test("switching Klein models moves default steps / CFG along, and leaves a user'
   assert.equal(a.w(9081, "steps").value, 6);
 });
 
+test("picking FLUX.2 Klein 9B right after ④ Frame opens (no pick seen yet) takes its 4 steps / CFG 1 (Maya, 2026-11-09)", () => {
+  const prep = (a) => { a.p.f.follow = { value: "0.9" }; a.p.f.followOut = {}; a.p._sliderFor = false; a.p._fillLoras = () => {}; a.p._drawShotCast = () => {}; };
+  const a = fake({ fsteps: 12, fcfg: 2 });   // the frame node on FLUX 3 Klein's defaults; no _defKey (show() never set one)
+  prep(a);
+  a.p.f.model.value = K9B;
+  a.p._applyStillModel();
+  assert.deepEqual([a.w(9081, "steps").value, a.w(9081, "cfg").value], [4, 1]);
+  // back to FLUX 3 Klein: its own 12 / 2
+  a.p.f.model.value = KLEIN;
+  a.p._applyStillModel();
+  assert.deepEqual([a.w(9081, "steps").value, a.w(9081, "cfg").value], [12, 2]);
+  // Strict lock left Krea 2 Turbo on the frame node: that is FLUX 3 Klein's frame, so its defaults move too
+  const b = fake({ model: TURBO, fsteps: 12, fcfg: 2 });
+  prep(b);
+  b.p.f.model = { value: K9B, options: [{ value: KLEIN }, { value: K9B }] };
+  b.p._applyStillModel();
+  assert.deepEqual([b.w(9081, "steps").value, b.w(9081, "cfg").value], [4, 1]);
+  // a value the user changed stays (14 steps on FLUX 3 Klein)
+  const c = fake({ fsteps: 14, fcfg: 2 });
+  prep(c);
+  c.p.f.model.value = K9B;
+  c.p._applyStillModel();
+  assert.deepEqual([c.w(9081, "steps").value, c.w(9081, "cfg").value], [14, 2]);
+  // from Krea 2 + depth (its own KSampler) to FLUX.2 Klein 9B: the frame node still had FLUX 3 Klein on its defaults
+  const d = fake({ model: KLEIN, fsteps: 12, fcfg: 2 });
+  prep(d);
+  d.p.f.model.value = "__krea_depth__"; d.p._applyStillModel();
+  d.p.f.model.value = K9B; d.p._applyStillModel();
+  assert.deepEqual([d.w(9081, "steps").value, d.w(9081, "cfg").value], [4, 1]);
+});
+
 test("the notes say why: Krea burns above CFG 1, Klein's negative needs CFG above 1", () => {
   assert.match(samplingNote("__krea_depth__", 12, 1), /1\.5 and up burns/);
   assert.match(samplingNote(KLEIN, 12, 2), /negative prompt acts only above CFG 1/);
