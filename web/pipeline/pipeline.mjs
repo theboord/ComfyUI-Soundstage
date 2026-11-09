@@ -99,7 +99,7 @@ export const KREA_NEVER_SCHEDULERS = ["karras"];
 /** The Advanced fold's line under steps / CFG, per frame model. */
 export function samplingNote(model, st, cf) {
   const key = frameDefaultsKey(model), d = FRAME_DEFAULTS[key];
-  const head = `${d.label || String(model || "The image model").split(" ·")[0]}: ${st} steps, CFG ${cf} (default ${d.steps} steps, CFG ${d.cfg}).`;
+  const head = `${d.label || frameModelLabel(model) || "The image model"}: ${st} steps, CFG ${cf} (default ${d.steps} steps, CFG ${d.cfg}).`;
   if (key === "krea") return `${head} Distilled: CFG 1 is right, 1.5 and up burns (colour blotches). Scheduler karras is never sent: it hands the stage back.`;
   if (key === "klein") return `${head} CFG 2 adds real wall and floor texture with Lock to the stage depth Light and takes about 1.5x as long as CFG 1. The negative prompt acts only above CFG 1.`;
   if (key === "klein9b") return `${head} A 4-step distilled model: CFG 1 is right, more steps add little.`;
@@ -109,6 +109,15 @@ export function samplingNote(model, st, cf) {
 export const frameDefaultsKey = (model) => (model === STILL_KREA ? "krea" : /^FLUX 3 Klein/.test(String(model || "")) ? "klein"
   : /^FLUX\.2 Klein/.test(String(model || "")) ? "klein9b" : "other");
 export const frameDefaultsFor = (model) => FRAME_DEFAULTS[frameDefaultsKey(model)];
+/** A frame-node model's name as ④ Frame says it: the dropdown's label without " · local [..]", and without "+ Identity
+ *  Edit". The registry's edit-stage label names Krea 2 Turbo's Identity Edit LoRA, which only Paint Studio (Whole frame,
+ *  Replace, Fill) loads; ④ Frame's Strict lock paints with plain Krea 2 Turbo + the depth pass (Maya, 2026-11-09). */
+export const frameModelLabel = (model) => String(model || "").split(" ·")[0].replace(/\s*\+\s*Identity Edit\b/, "").trim();
+/** Said in ④ Frame's cast card on Krea 2 + depth (the App's own KSampler, not the frame node): no references reach it,
+ *  and the cast pass (router/castpass.py, after the frame node's model) never runs on it. */
+export const KREA_DEPTH_CAST_NOTE = "Krea 2 + depth doesn't take the cast pictures, and the cast pass (the cast face and " +
+  "hair painted onto the one person in frame 1) runs only after the frame node's models: pick FLUX 3 Klein (or FLUX.2 " +
+  "Klein 9B) to use them.";
 /** C32 (Jon's Claude): the title on the greyed Light / Strict lock buttons while FLUX.2 Klein 9B paints the frame. */
 export const KLEIN9B_NO_LOCK = "Klein 9B has no Krea 2 depth pass; lock is Off";
 /** The depth-lock mode a FLUX 3 Klein frame starts with when nobody picked one: Light when Krea 2 Turbo is installed
@@ -936,7 +945,7 @@ export class Pipeline {
       ...(compact ? [h("div", { class: "ss-sc-strip" }, ...groups.flat())] : groups),
       h("div", { class: "ss-sc-note" }, note),
       warn ? h("div", { class: "ss-sc-note warn" }, warn) : null,
-      krea ? h("div", { class: "ss-sc-note warn" }, "Krea 2 + stage depth doesn't take references: pick FLUX 3 Klein to use the cast pictures.") : null,
+      krea ? h("div", { class: "ss-sc-note warn" }, KREA_DEPTH_CAST_NOTE) : null,
       noNode ? h("div", { class: "ss-sc-note warn" }, "References need the updated Soundstage nodes (restart ComfyUI once).") : null].filter(Boolean));
   }
 
@@ -959,7 +968,7 @@ export class Pipeline {
   /** Steps / CFG for the frame model: Krea 2 lives on the App's KSampler (9056), the other models on the picker node. */
   _samplingTarget() {
     const krea = this.f.model.value === STILL_KREA, d = frameDefaultsFor(this.f.model.value);
-    const label = d.label || String(this.f.model.value || "the image model").split(" ·")[0];
+    const label = d.label || frameModelLabel(this.f.model.value) || "the image model";
     return { id: krea ? 9056 : 9081, steps: "steps", cfg: "cfg", defSteps: d.steps, defCfg: d.cfg, label };
   }
 
@@ -1428,7 +1437,7 @@ export class Pipeline {
             : "Delete: take this frame off the list (the file stays on disk). Undo for 5 s. Reject (the round badge) keeps it on record instead.",
           on: { click: (e) => { e.stopPropagation(); this.deleteCandidate(c); } } }, icon("trash-2", 13)),
         ...(() => { const b = badgeOf(c.check); return b ? [h("span", { class: "fc", "data-tone": b.tone, title: b.title }, b.text)] : []; })(),
-        h("div", { class: "cap" }, h("span", {}, (c.edited ? "Paint Studio" : (c.model === STILL_KREA || !c.model) ? "Krea 2" : String(c.model).split(" ·")[0]) +
+        h("div", { class: "cap" }, h("span", {}, (c.edited ? "Paint Studio" : (c.model === STILL_KREA || !c.model) ? "Krea 2" : frameModelLabel(c.model)) +
           (depthLockFor(c) > 0 ? " · depth-locked" : "")),
           h("span", { class: "pill" }, isChosen ? "✓ Chosen" : "Use this frame")));
     }));
