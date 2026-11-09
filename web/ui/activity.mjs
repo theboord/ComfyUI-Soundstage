@@ -26,6 +26,7 @@
 import { openPopover, closePopover, isPopoverOpen } from "./popover.mjs";
 import { queueSummary } from "./queue.mjs";
 import { timerModel, queueLine, loadSound, saveSound, cuesFor, FinishWatcher, playChime } from "./jobTimer.mjs";
+import { createCountdown, COUNTDOWN_CSS } from "./countdown.mjs";
 
 export const JOB_EVENT = "soundstage:job";
 export const ETA_KEY = "ss_activity_eta";
@@ -600,7 +601,7 @@ export class ActivityRegistry {
       if (pct != null) pct = Math.max(0, Math.min(99, pct));
     }
     return { id: j.id, kind, name: base, state: j.state, own: !!j.own, position: j.position, trigger: j.trigger || "",
-      elapsedMs, etaRuns: this.eta.runs(etaKey(kind, j.width, j.height)), remainingMs: rem.ms, remainingAtLeast: rem.atLeast, overdue: rem.over && rem.ms == null, pct,
+      elapsedMs, etaRuns: this.eta.runs(etaKey(kind, j.width, j.height)), etaAvgMs: this.eta.get(etaKey(kind, j.width, j.height)), shot: j.shot || null, remainingMs: rem.ms, remainingAtLeast: rem.atLeast, overdue: rem.over && rem.ms == null, pct,
       step: j.state === "running" ? j.step : null, steps: j.state === "running" ? j.steps : null,
       endedAt: j.endedAt, error: j.error, outputs: j.outputs.slice(), preview: j.preview, detail,
       waitedMs: j.state === "queued" ? now - j.queuedAt : null };
@@ -1099,11 +1100,11 @@ function readRaw() { try { return globalThis.localStorage?.getItem(RAW_KEY) === 
 function writeRaw(on) { try { globalThis.localStorage?.setItem(RAW_KEY, on ? "1" : "0"); } catch { /* this page only */ } }
 
 /** The live wiring: a pill before `before` in `row` (outside the ⋯ fold order) and its panel, on the shared registry. */
-export function mountActivity({ api, row, before = null, theme = null, win = globalThis.window }) {
+export function mountActivity({ api, row, before = null, theme = null, overlay = null, win = globalThis.window }) {
   if (!document.getElementById("ss-activity-css")) {
     const st = h("style");
     st.id = "ss-activity-css";
-    st.textContent = ACTIVITY_CSS;
+    st.textContent = ACTIVITY_CSS + COUNTDOWN_CSS;
     document.head.append(st);
   }
   const s = sharedFor(api, win);
@@ -1177,10 +1178,15 @@ export function mountActivity({ api, row, before = null, theme = null, win = glo
       if (pct != null) miniFill.style.width = `${pct}%`;
     }
     timer.update(v);
+    countdown?.update(v);
     if (isOpen() && !pending) pending = setTimeout(paint, 250);
     clock(busy || v.running.length > 0 || isOpen());
   };
   const onCancel = async (r) => { await cancelJob(api, r); s.poll(); };
+  // The big countdown over a corner of the stage view (web/ui/countdown.mjs): same draw, same clock, same Cancel.
+  const countdown = overlay ? createCountdown({ host: overlay, win, onStop: onCancel,
+    onWhy: () => { if (!isOpen()) btn.click(); },
+    sound: { on: () => !!s.sound.prefs.on, toggle: () => setSound({ on: !s.sound.prefs.on }) } }) : null;
   btn.addEventListener("click", () => {
     if (isOpen()) { closePopover(panel); draw(); return; }
     panel = renderPanel(reg.view(), opts());
@@ -1203,8 +1209,9 @@ export function mountActivity({ api, row, before = null, theme = null, win = glo
   const offChange = reg.onChange(draw);
   draw();
   return {
-    button: btn, registry: reg, draw, poll: () => s.poll(),
+    button: btn, registry: reg, draw, poll: () => s.poll(), countdown,
     dispose() {
+      countdown?.dispose();
       clock(false); clearTimeout(pending); clearTimeout(pulseT); offChange(); timer.el.remove?.(); s.pills.delete(pill);
       win?.removeEventListener?.("pointerup", up, true);
       win?.removeEventListener?.("pointercancel", up, true);
