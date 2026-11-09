@@ -69,6 +69,10 @@ _POSE_RE = {"seated": re.compile(r"\b(?:stand(?:s|ing)?|walk(?:s|ing)?|run(?:s|n
 _FACING_RE = {"away": re.compile(r"\b(?:facing (?:the )?(?:camera|us|viewer|lens)|looks? (?:at|into) the (?:camera|lens)|"
                                  r"toward the camera|face (?:to|toward) the camera)\b", re.I),
               "toward": re.compile(r"\b(?:from behind|back to (?:the )?(?:camera|us)|facing away|seen from the back)\b", re.I)}
+# Face words for someone the stage shows from behind: Krea 2 and Klein turn a person round to show the face they are told
+# about (compile.py negates "facing the camera" for the same reason).
+_FACE_RE = re.compile(r"\b(?:expression|face|faced|features|eyes|smil\w*|frown\w*|gaze|lips|freckl\w*|makeup|brows?|"
+                      r"cheek\w*|jaw\w*|nose)\b", re.I)
 _PERSON_NOUN_RE = re.compile(
     r"\b(?:an?|one|the|two|three|exactly \w+)?\s*(?:young |old |middle-aged |elderly )?"
     r"(?:woman|women|man|men|person|people|girl|boy|child|children|lady|guy|figure|actor|actress|teenager|kid)\b", re.I)
@@ -259,6 +263,9 @@ def clean_looks(text: str, person: dict, names: list[str]) -> tuple[str, list[st
         if re.search(r"\b(?:wear(?:s|ing)?|dressed|shirt|jeans|trousers|pants|dress|jacket|coat|skirt|shoes|hoodie|"
                      r"sweater|t-shirt|blouse|suit)\b", c, re.I):
             continue   # clothes come from the stage, silently
+        if person.get("facing") == "away" and _FACE_RE.search(c):
+            notes.append(f"dropped “{c}” (the stage has them with their back to the camera: a face word turns them round)")
+            continue
         pose_bad = _POSE_RE.get(person.get("pose", ""))
         face_bad = _FACING_RE.get(person.get("facing", ""))
         if (pose_bad and pose_bad.search(c)) or (face_bad and face_bad.search(c)):
@@ -655,9 +662,9 @@ def auto_prompt(look: dict | None, scene: dict | None, target: str, frame: bytes
     if not out["used"]["setting"] and not out["used"]["looks"]:
         problems.append("the vision model's words did not survive the checks")
     if problems:
-        return done({**base, "seen": llm["seen"], "changed": llm["changed"], "problems": problems,
+        return done({**base, "seen": llm["seen"], "changed": llm["changed"], "problems": problems, "llm": llm,
                      "notes": out["notes"] + ["The written prompt failed the checks: the compiled prompt is used."]})
-    res = {**base, "source": "auto", "prompt": out["prompt"], "seen": _limit_words(llm["seen"], 30),
+    res = {**base, "source": "auto", "prompt": out["prompt"], "llm": llm, "seen": _limit_words(llm["seen"], 30),
            "changed": _limit_words(llm["changed"], 30), "notes": out["notes"], "used": out["used"]}
     if len(_CACHE) >= _CACHE_MAX:
         _CACHE.pop(next(iter(_CACHE)))

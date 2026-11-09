@@ -156,3 +156,13 @@ def test_composite_is_one_jpeg():
     out = A.composite(_png(), [_png((255, 0, 0), (100, 200)), _png((0, 255, 0), (100, 200))])
     im = Image.open(io.BytesIO(out))
     assert im.format == "JPEG" and im.width > im.height
+
+
+def test_face_words_go_for_someone_seen_from_behind():
+    facts = A.stage_facts(LOOK, _scene())
+    away = [p for p in facts["people"] if p["facing"] == "away"]
+    assert away, "the default scene's people are seen from behind"
+    t, notes = A.clean_looks("thirties, dark hair in a ponytail, serious expression, soft features", away[0], [])
+    assert t == "thirties, dark hair in a ponytail" and len(notes) == 2
+    t, _ = A.clean_looks("thirties, serious expression", {**away[0], "facing": "toward"}, [])
+    assert "expression" in t
