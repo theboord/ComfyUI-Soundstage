@@ -17,6 +17,7 @@ import * as C from "./avatarcore.mjs";
 import * as F from "./footplant.mjs";
 import * as R from "./retarget.mjs";
 import * as O from "./onemotion.mjs";
+import * as Loco from "./locomotion.mjs";
 import { setStandIn } from "./standin.mjs";
 import { lifelikeSet } from "../tier.mjs";
 
@@ -298,12 +299,12 @@ export function placeHolder(g, holder, { x, y, z, yaw, scale, tilt = null }) {
 }
 
 /** Pose the avatar for this frame: weights by speed, walk and run on one shared gait phase (avatarcore.gaitTable). */
-export function drive(skin, { frame, fps, speed, phase, seed }) {
+export function drive(skin, { frame, fps, speed, phase, seed, move = null }) {
   // the clip's own values back before the mixer writes (three's PropertyMixer skips a value equal to the one it wrote
   // last): the feet's IK (ikSaved) and everything one motion writes over the clip (rtSaved: retarget, sitBody, blend)
   F.restoreClipPose(skin.ikSaved);
   F.restoreClipPose(skin.rtSaved);
-  const w = C.clipWeights(speed);
+  const w = move?.w || C.clipWeights(speed);
   const meta = {};
   for (const k of C.CLIP_KINDS) if (skin.kit.clips[k]) meta[k] = { duration: skin.kit.clips[k].clip.duration };
   const t = C.clipTimes({ frame, fps, phase, seed }, meta);
@@ -319,6 +320,105 @@ export function drive(skin, { frame, fps, speed, phase, seed }) {
   const saved = (skin.rtSaved ||= []);
   for (const b of Object.values(skin.bones)) saved.push([b, "quaternion", b.quaternion.clone()]);
   if (skin.bones?.Bip01) saved.push([skin.bones.Bip01, "position", skin.bones.Bip01.position.clone()]);
+  if (move && (Loco.OPTS.stride || Loco.OPTS.layer)) humanLayer(skin, w, move, frame, fps);
+}
+
+// ------------------------------------------------------------- the human layer over the clips (locomotion.mjs)
+/** The clip's mean local rotation of each bone over its loop (the centre its swing is scaled about), once per kit. */
+function clipMeans(kit) {
+  if (kit._means) return kit._means;
+  const out = {};
+  for (const k of C.CLIP_KINDS) {
+    const c = kit.clips[k]?.clip;
+    if (!c) continue;
+    const m = (out[k] = {});
+    for (const t of c.tracks) {
+      if (!t.name.endsWith(".quaternion")) continue;
+      const bone = t.name.slice(0, -11), v = t.values, q0 = new THREE.Quaternion().fromArray(v, 0), acc = new THREE.Quaternion(0, 0, 0, 0), q = new THREE.Quaternion();
+      for (let i = 0; i < v.length / 4; i++) {
+        q.fromArray(v, 4 * i);
+        const sg = q.dot(q0) < 0 ? -1 : 1;
+        acc.x += sg * q.x; acc.y += sg * q.y; acc.z += sg * q.z; acc.w += sg * q.w;
+      }
+      m[bone] = acc.normalize();
+    }
+  }
+  return (kit._means = out);
+}
+// bone -> which swing it follows and how much of it: legs the stride, arms the arm swing (not the pelvis or Bip01_Spine:
+// on the Rocketbox Biped the thighs hang off Bip01_Spine, so turning either moves the feet)
+const SWING = [["Bip01_L_Thigh", "leg", 1], ["Bip01_R_Thigh", "leg", 1], ["Bip01_L_Calf", "leg", 0.6], ["Bip01_R_Calf", "leg", 0.6],
+  ["Bip01_L_UpperArm", "arm", 1], ["Bip01_R_UpperArm", "arm", 1], ["Bip01_L_Forearm", "arm", 0.8], ["Bip01_R_Forearm", "arm", 0.8],
+  ["Bip01_L_Clavicle", "arm", 0.5], ["Bip01_R_Clavicle", "arm", 0.5]];
+const _mq = new THREE.Quaternion(), _rq = new THREE.Quaternion(), _iq = new THREE.Quaternion(), _wq = new THREE.Quaternion(), _ax = new THREE.Vector3(), _hup = new THREE.Vector3();
+/** q = mean * (mean^-1 q)^e: the swing about the clip's mean scaled by e (e > 1 a bigger swing). */
+function scaleSwing(q, mean, e) {
+  _iq.copy(mean).invert().multiply(q);
+  if (_iq.w < 0) { _iq.x = -_iq.x; _iq.y = -_iq.y; _iq.z = -_iq.z; _iq.w = -_iq.w; }
+  const ang = 2 * Math.acos(Math.min(1, _iq.w)), sn = Math.sqrt(Math.max(0, 1 - _iq.w * _iq.w));
+  if (sn < 1e-6) return;
+  _ax.set(_iq.x / sn, _iq.y / sn, _iq.z / sn);
+  q.copy(mean).multiply(_rq.setFromAxisAngle(_ax, ang * e));
+}
+/** Turn bone b by angle about a WORLD axis (its parent's world matrices must be current). */
+function turnWorld(b, axis, angle) {
+  if (!b || !angle) return;
+  b.parent.getWorldQuaternion(_wq);
+  _hup.copy(axis).applyQuaternion(_wq.invert());
+  b.quaternion.premultiply(_rq.setFromAxisAngle(_hup, angle));
+  b.updateMatrixWorld(true);
+}
+const _right = new THREE.Vector3(), _fwd = new THREE.Vector3(), _Y = new THREE.Vector3(0, 1, 0);
+/**
+ * The human layer, after the mixer posed the clips: the leg swing scaled to the natural stride for the speed (so the
+ * cadence can be a person's, not the clip's played faster), the arm swing by speed and by person, the lean into a
+ * speed-up and the settle at a stop, the bank into a curve, the head turning into a turn first, and a slow breath.
+ * Deterministic: only this frame's table values. The feet are grounded after this (footplant reads this pose).
+ */
+function humanLayer(skin, w, move, frame, fps) {
+  const b = skin.bones, mw = Loco.moveWeight(w);
+  const means = clipMeans(skin.kit);
+  // (a holder's or carrier's arms are the prop's: their swing is left as the clip has it)
+  const arms = move.holds ? 1 : 1 + (Loco.armScale(move.speed, move.style.arms) - 1) * Math.min(1, mw / 0.5);
+  if (mw > 1e-3 && Loco.OPTS.stride) {
+    for (const [name, kind, share] of SWING) {
+      const bone = b[name];
+      if (!bone) continue;
+      // the blended mean of the clips playing
+      _mq.set(0, 0, 0, 0);
+      let ref = null;
+      for (const k of C.CLIP_KINDS) {
+        const q = means[k]?.[name], wk = w[k] || 0;
+        if (!q || wk < 1e-6) continue;
+        ref ||= q;
+        const sg = q.dot(ref) < 0 ? -wk : wk;
+        _mq.x += sg * q.x; _mq.y += sg * q.y; _mq.z += sg * q.z; _mq.w += sg * q.w;
+      }
+      if (!ref) continue;
+      _mq.normalize();
+      const s = kind === "leg" ? move.scale : arms;
+      const e = 1 + (s - 1) * share;
+      if (Math.abs(e - 1) > 1e-4) scaleSwing(bone.quaternion, _mq, e);
+    }
+  }
+  skin.holder.updateMatrixWorld(true);
+  if (!Loco.OPTS.layer) return;
+  // the body's own axes (the holder's heading)
+  skin.holder.getWorldQuaternion(_wq);
+  _fwd.set(0, 0, 1).applyQuaternion(_wq).setY(0).normalize();
+  _right.set(0, 1, 0).cross(_fwd).normalize();   // (the avatar's left is +X: this is its left)
+  // lean (pitch about the body's side axis) and bank (roll about its forward axis), spread up the spine
+  const breathe = Loco.breathAt(frame, fps, move.style) * (0.012 - 0.006 * Math.min(1, mw));
+  // (above Bip01_Spine: the thighs hang off it, so leaning it would swing the planted feet)
+  for (const [name, share, br] of [["Bip01_Spine1", 0.45, 0.5], ["Bip01_Spine2", 0.35, 0.5], ["Bip01_Neck", 0.2, 0]]) {
+    const bone = b[name];
+    if (!bone) continue;
+    turnWorld(bone, _right, move.lean * share + breathe * br);
+    turnWorld(bone, _fwd, -move.bank * share);
+  }
+  // the head leads into a turn (neck 40 %, head 60 %)
+  turnWorld(b.Bip01_Neck, _Y, move.look * 0.4);
+  turnWorld(b.Bip01_Head, _Y, move.look * 0.6);
 }
 
 // ---------------------------------------------------------------- sitting (stage.setPose "sit" / "sit_floor")
@@ -541,6 +641,7 @@ export function avatarsAt(stage) {
     if (!capped.has(a.id)) { if (skin.shown) setShown(skin, false); skin.reason = "over the tier's lifelike cap"; skin.owner = "standin"; setStandIn(g, true); continue; }
     setStandIn(g, false);
     users ||= C.propUsers(actors);
+    skin.holds = users.holders.has(a.id) || users.carriers.has(a.id);
     if (skin.faceless !== (a.face === "faceless")) applyFace(skin, a.face === "faceless");
     const wet = !!(stage.water || stage.setFx?.underwater);
     const floats = !!stage._floatsInShot?.(a);   // a video mocap take in water too deep to stand in (stage._waterPhysics)
@@ -994,7 +1095,10 @@ function ensureGait(stage, a, skin, { last, fps, f }) {
     const path = keys.length > 1 ? groundPath(stage, a, last) : new Array(last + 1).fill([p[0], p[2]]);
     // the headings too: walking backwards (heading keys facing away from the travel) plays the walk backwards
     const headings = keys.length > 1 ? Array.from({ length: last + 1 }, (_, i) => stage._headingAt(a, i)) : null;
-    skin.gait = { sig, ...C.gaitTable(path, fps, kitStrides(skin.kit, scale), { headings }) };
+    // (human: the stride and cadence follow the speed, each person's own tempo; the upper body's lean, bank and look)
+    const style = Loco.personStyle(a.id);
+    const tab = C.gaitTable(path, fps, kitStrides(skin.kit, scale), { headings, human: { height: C.clayHeight(a) * (a.scale || 1), tempo: style.tempo, stride: Loco.OPTS.stride, blend: Loco.OPTS.blend } });
+    skin.gait = { sig, style, ...tab, body: Loco.bodyTable(tab.speed, headings, fps) };
   }
   return { scale };
 }
@@ -1040,9 +1144,11 @@ const airAt = (stage, a, f) => !!(stage._walkAirborneAt ? stage._walkAirborneAt(
 function poseRaw(stage, a, g, skin, f, { fps, scale, last }) {
   const i = Math.max(0, Math.min(last, f));
   const p = stage._actorPosAt(a, f), y = bodyY(stage, a, g, f) + physicsLift(a), yaw = stage._headingAt(a, f);
-  const speed = skin.gait.speed[i] || 0;
-  placeHolder(g, skin.holder, { x: p[0], y: y - F.floorFor(skin.kit, C.clipWeights(speed)) * scale, z: p[2], yaw, scale, tilt: smallTilt(a) });
-  drive(skin, { frame: f, fps, speed, phase: skin.gait.phase[i] || 0, seed: C.phaseSeed(a.id) });
+  const speed = skin.gait.speed[i] || 0, G = skin.gait, B = G.body;
+  const w = G.move ? C.moveWeights(speed, G.move[i]) : C.clipWeights(speed);   // (the human crossfade, eased: gaitTable)
+  placeHolder(g, skin.holder, { x: p[0], y: y - F.floorFor(skin.kit, w) * scale, z: p[2], yaw, scale, tilt: smallTilt(a) });
+  const move = { w, holds: !!skin.holds, style: G.style, speed, scale: G.scale?.[i] ?? 1, lean: B?.lean[i] || 0, bank: B?.bank[i] || 0, look: B?.look[i] || 0 };
+  drive(skin, { frame: f, fps, speed, phase: G.phase[i] || 0, seed: C.phaseSeed(a.id), move });
   skin.holder.updateMatrixWorld(true);   // the bones' world matrices for this pose (the foot plan reads them)
 }
 

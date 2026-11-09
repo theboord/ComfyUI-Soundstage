@@ -52,7 +52,8 @@ import * as VehicleParts from "./vehicleparts.mjs";
 import * as LightRig from "./lightrig.mjs";
 import { horse as HorseParts, prop as PropParts } from "./rigparts.mjs";
 import { cameraCurveAt, curveVersion, CAM_CURVE } from "./camcurve.mjs";   // the smooth camera curve (version 2)
-import { keysHash } from "./people/avatarcore.mjs";   // a cheap signature of a person's keys (_jumpsInShot)
+import { keysHash } from "./people/avatarcore.mjs";
+import * as Loco from "./people/locomotion.mjs";   // people start, stop, curve and turn like people (retimeTable, smoothHeadings)   // a cheap signature of a person's keys (_jumpsInShot)
 import { setStandIn } from "./people/standin.mjs";
 import { probeTier, pickTier, deviceInfo, savedPick, savePick } from "./tier.mjs";
 import { upgradeHuman, avatarsAt, avatarsReady, loadingCount, trackLoading, setShown as setAvatarShown, AVATAR_WAIT_MS, undoAvatarWrites } from "./people/avatars.mjs";   // lifelike people over the hidden logic rig (one motion, Lifelike-only L1)
@@ -1866,7 +1867,24 @@ export class Stage {
 
   _actorPosAt(a, frame) {
     const keys = this._actorKeys(a);
-    return Stage._sample(keys, frame, "position", false, hasHeadingKeys(keys));
+    const stunt = hasHeadingKeys(keys);
+    // a person walks the same path through the keys, retimed like a person (locomotion.retimeTable): from standing up
+    // to speed over about two steps, slowing into each stop, no step in speed at a middle key, a little slower on a
+    // tight curve; every key still on its frame (was: full speed from the first frame, a dead stop in one frame)
+    // (not a ride, a mount, a carry, a mocap or a recorded take: their keys are timed to something else)
+    if (Loco.OPTS.retime && !stunt && keys.length > 1 && Loco.HUMAN_KINDS.has(a.kind) && !a.mount_id && !a.mount_spans?.length && !a.carry_id && !a.carry_spans?.length && !a.mocap && !a.drive_take) frame = Loco.warpAt(this._humanTiming(a, keys), frame);
+    return Stage._sample(keys, frame, "position", false, stunt);
+  }
+
+  /** The person's retimed path (Loco.retimeTable), cached per actor until the keys or the fps change. */
+  _humanTiming(a, keys) {
+    const fps = this.state.shot?.fps || 24, last = this._lastFrame(), sig = `${keysHash(keys)}|${keys.length}|${fps}|${last}`;
+    this._timeCache ||= new WeakMap();
+    const hit = this._timeCache.get(a);
+    if (hit?.sig === sig && hit.keys === keys) return hit.tab;
+    const tab = Loco.retimeTable(keys, (t) => Stage._sample(keys, t, "position", false, false), { fps, first: 0, last });
+    this._timeCache.set(a, { sig, keys, tab });
+    return tab;
   }
 
   /**
@@ -1884,7 +1902,9 @@ export class Stage {
     let hd = this._headCache.get(a);
     if (!hd || hd.sig !== sig) {
       const fps = this.state.shot?.fps || 24;
-      const rateDeg = TURN_RATE[a.kind] ?? (["man", "woman", "child"].includes(a.kind) ? 540 : 360);
+      // people: 300 deg/s at most, then eased (Loco.smoothHeadings); was 540, a 120-degree turn on the spot in 0.2 s
+      const human = Loco.OPTS.heading && Loco.HUMAN_KINDS.has(a.kind);
+      const rateDeg = TURN_RATE[a.kind] ?? (human ? 300 : ["man", "woman", "child"].includes(a.kind) ? 540 : 360);
       const step = THREE.MathUtils.degToRad(rateDeg) / fps;
       const rest = THREE.MathUtils.degToRad(a.rotation_deg || 0);
       const wrap = (x) => Math.atan2(Math.sin(x), Math.cos(x));
@@ -1892,11 +1912,14 @@ export class Stage {
       const desired = [];
       let lastMove = null;
       for (let f = 0; f <= last; f++) {
-        const p0 = this._actorPosAt(a, f - 1), p1 = this._actorPosAt(a, f + 1);
+        // (people over +-4 frames: they now set off from standing and slow into a stop (Loco.retimeTable), so the
+        // first and last steps are under 0.25 m/s over two frames and the body kept its old facing there)
+        const W = human ? 4 : 1;
+        const p0 = this._actorPosAt(a, f - W), p1 = this._actorPosAt(a, f + W);
         const vx = p1[0] - p0[0], vz = p1[2] - p0[2];
         // Real travel only (> ~0.25 m/s): the spline drifts a few mm between two keys at the same spot.
         // drive: "reverse" (on the car or a key): the tail leads, the nose points back up the path.
-        if (keys.length > 1 && Math.hypot(vx, vz) * fps / 2 > 0.25) lastMove = Math.atan2(vx, vz) + (driveAt(a, keys, f) === "reverse" ? Math.PI : 0);
+        if (keys.length > 1 && Math.hypot(vx, vz) * fps / (2 * W) > (human ? 0.1 : 0.25)) lastMove = Math.atan2(vx, vz) + (driveAt(a, keys, f) === "reverse" ? Math.PI : 0);
         desired.push(lastMove ?? null);
       }
       // Before it ever moves, it faces its Turn.
@@ -1908,7 +1931,9 @@ export class Stage {
       const out = new Array(last + 1);
       out[0] = back[0];
       for (let f = 1; f <= last; f++) out[f] = toward(out[f - 1], back[f]);
-      hd = { sig, out };
+      // people: the body faces a little ahead of the path and eases into and out of a turn (Loco.smoothHeadings; was
+      // a constant-rate spin that started and stopped dead, the body never ahead of the path)
+      hd = { sig, out: Loco.OPTS.heading && Loco.HUMAN_KINDS.has(a.kind) && keys.length > 1 ? Loco.smoothHeadings(out, fps) : out };
       this._headCache.set(a, hd);
     }
     const out = hd.out;

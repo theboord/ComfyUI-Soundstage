@@ -17,6 +17,7 @@
 import * as THREE from "../../vendor/three.module.min.mjs";
 import { LIBRARY } from "../library.mjs";
 import { knockedOver, physicsFrom } from "./onemotion.mjs";
+import { naturalStride, strideScale } from "./locomotion.mjs";
 
 /** The person kinds (stage.mjs PERSON_KINDS): every one is lifelike or a marked stand-in, never clay. */
 export const PERSON_KINDS = new Set(["man", "woman", "child"]);
@@ -147,6 +148,15 @@ export function clipWeights(speed) {
   return { idle: 1 - move, walk: move * (1 - run), run: move * run };
 }
 
+/** The human idle <-> walk crossfade's ease (frames, a Gaussian's sigma; gaitTable). */
+export const BLEND_SIGMA = 2.5;
+
+/** Clip weights with the move weight (walk + run) given, the walk / run split by speed (gaitTable's human crossfade). */
+export function moveWeights(speed, move) {
+  const run = smooth(...BANDS.walkRun, Math.max(0, speed || 0)), m = Math.max(0, Math.min(1, move));
+  return { idle: 1 - m, walk: m * (1 - run), run: m * run };
+}
+
 /** A small, stable per-actor offset in [0, 1) so two idle people don't breathe in step. */
 export function phaseSeed(id) {
   let h = 2166136261;
@@ -174,26 +184,49 @@ export function blendStride(w, strides) {
  * headings[f] (radians, optional): where the body faces; a frame moving against it (backwards, more than ~107
  * degrees off) runs the phase backwards, so the clip walks backwards and the feet plant instead of skating.
  */
-export function gaitTable(positions, fps, strides, { window = 6, headings = null } = {}) {
-  const n = positions.length, speed = new Float64Array(n), phase = new Float64Array(n);
+export function gaitTable(positions, fps, strides, { window = 6, headings = null, human = null } = {}) {
+  const n = positions.length, speed = new Float64Array(n), phase = new Float64Array(n), scale = new Float64Array(n).fill(1);
   for (let f = 0; f < n; f++) {
     const f0 = Math.max(0, f - window), f1 = Math.min(n - 1, f + window);
     const a = positions[f0], b = positions[f1];
     speed[f] = f1 > f0 ? Math.hypot(b[0] - a[0], b[1] - a[1]) / ((f1 - f0) / fps) : 0;
   }
+  // human: the idle <-> walk crossfade is eased over about half a second (the move weight smoothed, sigma 4 frames):
+  // a person now speeds up from standing over ~0.7 s, and by speed alone the 0.15-0.6 m/s band went by in 4 frames
+  let move = null;
+  if (human && human.blend !== false) {
+    const raw = Array.from(speed, (v) => 1 - clipWeights(v).idle), sig = BLEND_SIGMA, R = Math.ceil(3 * BLEND_SIGMA);
+    move = new Float64Array(n);
+    for (let f = 0; f < n; f++) {
+      let s = 0, w = 0;
+      for (let j = -R; j <= R; j++) { const k = Math.exp(-0.5 * (j / sig) ** 2); s += k * raw[Math.max(0, Math.min(n - 1, f + j))]; w += k; }
+      move[f] = s / w < 1e-4 ? 0 : s / w > 1 - 1e-4 ? 1 : s / w;
+    }
+  }
+  const wAt = (f, v) => (move ? moveWeights(v, move[f]) : clipWeights(v));
   for (let f = 1; f < n; f++) {
     const a = positions[f - 1], b = positions[f];
     const d = Math.hypot(b[0] - a[0], b[1] - a[1]);
-    const w = clipWeights(0.5 * (speed[f - 1] + speed[f]));
+    const w = wAt(f, 0.5 * (speed[f - 1] + speed[f]));
     let dir = 1;
     if (headings && d > 1e-9) {
       const h = headings[f];
       if (Number.isFinite(h) && ((b[0] - a[0]) * Math.sin(h) + (b[1] - a[1]) * Math.cos(h)) / d < -0.3) dir = -1;
     }
-    phase[f] = phase[f - 1] + dir * d / Math.max(1e-6, blendStride(w, strides) * Math.max(0.2, (w.walk || 0) + (w.run || 0)));
+    // human (locomotion.mjs): the stride follows the speed (cadence AND stride grow with it), and the clip's leg swing
+    // is scaled to it (scale[f], drive's strideScale), instead of the clip's own 1.2 m stride played faster or slower
+    // (that made 2.9 steps a second at 1.7 m/s and 1.2 at 0.7 m/s)
+    const clip = blendStride(w, strides), mw = (w.walk || 0) + (w.run || 0);
+    const s = human && human.stride !== false ? strideScale(naturalStride(0.5 * (speed[f - 1] + speed[f]), w, human.height, human.tempo), clip, mw) : 1;
+    scale[f] = s;
+    phase[f] = phase[f - 1] + dir * d / Math.max(1e-6, clip * s * Math.max(0.2, mw));
   }
-  return { speed, phase };
+  if (n > 1) scale[0] = scale[1];
+  return move ? { speed, phase, scale, move } : { speed, phase, scale };
 }
+
+/** The idle's playback rate for a person's seed (1 at seed 0). */
+export const idlePace = (seed) => 1 + 0.1 * Math.sin(2 * Math.PI * 3.7 * (seed || 0));
 
 /**
  * Clip times (seconds) for this frame: idle runs on the clock of the shot (frame / fps); walk and run share one gait
@@ -207,7 +240,9 @@ export function clipTimes({ frame, fps = 24, phase = 0, seed = 0 }, clips) {
     const c = clips[k];
     if (!c) continue;
     const d = c.duration || 1;
-    out[k] = k === "idle" ? (((frame / fps) + seed * d) % d + d) % d : frac * d;
+    // (the idle at each person's own pace, 0.9-1.1x from the seed: two people standing side by side don't shift their
+    // weight in step; seed 0 plays the clip at its own rate)
+    out[k] = k === "idle" ? (((frame / fps) * idlePace(seed) + seed * d) % d + d) % d : frac * d;
   }
   return out;
 }
