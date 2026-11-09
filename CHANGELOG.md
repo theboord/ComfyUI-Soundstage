@@ -5,6 +5,17 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-08
 
+**100STYLE mocap onto the Rocketbox people: the BVH reader and the retarget, not wired into the App (private branch `private/lifelike`, 20:06 by this machine's clock)**
+
+- **Still wrong or not done (read first):**
+  1. **Nothing in the App uses it yet.** [web/stage/people/mocap.mjs](web/stage/people/mocap.mjs) is a module on its own; no stage, kit or gait code imports it. It only builds the gallery Mike asked for (session scratchpad `style_gallery/`).
+  2. **No motion data is in the repo or would ship.** 100STYLE (CC BY 4.0, credit "The 100STYLE Dataset - Ian Mason") stays in the maintainer's local `assets_local/`. Shipping retargeted clips needs Mike's decision and the credit.
+  3. **The retarget copies only where each limb points.** Every limb segment points as the performer's did (direction error under 0.1° across all 100 FW takes). The body keeps the Rocketbox proportions, though, so feet and hands sit where those limbs reach, and nothing grounds them. The hands, fingers and toes hold the Rocketbox walk's first-frame pose. The head follows the neck's direction, and its own turn is dropped.
+  4. **One performer for every 100STYLE clip.** On the woman it would be a man's walk.
+  5. **Neutral walks only from 0.5 to 1.0 m/s.** The only other style with straight walking at 1.5 m/s or faster is Angry (forward lean 14°).
+- **What's new:** `parseBVH` reads numbers only and refuses anything else. `bvhPose` gives world positions. `footStrikes` / `pickStrides` find straight walking strides by foot strike. `makeRetargeter` / `retarget` map onto Bip01: each bone is turned to the performer's segment direction, its twist taken from the knee or elbow hinge or the body's left, and the hips' path is scaled by leg length. `paceWeights` blends the two walks nearest a speed.
+- **Tests:** new [tests/js/mocap.test.mjs](tests/js/mocap.test.mjs) (3: the BVH read and interpolation, refusing bad input, the pace blend). Full JS run: 1926 tests, 1923 passed. The 2 failures were timing tests that pass alone: oneclick_sweep "stopped answering" (the listed flake) and footplant "a key edit rebuilds the plan fast". Both are flagged as flaky in earlier entries.
+
 **The walk plays the clips as authored again: every layer that altered the animation is off (private branch `private/lifelike`, 19:59 by this machine's clock)**
 
 Mike, after the walk before/after and the diagnostic ladder: "Whatever we're doing to alter the animations does not look good, so let's back up on that."
