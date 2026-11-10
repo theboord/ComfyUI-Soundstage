@@ -375,7 +375,10 @@ def test_klein_depth_lock_adds_a_krea_depth_pass_on_the_klein_frame():
     assert krea.inputs["steps"] == 8 and krea.inputs["sampler_name"] == "euler_ancestral"
     # the Krea pass starts from the decoded Klein frame, held to the stage depth (control_image), and is the output
     enc = g.nodes[krea.inputs["latent_image"][0]]
-    assert enc.class_type == "VAEEncode" and g.nodes[enc.inputs["pixels"][0]].class_type == "VAEDecode"
+    assert enc.class_type == "VAEEncode"
+    blur = g.nodes[enc.inputs["pixels"][0]]   # the Klein frame, lightly blurred (frame_lock.DEPTH_PREBLUR: no maze skies)
+    assert blur.class_type == "ImageBlur" and blur.inputs["blur_radius"] == 2 and blur.inputs["sigma"] == 1.0
+    assert g.nodes[blur.inputs["image"][0]].class_type == "VAEDecode"
     ctrl = next(n for n in g.nodes.values() if n.class_type == "Krea2ControlImageEncode")
     assert ctrl.inputs["control_image"] == link("ctrl")
     assert g.nodes[out["image"][0]].class_type == "VAEDecode"

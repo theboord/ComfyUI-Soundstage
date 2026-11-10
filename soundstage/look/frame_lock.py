@@ -47,6 +47,11 @@ INIT_DOWN = 16            # the latent starts from the Color pass shrunk 16x and
 MIN_DENOISE = 0.3
 DEPTH_LOCK = 0.35         # the Klein frame's Krea 2 depth pass denoise when "Lock to the stage depth" is on. 0.5 until
                           # 2026-11-10: at 0.5 Krea added a car in most car-chase frames; 0.35 kept the count (overnight QA)
+DEPTH_PREBLUR = 2         # the Klein frame is blurred this much (ImageBlur radius, sigma = half) before the Krea depth pass:
+                          # Klein's fine grain, under the depth-control LoRA at low denoise, grew into a worm/maze pattern
+                          # over flat bright skies (overnight QA 2026-11-10, desert riders: 6 of 6 frames at 0.35 and 2 of
+                          # 5 at 0.5 had it; none with the depth LoRA off; none with this blur). Radius 3 also cleared it
+                          # but left the hero car visibly soft; 2 keeps it crisp. 0 = off.
 DEPTH_LOCK_MIN = 0.2      # below this the depth pass changes nothing a check can see
 DEPTH_LOCK_MAX = 0.9      # above this it is a new Krea frame, not Klein's frame held to the depth
 KREA_STEPS = 8            # Krea 2 Turbo's distilled schedule (8 steps, cfg 1, euler_ancestral / beta)

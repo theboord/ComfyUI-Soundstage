@@ -16,7 +16,7 @@ import json
 import math
 import re
 
-from ..look.frame_lock import DEFAULT_DENOISE, INIT_DOWN, KREA_STEPS, depth_lock, stage_denoise
+from ..look.frame_lock import DEFAULT_DENOISE, DEPTH_PREBLUR, INIT_DOWN, KREA_STEPS, depth_lock, stage_denoise
 
 
 class RouterError(ValueError):
@@ -544,6 +544,8 @@ def krea_depth_pass(g, p, image, seed):
         raise RouterError(DEPTH_MISSING)
     model, clip, vae = _loaders(g, {"unet": w["krea_unet"], "text_encoder": w["krea_text_encoder"],
                                     "vae": w["krea_vae"]}, "krea2")
+    if DEPTH_PREBLUR:   # Klein's grain would grow into a maze pattern on flat skies under the depth LoRA (frame_lock.py)
+        image = g.node("ImageBlur", image=image, blur_radius=DEPTH_PREBLUR, sigma=DEPTH_PREBLUR / 2).out(0)
     latent = g.node("VAEEncode", pixels=image, vae=vae).out(0)
     model = depth_control(g, model, vae, p["control"], latent, w["depth_lora"])
     pos, neg = _text(g, clip, depth_pass_prompt(p))
