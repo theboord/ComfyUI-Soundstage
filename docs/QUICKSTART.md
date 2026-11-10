@@ -17,7 +17,7 @@ Your first shot in about ten minutes on the built-in demo, then a whole three-sh
 
 ## Rough edges we know about
 
-- **The pictures here were recorded on 2 Nov, before the stage switched to lifelike people.** The stage now shows Microsoft Rocketbox people instead of the old grey figures; without the avatar files (see the README's Install) every person is a marked stand-in. The steps are the same.
+- **The pictures here were recorded on 2 Nov, before the stage switched to lifelike people.** The stage now shows Microsoft Rocketbox people instead of the old grey figures; without the avatar files every person is a marked stand-in: fetch them once with `python3 tools/fetch_rocketbox.py` from the Soundstage folder. The steps are the same.
 - **Needs ComfyUI 0.39 or newer** for FLUX 3 Klein, ④ Frame's default model (0.44.2 recommended). ④ Frame's **Auto** prompt now offers variants to pick from (or **Try all**), and ④ shows each frame forming live; see the [tutorial](TUTORIAL.md#step-4-frame).
 - **Crate crash needs commit 0d69037 (2 Nov) or later.** Older builds start the crates on the floor and throw them hundreds of metres. Update the node pack and reload the browser tab. Space-to-play on ③ Set, ⌘Z from anywhere in the workspace and Esc for the Physics panel need the same evening's update ("③ Set: Space plays the shot…" in the CHANGELOG).
 - **Look doesn't change the stage viewport.** It changes the stock, lens, palette and grade that go into the render. Only the framing changes on screen.

@@ -50,7 +50,7 @@ Not in the demo at all (each one says "available in the full install"): new rend
 
 ### New on main (Nov 10)
 
-- **Lifelike people.** Everyone on the stage is a lifelike Microsoft Rocketbox person (MIT) with planted feet, natural walks and timed sit-downs; the old clay figures are gone (the rig underneath is hidden logic only). The avatar files are fetched separately: see [Install](#install).
+- **Lifelike people.** Everyone on the stage is a lifelike Microsoft Rocketbox person (MIT) with planted feet, natural walks and timed sit-downs; the old clay figures are gone (the rig underneath is hidden logic only). Fetch the avatar files once with `python3 tools/fetch_rocketbox.py` (see [Install](#install)).
 - **④ Frame: FLUX 3 Klein by default, Krea 2 + depth as the strict option.** The cast pass then gives the one person in frame the cast picture's face and hair, on FLUX 3 Klein.
 - **Auto prompt in 3-4 variants** (Naturalistic, Moody cinematic, Documentary, High contrast) that keep the stage's facts; pick one, or **Try all** to paint a frame from each.
 - **Live previews:** ④ Frame shows each frame forming, step by step. ⑤ Motion has a **Live preview while rendering** switch, off by default.
@@ -602,7 +602,13 @@ pip install -r ComfyUI-LTXVideo/requirements.txt
 
 Use the same Python environment that runs ComfyUI. Then download the models yourself (the App never downloads weights) listed in [MODELS.md](MODELS.md) into `ComfyUI/models/`. Some repos are gated: accept the license on Hugging Face first, then `hf auth login`.
 
-**Lifelike people (Microsoft Rocketbox, MIT, about 27 MB, not in this repo):** without them every person on the stage shows as a marked stand-in. Copy the two adult avatars, their textures (converted to 1024 px PNG) and the idle / walk / run / talk / seated clips from [microsoft/Microsoft-Rocketbox](https://github.com/microsoft/Microsoft-Rocketbox) at commit `0943055db6ec570bcef9f2c8b41c9e5467c808f9` (or later: earlier commits are not MIT) into `web/stage/people/rocketbox/`, with its `LICENSE.md`. The exact file list is in [web/stage/people/README.md](web/stage/people/README.md).
+**Lifelike people (Microsoft Rocketbox, MIT, about 35 MB, not in this repo):** without them every person on the stage shows as a marked stand-in. Fetch them once, from the Soundstage folder:
+
+```bash
+python3 tools/fetch_rocketbox.py
+```
+
+It downloads the two adult avatars, their textures and the idle / walk / run / seated clips from [microsoft/Microsoft-Rocketbox](https://github.com/microsoft/Microsoft-Rocketbox) at one pinned MIT commit, checks each file's size and sha256, and puts them with the licence in `web/stage/people/rocketbox/`. It runs only when you run it, and running it again skips what is there. Details: [web/stage/people/README.md](web/stage/people/README.md).
 
 **Linux / RunPod:** one script installs the node packs, copies the workflows and downloads the models:
 
@@ -690,7 +696,7 @@ To add an image, video, matte or clean-plate model (one registry entry plus one 
 - Chatterbox by Resemble AI (open TTS).
 - [three.js](https://threejs.org) and [Spark](https://sparkjs.dev): the 3D stage and splat rendering.
 - [Quaternius](https://quaternius.com): the CC0 horse and car models.
-- [Microsoft Rocketbox](https://github.com/microsoft/Microsoft-Rocketbox) (MIT): the lifelike people on the stage (fetched separately, see Install).
+- [Microsoft Rocketbox](https://github.com/microsoft/Microsoft-Rocketbox) (MIT): the lifelike people on the stage (fetched with `python3 tools/fetch_rocketbox.py`, see Install).
 - [Lucide](https://lucide.dev): icons. [Space Grotesk](https://fonts.google.com/specimen/Space+Grotesk): the UI font.
 
 Vendored components and their licenses are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

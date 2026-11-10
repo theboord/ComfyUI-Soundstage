@@ -6,17 +6,25 @@ Men and women on the 3D stage show as lifelike people. The logic rig (the old bl
 
 The avatars and clips come from [Microsoft Rocketbox](https://github.com/microsoft/Microsoft-Rocketbox), MIT licence, Copyright (c) 2020 Microsoft, pinned at commit `0943055db6ec570bcef9f2c8b41c9e5467c808f9`. Only fetch from that commit or a later one: before 2020-11-17 the library had a non-commercial licence.
 
-They are kept out of git (about 27 MB). For now a maintainer puts them in `web/stage/people/rocketbox/` by hand; a one-click download from the pinned commit comes later. The folder holds:
+They are kept out of git. Fetch them once with:
+
+```bash
+python3 tools/fetch_rocketbox.py
+```
+
+It runs only when you run it (nothing in the App or the installers calls it), uses the Python standard library, downloads about 165 MB from that one pinned commit, checks every file's size and sha256, converts the 2048 px TGA textures to the 1024 px PNGs the stage loads, and leaves about 35 MB in `web/stage/people/rocketbox/`. Running it again skips what is already there. `--list` prints the URLs without downloading; `--dest DIR` installs elsewhere. The folder then holds:
 
 | File | From the Rocketbox repo |
 |---|---|
 | `Male_Adult_01.fbx`, `Female_Adult_01.fbx` | `Assets/Avatars/Adults/<name>/Export/<name>.fbx` |
-| `tex/m002_*.png`, `tex/f001_*.png` (body / head colour, normal, specular, and the opacity map; the specular maps are not used and never downloaded) | the avatars' `Textures/*.tga`, shrunk to 1024 px PNG with macOS `sips`; the opacity PNG keeps its alpha |
-| `anim/m_idle_neutral_01.max.fbx`, `m_walk_…`, `m_run_…`, `m_gestic_talk_…`, `f_idle_…`, `f_walk_…`, `f_run_…` | `Assets/Animations/all_animations_max_motextr_static/` and `_xy/` |
-| `anim/m_sit_chair_idle_neutral_01.max.fbx`, `f_sit_chair_idle_neutral_01.max.fbx` (optional: the seated idle of a timed sit; without them the standing idle is folded onto the seat) | `Assets/Animations/all_animations_max_motextr_static/` |
-| `LICENSE.md` | the MIT licence, copied next to the files |
+| `tex/m002_*.png`, `tex/f001_*.png`: body and head colour and normal, and the opacity map (keeps its alpha) | the avatars' `Textures/*.tga`, halved to 1024 px by a 2x2 box average. The specular maps are not used and never downloaded |
+| `anim/m_idle_neutral_01.max.fbx`, `f_idle_…`, `m_sit_chair_idle_neutral_01.max.fbx`, `f_sit_chair_idle_…` | `Assets/Animations/all_animations_max_motextr_static/` (the seated idles are optional at run time: without them the standing idle is folded onto the seat) |
+| `anim/m_walk_…`, `m_run_…`, `f_walk_…`, `f_run_…` | `Assets/Animations/all_animations_max_motextr_xy/` |
+| `LICENSE.md` | the repo's MIT licence, kept next to the files |
 
-Without the folder every person shows as the marked stand-in (`standin.mjs`; one line in the browser console says so). People are never shown as the blocking figure (Lifelike-only plan, L1): the logic rig is hidden, and one motion (`onemotion.mjs`, `retarget.mjs`) drives the visible body and that logic rig together. The device tier (`../tier.mjs`) caps lifelike people per shot (Phone 2, Low 6, Standard 16); the rest show the stand-in. The installer plan and the offline per-tier texture downscale are in `soundstage/assets/rocketbox_install.py` (nothing downloads yet; the specular maps are never loaded and the meshes, 7,440 / 8,732 triangles, need no decimation).
+On the python.org macOS Python, HTTPS needs its certificates installed once (the script says how if they are missing); it never turns certificate checks off.
+
+Without the folder every person shows as the marked stand-in (`standin.mjs`; one line in the browser console says so). People are never shown as the blocking figure (Lifelike-only plan, L1): the logic rig is hidden, and one motion (`onemotion.mjs`, `retarget.mjs`) drives the visible body and that logic rig together. The device tier (`../tier.mjs`) caps lifelike people per shot (Phone 2, Low 6, Standard 16); the rest show the stand-in. The installer plan and the offline per-tier texture downscale are in `soundstage/assets/rocketbox_install.py` (the download itself is `tools/fetch_rocketbox.py`; the specular maps are never loaded and the meshes, 7,440 / 8,732 triangles, need no decimation).
 
 ## How it works
 

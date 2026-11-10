@@ -3,6 +3,34 @@
 Soundstage is updated continuously on `main`. Newest first. Times are US Pacific.
 Each entry links to the code; every milestone ships with tests.
 
+## 2026-11-10 PST · Lifelike people in one command: `python3 tools/fetch_rocketbox.py`
+
+**Still wrong or not verified (read first):**
+1. **The user still has to run it.** Until they do, people are grey marked stand-ins. The App doesn't offer to run it, and nothing runs it automatically (on purpose).
+2. **Certificates on the python.org macOS Python.** Without its certificates installed, HTTPS fails. The script stops at the first file and prints the fix (Install Certificates.command, or `pip install certifi`). It uses certifi when installed and never turns verification off.
+3. **The textures are converted in pure Python** (a 2x2 box average of the 2048 px TGAs), about 1-2 s each. On this Mac the result matched the hand-made `sips` kit to a mean 0.26/255 per channel. The PNGs are 20-35 % larger than the `sips` ones (about 35 MB for the whole kit).
+4. **Tested once end to end, from this Mac only.** One real run into a throwaway copy of the tree fetched 21/21 files. A demo build from that copy showed the Western riders lifelike. Not run on Windows or Linux.
+5. The talking clip (`m_gestic_talk_neutral_01`) that the old hand-copy list named is not fetched: the stage never loads it.
+
+- [tools/fetch_rocketbox.py](tools/fetch_rocketbox.py) fetches only what the stage loads (web/stage/people/avatarcore.mjs `ROCKETBOX`, avatars.mjs):
+  - the two adult avatars;
+  - their body and head colour and normal maps and the opacity map (the specular maps are never fetched);
+  - the idle and seated idles from `_static`, and the walk and run from `_xy`;
+  - the MIT `LICENSE.md`.
+
+  It fetches them from microsoft/Microsoft-Rocketbox at commit `0943055db6ec570bcef9f2c8b41c9e5467c808f9` over raw.githubusercontent.com. Each file is checked against its recorded size and sha256 before use. A file that is already in place is skipped. `--list` prints the URLs; `--dest` installs elsewhere.
+- Tests: [tests/test_fetch_rocketbox.py](tests/test_fetch_rocketbox.py), offline with a fake network. They cover:
+  - the list equals what the stage loads and the installer plan's maps;
+  - the pinned URLs are used;
+  - a second run downloads nothing;
+  - a wrong size is fetched again;
+  - a bad hash is refused;
+  - a certificate failure stops at once;
+  - importing it touches nothing;
+  - nothing in web/, soundstage/ or tools/ calls it;
+  - TGA decode (bottom-up, BGR, RLE, alpha) and the box average.
+- Docs: README Install, Quickstart and [web/stage/people/README.md](web/stage/people/README.md) now say to run the script instead of copying by hand.
+
 ## 2026-11-10 PST · Release prep for main: the Models download panel switched off; README, Quickstart and MODELS brought up to the lifelike App
 
 **Still wrong or not verified (read first):**
