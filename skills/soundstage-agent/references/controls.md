@@ -338,6 +338,8 @@ Each line: **control**: what it does.
 ## App steps (④ Frame / ⑤ Motion / ⑥ Review)
 - **Prompt source**
 - **The prompt sent to the image model**
+- **Try all**: Try all: Generate paints a frame from each Auto variant (the Variations count split across them), each labelled with its variant, so you can pick by the picture
+- **Auto prompt variants**
 - **Comparing this frame with your blocking**: Comparing this frame with your blocking (SAM 3.1)
 - **None**
 - **Remove this LoRA**
