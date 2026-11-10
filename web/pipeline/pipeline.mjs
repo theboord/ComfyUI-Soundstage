@@ -116,8 +116,19 @@ export const frameModelLabel = (model) => String(model || "").split(" ·")[0].re
 /** Said in ④ Frame's cast card on Krea 2 + depth (the App's own KSampler, not the frame node): no references reach it,
  *  and the cast pass (router/castpass.py, after the frame node's model) never runs on it. */
 export const KREA_DEPTH_CAST_NOTE = "Krea 2 + depth doesn't take the cast pictures, and the cast pass (the cast face and " +
-  "hair painted onto the one person in frame 1) runs only after the frame node's models: pick FLUX 3 Klein (or FLUX.2 " +
-  "Klein 9B) to use them.";
+  "hair painted onto the one person in frame 1) runs only after the frame node's models. For the Krea 2 look with your " +
+  "cast: pick FLUX 3 Klein and Lock to the stage depth Strict (Krea 2 Turbo paints on the stage depth, then the cast " +
+  "pass runs), or FLUX 3 Klein on Light.";
+/** Said in ④ Frame's cast card when Krea 2 Turbo paints on the frame node (Strict, or picked directly): Krea 2 Turbo
+ *  takes no reference pictures there (adapters.krea2), so the character sheet comes in through the cast pass only. */
+export const KREA_TURBO_CAST_NOTE = "Krea 2 Turbo paints from the prompt and your stage depth, not from the cast " +
+  "pictures; the cast pass then paints the character sheet's face and hair onto the one person in frame 1.";
+/** The title on the greyed Light button while Krea 2 Turbo itself is the frame model (Light is a pass over a Klein frame). */
+export const TURBO_NO_LIGHT = "Light is a Krea 2 pass over a FLUX 3 Klein frame; Krea 2 Turbo paints on the depth itself (Strict)";
+/** The depth-lock mode when Krea 2 Turbo is the frame node's model (S4, Maya, 2026-11-09: with the lock at 0 Krea 2
+ *  painted her already seated in profile while the stage had her standing beside the chair). Strict unless the user
+ *  explicitly picked Off; a Light carried over from FLUX 3 Klein is Strict here (Krea 2 Turbo has no Light). */
+export const turboDepthMode = (picked) => (picked === "off" ? "off" : "strict");
 /** C32 (Jon's Claude): the title on the greyed Light / Strict lock buttons while FLUX.2 Klein 9B paints the frame. */
 export const KLEIN9B_NO_LOCK = "Klein 9B has no Krea 2 depth pass; lock is Off";
 /** The depth-lock mode a FLUX 3 Klein frame starts with when nobody picked one: Light when Krea 2 Turbo is installed
@@ -139,7 +150,8 @@ const DEPTH_TITLE = "Hold the frame to your stage's exact depth pass with Krea 2
   "Light: Klein paints the frame, then Krea 2 repaints it at half strength on the depth pass. Real surfaces (clothes, headlights), " +
   "keeps your cast pictures; silhouettes move only a little. It can add small far-off people (the check flags them).\n" +
   "Strict: Krea 2 paints the frame itself on the depth pass. Best when subjects stand apart from their surroundings in depth; " +
-  "weak when a car sits on a road at its own depth. Cast pictures are not used.\n" +
+  "weak when a car sits on a road at its own depth. Krea 2 doesn't take the cast pictures; the cast pass paints a character " +
+  "sheet's face and hair on the one person afterwards.\n" +
   "Tested on three shots (silhouette match with the blocking, Off / Light / Strict): riders' horses 15% / 16% / 67%; " +
   "car chase hero car 82% / 86% / 20%; two-person street 93% / 79% / 71%. Light added far pedestrians on the street, " +
   "Strict a person in the foreground, so Off stays the default.\n" +
@@ -153,7 +165,8 @@ export const KLEIN_CONTROL_NOTE = "Klein has no depth or pose control: it keeps 
 /** Is this frame-model key a FLUX Klein (FLUX 3 Klein, FLUX.2 Klein 9B)? */
 export const isKleinModel = (m) => /\bKlein\b/.test(String(m || ""));
 const DEPTH_NOTES = { off: "Klein alone", light: "Krea 2 depth pass over the Klein frame",
-  strict: "Krea 2 paints on the depth pass; no cast pictures" };
+  strict: "Krea 2 paints on the depth pass; cast via the cast pass" };
+const TURBO_NOTES = { off: "off: Krea 2 Turbo paints without the stage depth", strict: "Krea 2 Turbo paints on the depth pass (Strict)" };
 const VIDEO_L2R = "__ltx_l2r__";
 // Optional second engine: MiniMax H3 through the video picker (router key starts with this). LTX stays the default.
 const H3_KEY = "MiniMax H3 · local";
@@ -935,6 +948,8 @@ export class Pipeline {
       : `${h3 ? "H3 sees" : "Sent to the image model"}: ${used.map((it) => refLabel(it)).join(" · ")}.`;
     const warn = over.length ? `${keys.length} ticked, only ${lim} go to the model (characters first, then the location, wardrobe, props): not sent ${over.map((it) => it.name).join(", ")}.` : "";
     const krea = where === "frame" && this.f?.model?.value === STILL_KREA;
+    // Krea 2 Turbo on the frame node (Strict, or picked itself) with a character in: the cast pass carries the likeness
+    const turboCast = where === "frame" && !krea && isKreaTurbo(this.w(9081, "model")?.value) && used.some((it) => shotKind(it) === "character");
     const noNode = where === "frame" && !this.w(9081, "ref_files");
     host.style.setProperty("--ss-sc-tile", `${px}px`);
     host.replaceChildren(...[
@@ -946,6 +961,7 @@ export class Pipeline {
       h("div", { class: "ss-sc-note" }, note),
       warn ? h("div", { class: "ss-sc-note warn" }, warn) : null,
       krea ? h("div", { class: "ss-sc-note warn" }, KREA_DEPTH_CAST_NOTE) : null,
+      turboCast ? h("div", { class: "ss-sc-note" }, KREA_TURBO_CAST_NOTE) : null,
       noNode ? h("div", { class: "ss-sc-note warn" }, "References need the updated Soundstage nodes (restart ComfyUI once).") : null].filter(Boolean));
   }
 
@@ -1127,8 +1143,8 @@ export class Pipeline {
       this._applyStillModel();
     } else {
       const cur = this.w(9081, "model")?.value;
-      // Strict depth lock leaves Krea 2 Turbo on the frame node: the picker still reads FLUX 3 Klein
-      f.model.value = usePicker ? ((isKreaTurbo(cur) ? klein : cur) || STILL_KREA) : STILL_KREA;
+      if (usePicker && isKreaTurbo(cur)) this._showTurbo(cur, klein);
+      else f.model.value = usePicker ? (cur || STILL_KREA) : STILL_KREA;
     }
     this._fillLoras();
     this.f.loras.set(this._readLoras());
@@ -1250,18 +1266,24 @@ export class Pipeline {
     const krea = f.model.value === STILL_KREA, has = !!this.w(9081, "depth_lock");
     const klein = /^FLUX 3 Klein/.test(f.model.value), turbo = this._kreaTurboKey();
     const usable = !krea && has && klein;
+    // Krea 2 Turbo itself on the frame node (picked on the canvas, or a frame it painted unlocked): Strict by default,
+    // so the pose, the layout and the furniture follow the stage; Off only when the user picked Off
+    const tp = !krea && has && isKreaTurbo(f.model.value);
     // C32: FLUX.2 Klein 9B has no Krea 2 depth pass (the router errors), so its lock is Off: Off stays pressed and
     // selectable, Light / Strict are greyed with the reason (the depth_lock 0 below comes from the not-usable branch)
     const no9b = has && frameDefaultsKey(f.model.value) === "klein9b";
-    let mode = no9b ? "off" : this._dmode || defaultDepthMode(f.model.value, !!turbo);
-    if (mode === "strict" && !turbo) mode = "off";
+    let mode = no9b ? "off" : tp ? turboDepthMode(this._dmode) : this._dmode || defaultDepthMode(f.model.value, !!turbo);
+    if (mode === "strict" && !turbo && !tp) mode = "off";
     for (const b of f.depthSeg.children) {
-      const locked = no9b && b.dataset.k !== "off";
-      b.disabled = no9b ? locked : !usable || (b.dataset.k === "strict" && !turbo);
-      if (locked) b.title = KLEIN9B_NO_LOCK; else if (b.title === KLEIN9B_NO_LOCK) b.title = "";
-      b.setAttribute("aria-pressed", String((usable || no9b) && b.dataset.k === mode));
+      const locked = no9b && b.dataset.k !== "off", noLight = tp && b.dataset.k === "light";
+      b.disabled = no9b ? locked : tp ? noLight : !usable || (b.dataset.k === "strict" && !turbo);
+      if (locked) b.title = KLEIN9B_NO_LOCK; else if (noLight) b.title = TURBO_NO_LIGHT;
+      else if (b.title === KLEIN9B_NO_LOCK || b.title === TURBO_NO_LIGHT) b.title = "";
+      b.setAttribute("aria-pressed", String((usable || no9b || tp) && b.dataset.k === mode));
     }
-    if (usable) {
+    if (tp) {
+      this.set(9081, "depth_lock", mode === "off" ? 0 : DEPTH_LOCK);
+    } else if (usable) {
       this.set(9081, "depth_lock", mode === "off" ? 0 : DEPTH_LOCK);
       this.set(9081, "model", mode === "strict" ? turbo : f.model.value);
     } else if (has && !krea) {
@@ -1272,7 +1294,7 @@ export class Pipeline {
     if (f.kleinNote) f.kleinNote.hidden = !isKleinModel(f.model.value);
     this._wireFramePrompt(!krea && isKleinModel(f.model.value) && !(usable && mode === "strict"));
     f.depthNote.textContent = krea ? "always on with Krea 2 + depth" : !has ? "needs ComfyUI restarted (new frame node)" :
-      no9b ? "off: Klein 9B has no Krea 2 depth pass" : !klein ? "FLUX 3 Klein only" : DEPTH_NOTES[mode];
+      no9b ? "off: Klein 9B has no Krea 2 depth pass" : tp ? TURBO_NOTES[mode] : !klein ? "FLUX 3 Klein only" : DEPTH_NOTES[mode];
   }
 
   /** FLUX Klein on the frame node reads the Look's edit_prompt (C28 (e): "Turn image 1, a plain 3D stage render, into a
@@ -1309,6 +1331,22 @@ export class Pipeline {
   _kreaTurboKey() {
     const vals = this.w(9081, "model")?.options?.values || [];
     return (Array.isArray(vals) ? vals : []).map((v) => (typeof v === "string" ? v : v?.key)).find(isKreaTurbo) || null;
+  }
+
+  /** The picker on Krea 2 Turbo itself (it lists no Turbo row: Strict paints with it under FLUX 3 Klein). */
+  _turboOption(key) {
+    const f = this.f;
+    if (![...f.model.options].some((o) => o.value === key)) f.model.append(new Option(`${frameModelLabel(key)} (local)`, key));
+    f.model.value = key;
+  }
+
+  /** ④ Frame opened with Krea 2 Turbo on the frame node: FLUX 3 Klein's Strict (the lock's own mode; the default when
+   *  nobody picked one), or Krea 2 Turbo itself when the user picked Off (or no FLUX 3 Klein is installed). */
+  _showTurbo(cur, klein) {
+    const saved = this._dmode ?? this.node(9081)?.properties?.ssDepthMode;
+    if (saved === "off" || !klein) { this._turboOption(cur); return; }
+    this.f.model.value = klein;
+    this._dmode = "strict";   // a Light carried over is Strict here: the frame node already paints with Krea 2 Turbo
   }
 
   _kleinKey() { return [...(this.f?.model?.options || [])].find((o) => /^FLUX 3 Klein/.test(o.value))?.value; }
@@ -1593,7 +1631,9 @@ export class Pipeline {
       const krea = c.model === STILL_KREA;
       this.set(9082, "switch", !krea);
       if (!krea) this.set(9081, "model", c.model);
-      this.f.model.value = isKreaTurbo(c.model) ? (this._kleinKey() || c.model) : c.model;
+      // a Krea 2 Turbo frame painted with the lock is FLUX 3 Klein's Strict; one painted without it is Krea 2 Turbo, Off
+      if (isKreaTurbo(c.model) && !c.edited && depthModeOf(c) === "off") this._turboOption(c.model);
+      else this.f.model.value = isKreaTurbo(c.model) ? (this._kleinKey() || c.model) : c.model;
     }
     if (this.f?.depthSeg && !c.edited && c.model !== STILL_KREA) { this._dmode = depthModeOf(c); this._syncDepthLock(); }
     if (c.seed != null) this.set(c.seedNode || 9056, "seed", c.seed);

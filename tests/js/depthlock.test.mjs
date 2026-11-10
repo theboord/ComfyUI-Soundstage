@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Pipeline, LOOK_START, DEPTH_LOCK, depthLockFor, depthModeOf, isKreaTurbo, frameLockFor, frameDenoiseFor } from "../../web/pipeline/pipeline.mjs";
+import { Pipeline, LOOK_START, DEPTH_LOCK, turboDepthMode, TURBO_NO_LIGHT, KREA_TURBO_CAST_NOTE, KREA_DEPTH_CAST_NOTE, depthLockFor, depthModeOf, isKreaTurbo, frameLockFor, frameDenoiseFor } from "../../web/pipeline/pipeline.mjs";
 import { depthTip } from "../../web/pipeline/framecheck.mjs";
 
 // ④ Frame "Lock to the stage depth" (soundstage/look/frame_lock.py VERSION 3): a frame records the depth pass it was
@@ -61,14 +61,80 @@ test("switching from a locked Klein frame to another image model clears the lock
   p._syncDepthLock();
   assert.equal(widgets[0].value, DEPTH_LOCK);
   assert.equal(p._depthLockNow(), DEPTH_LOCK);
-  for (const other of [turbo, "Z-Image Turbo · local"]) {
-    p.f.model.value = other;
-    widgets[1].value = other;
-    p._syncDepthLock();
-    assert.equal(widgets[0].value, 0, other);            // Krea 2 Turbo picked directly must not paint Strict unasked
-    assert.equal(p._depthLockNow(), 0, other);           // and its frames are not recorded as depth-locked
-  }
+  const other = "Z-Image Turbo · local";
+  p.f.model.value = other;
+  widgets[1].value = other;
+  p._syncDepthLock();
+  assert.equal(widgets[0].value, 0, other);              // no Klein lock left behind on a model without one
+  assert.equal(p._depthLockNow(), 0, other);             // and its frames are not recorded as depth-locked
   p.f.model.value = klein;
   p._syncDepthLock();
   assert.equal(widgets[0].value, DEPTH_LOCK);            // back on Klein, the chosen mode comes back
+});
+
+// Maya S4, 2026-11-09: Krea 2 Turbo picked on the frame node kept depth_lock 0, so it painted her already seated in
+// profile while the stage had her standing beside the chair. Krea 2 Turbo on the frame node locks Strict by default.
+function fakeTurbo(mode) {
+  const { p, widgets, turbo } = fakePipeline("Krea 2 Turbo · local [<$1M]", 0, mode);
+  const btns = p.f.depthSeg.children;
+  for (const b of btns) { b.pressed = null; b.title = ""; b.setAttribute = (k, v) => { if (k === "aria-pressed") b.pressed = v; }; }
+  return { p, widgets, turbo, btns };
+}
+
+test("Krea 2 Turbo on the frame node locks to the stage depth (Strict) when nobody picked a mode", () => {
+  for (const carried of [null, "light", "strict"]) {   // a Light carried over from FLUX 3 Klein is Strict on Turbo
+    const { p, widgets, turbo, btns } = fakeTurbo(carried);
+    p._syncDepthLock();
+    assert.equal(widgets[0].value, DEPTH_LOCK, String(carried));
+    assert.equal(widgets[1].value, turbo);               // the user's model stays
+    assert.equal(p._depthLockNow(), DEPTH_LOCK);         // and the frame is recorded as depth-locked
+    assert.equal(depthModeOf({ seed: 1, ls: LOOK_START, dlock: p._depthLockNow(), model: turbo }), "strict");
+    const [off, light, strict] = btns;
+    assert.equal(strict.pressed, "true"); assert.equal(off.pressed, "false");
+    assert.equal(light.disabled, true); assert.equal(light.title, TURBO_NO_LIGHT);
+    assert.equal(off.disabled, false); assert.equal(strict.disabled, false);
+    assert.match(p.f.depthNote.textContent, /Krea 2 Turbo paints on the depth pass/);
+  }
+});
+
+test("Krea 2 Turbo keeps the user's explicit Off", () => {
+  const { p, widgets, btns } = fakeTurbo("off");
+  p._syncDepthLock();
+  assert.equal(widgets[0].value, 0);
+  assert.equal(btns[0].pressed, "true");
+  assert.match(p.f.depthNote.textContent, /without the stage depth/);
+  assert.equal(turboDepthMode("off"), "off");
+  assert.equal(turboDepthMode(null), "strict");
+  assert.equal(turboDepthMode("light"), "strict");
+});
+
+test("opening ④ Frame with Krea 2 Turbo on the frame node: Strict under FLUX 3 Klein, or Turbo itself when Off was picked", () => {
+  const mk = (saved, dmode = null) => {
+    const opts = [{ value: "FLUX 3 Klein · local [<$5M]" }, { value: "__krea_depth__" }];
+    const p = Object.create(Pipeline.prototype);
+    p.ctx = { app: { graph: { _nodes: [{ id: 9081, widgets: [], properties: saved ? { ssDepthMode: saved } : {} }] } } };
+    p.f = { model: { value: "", options: opts, append(o) { opts.push(o); } } };
+    p._dmode = dmode;
+    return { p, opts };
+  };
+  const turbo = "Krea 2 Turbo + Identity Edit · local [<$1M]", klein = "FLUX 3 Klein · local [<$5M]";
+  for (const [saved, dmode] of [[null, null], ["light", null], [null, "light"], ["strict", null]]) {
+    const { p } = mk(saved, dmode);
+    p._showTurbo(turbo, klein);
+    assert.equal(p.f.model.value, klein); assert.equal(p._dmode, "strict");
+  }
+  globalThis.Option ||= class { constructor(label, value) { this.label = label; this.value = value; } };
+  const { p, opts } = mk("off");
+  p._showTurbo(turbo, klein);
+  assert.equal(p.f.model.value, turbo);
+  assert.equal(opts.at(-1).label, "Krea 2 Turbo (local)");   // no "+ Identity Edit" on ④ Frame's labels
+  const { p: p2 } = mk(null);
+  p2._showTurbo(turbo, undefined);                           // no FLUX 3 Klein installed
+  assert.equal(p2.f.model.value, turbo);
+});
+
+test("the cast notes point the Krea 2 look at Strict + the cast pass", () => {
+  assert.match(KREA_DEPTH_CAST_NOTE, /Strict.*cast pass runs/);
+  assert.match(KREA_TURBO_CAST_NOTE, /cast pass/);
+  assert.doesNotMatch(KREA_TURBO_CAST_NOTE, /Identity Edit/);
 });
