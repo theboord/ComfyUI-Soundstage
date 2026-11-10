@@ -1,5 +1,7 @@
 # Models panel: downloading model files in the App
 
+> **Switched off in this release.** The panel is not loaded and its `/soundstage/models/` routes are not registered: Soundstage does not download third-party weights for you. Fetch the files yourself as [MODELS.md](../MODELS.md) describes. This page documents the code for a later decision.
+
 The Models panel downloads the model files the App needs from Hugging Face, so you don't need a terminal. It downloads the same files as `tools/install_runpod.sh`, plus some the install script has no line for yet:
 
 - the FLUX 3 Klein set: `flux3-klein-int8`, `qwen3vl-4b-int8`, `flux2-vae`;

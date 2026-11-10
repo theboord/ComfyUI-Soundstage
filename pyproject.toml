@@ -1,6 +1,6 @@
 [project]
 name = "comfyui-soundstage"
-description = "A film set in a box: block a shot in 3D (actors, horses, cars, sets, water tank, real sun and film lights, keyframed camera, phone/Quest virtual camera), pick a cinematic look, then press Run to climb a preview ladder from clay to final LTX-2.5 video and per-object layers for AE/Nuke/Resolve/Blender. Includes a scene agent, director's advisor, editing timeline with Avid/Premiere/Resolve export, and an audio department."
+description = "A film set inside ComfyUI, run like a production: script breakdown, the Director's Book, ScriptSync's lined script, your phone as the viewfinder and a real timeline with Avid/Premiere/Resolve export. Block each shot in 3D with lifelike people, cars, horses, sets, real light and camera rigs; FLUX 3 Klein paints the first frame and LTX-2.5 animates it with sound, following your blocking. Plus per-object layers for AE/Nuke/Resolve/Blender, a scene agent and an audio department."
 version = "0.1.0"
 license = { file = "LICENSE" }
 dependencies = ["soundfile>=0.12"]

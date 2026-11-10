@@ -394,7 +394,6 @@ export class ProjectController {
       { label: "Save As…", icon: "copy", run: () => this.save({ as: true }) },
       { label: "Open…", icon: "file-text", disabled: !recent.length, run: () => sub(recent.map((p) => ({ label: p.name, run: () => this.open(p.name) })), anchor) },
       { label: "New project", icon: "plus", run: () => this.newProject(), title: "A clean Soundstage App in a new tab" },
-      { label: "Models…", icon: "download", run: () => globalThis.__ssOpenModels?.({ api: this.api }), title: "See which model files you have and download the missing ones from Hugging Face" },
       "-",
       { header: "Open recent" },
       ...recent.slice(0, 6).map((p) => ({ label: p.name, run: () => this.open(p.name) })),

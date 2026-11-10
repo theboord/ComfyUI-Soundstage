@@ -67,7 +67,7 @@ import { mountCompare } from "./ui/v2scompare.mjs";
 import { REGEN_LABEL, chooseLocks, regenBody, mergeLocked, stagesLine, fixBody, swapActor, removeActor, FixUndo, fixPlan,
   activityName, fixesFor, openFixMenu } from "./ui/v2sfix.mjs";
 import { guardModels, showModelNotice, allNodes } from "./ui/modelguard.mjs";
-import "./models/panel.mjs";   // Models… panel (sets globalThis.__ssOpenModels / __ssModelsNotice)
+// The Models… download panel (web/models/panel.mjs) is switched off: users fetch model files themselves (MODELS.md).
 import { mountDirector } from "./agent/directorpanel.mjs";
 import { cutSigOf, qualityHook, smoothAgentShots, projectHook, cutPanelHook, exposureHook, stageHook } from "./hosthooks.mjs";   // host.cutSig and host.quality for the Director and Ask
 import { mountAsk } from "./agent/ask.mjs";
@@ -4285,7 +4285,6 @@ app.registerExtension({
       if (plan.swaps.length || plan.missing.length) {
         console.info("[Soundstage] model files:", plan.swaps.map((x) => `${x.from} -> ${x.to}`), plan.missing.map((x) => x.value));
         showModelNotice(plan);
-        globalThis.__ssModelsNotice?.(plan, api);   // "Get these models…" on the notice (web/models/panel.mjs)
         app.graph.setDirtyCanvas?.(true, true);
       }
     } catch (e) { console.warn("[Soundstage] model check skipped:", e); }

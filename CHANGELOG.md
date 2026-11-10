@@ -3,6 +3,17 @@
 Soundstage is updated continuously on `main`. Newest first. Times are US Pacific.
 Each entry links to the code; every milestone ships with tests.
 
+## 2026-11-10 PST · Release prep for main: the Models download panel switched off; README, Quickstart and MODELS brought up to the lifelike App
+
+**Still wrong or not verified (read first):**
+1. **The lifelike people are not in the repo.** Microsoft Rocketbox (MIT, about 27 MB) is fetched by hand into `web/stage/people/rocketbox/` (README Install, `web/stage/people/README.md`); without it every person is a marked stand-in. No one-click fetch yet.
+2. **The in-App Models… download panel is switched off**, not removed: the App does not download third-party weights. Its code (`soundstage/modeldl/`, `web/models/`) and tests stay for a later decision; its routes are not registered and the panel is not loaded, so the missing-model notice links to MODELS.md only.
+3. **Much README and Quickstart media still shows the retired clay figures** (recorded before the switch to lifelike people). The text now says so; the pictures are not re-shot.
+4. **The try-it demo artifact is older than this build** (its scenes differ from the repo's; the publish check in tests/js/tryit_edges.test.mjs warns).
+
+- [__init__.py](__init__.py), [web/soundstage.js](web/soundstage.js), [web/project/projectbar.mjs](web/project/projectbar.mjs): the Models panel's routes, import, menu item and notice button removed from the wiring.
+- [README.md](README.md): a "New on main" list (lifelike people, FLUX 3 Klein default with Krea 2 as the option, the cast pass on Klein, Auto prompt variants and Try all, live previews in ④ and the ⑤ switch, Describe), ComfyUI 0.39+ (0.44.2 recommended), the Rocketbox fetch step and credit, the pitch led by the director tools, clay wording for the current App replaced. [MODELS.md](MODELS.md), [docs/models.md](docs/models.md), [docs/QUICKSTART.md](docs/QUICKSTART.md), [pyproject.toml](pyproject.toml) to match; `.gitignore` keeps the Rocketbox kit and `assets_local/` out of git. Knowledge pack rebuilt.
+
 ## 2026-11-09 PST · Live sampling previews: ④ Frame always, ⑤ Motion behind a switch (private branch `private/lifelike`, 23:47 by this machine's clock)
 
 **Still wrong or not verified (read first):**

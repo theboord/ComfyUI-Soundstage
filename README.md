@@ -33,7 +33,7 @@ https://github.com/user-attachments/assets/1c7d7bb2-db5d-472e-b025-3168c633c531
 <details>
 <summary><b>What's live in the demo, what's replayed, and what's not in it</b></summary>
 
-Soundstage is ComfyUI custom nodes plus an App that work like a film set: you block a scene in 3D clay (set, cast, camera, stunts), and open-weight models render takes that follow that blocking (FLUX 3 Klein for the frame, LTX-2.5 for motion and sound).
+Soundstage is ComfyUI custom nodes plus an App that work like a film set: you block a scene in 3D (set, lifelike cast, camera, stunts), and open-weight models render takes that follow that blocking (FLUX 3 Klein for the frame, LTX-2.5 for motion and sound). The demo's first screen and some clips were recorded before the stage switched from clay figures to lifelike people.
 
 1. Open the [try-it demo](https://claude.ai/artifact/GwtC3yFZtGCsTsiPGbvnAq) (no install). The first screen is a recorded wipe between the stage's clay and the take it guided.
 2. Press **Open the live stage**, then **Play**. Select the red car and pick a stunt in its properties.
@@ -47,6 +47,15 @@ Soundstage is ComfyUI custom nodes plus an App that work like a film set: you bl
 Not in the demo at all (each one says "available in the full install"): new renders, the Director's language model, Timeline render, the phone viewfinder, Layer Packs, voices.
 
 </details>
+
+### New on main (Nov 10)
+
+- **Lifelike people.** Everyone on the stage is a lifelike Microsoft Rocketbox person (MIT) with planted feet, natural walks and timed sit-downs; the old clay figures are gone (the rig underneath is hidden logic only). The avatar files are fetched separately: see [Install](#install).
+- **④ Frame: FLUX 3 Klein by default, Krea 2 + depth as the strict option.** The cast pass then gives the one person in frame the cast picture's face and hair, on FLUX 3 Klein.
+- **Auto prompt in 3-4 variants** (Naturalistic, Moody cinematic, Documentary, High contrast) that keep the stage's facts; pick one, or **Try all** to paint a frame from each.
+- **Live previews:** ④ Frame shows each frame forming, step by step. ⑤ Motion has a **Live preview while rendering** switch, off by default.
+- **Describe** in Properties says what a car or prop is, in words, and the prompts use it.
+- Needs **ComfyUI 0.39 or newer** (0.44.2 recommended). Known flaws first: [CHANGELOG.md](CHANGELOG.md).
 
 <a id="whats-inside"></a>
 <p><img src="docs/media/readme_v4/h_inside.png" width="880" alt="What's inside, on main today"></p>
@@ -140,7 +149,7 @@ The video and image models here are distilled (few-step) versions, so speed is b
 <a href="https://github.com/theboord/ComfyUI-Soundstage/commits/main"><img src="https://img.shields.io/github/commit-activity/w/theboord/ComfyUI-Soundstage?label=commits" alt="Commits per week"></a>
 </p>
 
-Import your screenplay. Cast it. Block every scene in 3D clay with real camera rigs, then watch FLUX 3 Klein paint the frame and LTX-2.5 bring it to life **with sound, following your blocking shot for shot**. Approve takes like dailies and hand the cut to Premiere, Avid or Resolve. No cloud, no credits, no paid API: it all runs locally in ComfyUI.<sup>[1](#partner-footnote)</sup>
+Direct from the script: the Director's Book, ScriptSync's lined script, your phone as the viewfinder and a real timeline. Import your screenplay, cast it and block every scene in 3D with lifelike people and real camera rigs, then watch FLUX 3 Klein paint the frame and LTX-2.5 bring it to life **with sound, following your blocking shot for shot**. Approve takes like dailies and hand the cut to Premiere, Avid or Resolve. No cloud, no credits, no paid API: it all runs locally in ComfyUI.<sup>[1](#partner-footnote)</sup>
 
 <p align="center">
 <a href="https://claude.ai/artifact/GwtC3yFZtGCsTsiPGbvnAq"><b>&#128421;&#65039; Try it in your browser</b></a> &nbsp;&middot;&nbsp;
@@ -240,10 +249,10 @@ Scan a QR code and your phone shows the live stage through the shot camera, and 
 | | |
 |---|---|
 | &#128221; **Import a script** (Fountain, Final Draft, PDF, text) and get a breakdown, a scene strip and auto scene setup | &#127917; **Cast every character and location** in one click with FLUX 3 Klein, then pick who is in each shot |
-| &#129521; **Block scenes in 3D clay**: actors with sculpted hair, horses, cars, props, lights and weather | &#9995; **Pose to the fingertips** in 3D with IK, or **capture motion** from any video or your webcam (SAM 3D Body) |
+| &#129521; **Block scenes in 3D**: lifelike people, horses, cars, props, lights and weather | &#9995; **Pose to the fingertips** in 3D with IK, or **capture motion** from any video or your webcam (SAM 3D Body) |
 | &#127909; **Shoot with real camera rigs**: dolly, jib, Steadicam, handheld, drone, with a Top plan view | &#127916; **Turn any clip into a 3D set** with Video &rarr; 3D set: rebuilt location, tracked camera, the performer |
 | &#127912; **Paint the first frame** in Paint Studio: fill, remove, extend to any aspect | &#128266; **Animate with sound** on LTX-2.5; type a line and LTX speaks it, lip-synced |
-| &#127902;&#65039; **Swap the film look** with one swatch: same animation, any look | &#9878;&#65039; **Compare Clay &#124; Draft &#124; Final** on a 3-way Ladder, approve or Redo every take |
+| &#127902;&#65039; **Swap the film look** with one swatch: same animation, any look | &#9878;&#65039; **Compare Stage &#124; Draft &#124; Final** on a 3-way Ladder, approve or Redo every take |
 | &#128450;&#65039; **Review as dailies**: Avid-style scene bins and a lined script | &#128228; **Deliver to Premiere, Avid or Resolve** at the source spec (4K, 8K, RED via proxy relink), plus a VFX Layer Pack |
 | &#127897;&#65039; **Talk to the set**: the [Director](docs/director.md) chat plans what you say or type (local Qwen3.5 4B, offline Whisper voice) and applies it, undoable | &#129302; **Drive it from Claude** over [MCP](docs/mcp.md): 40 tools, every change proposed first, applied in the open App |
 
@@ -293,9 +302,9 @@ Every character, location, wardrobe piece and prop from the breakdown gets a ref
 </tr>
 </table>
 
-#### &#9314; Set: block it in 3D clay
+#### &#9314; Set: block it in 3D
 
-A true-scale 3D stage: type what you need ("cowboy on a horse", "police car", "bedroom 4x3.5 m") or **Build with AI** from one sentence. Pose anyone in 3D (click a joint, drag a hand: IK), make them interact, or copy a real performance with **motion capture** from a clip or your webcam. **Video → 3D set** rebuilds a whole clip (location, tracked camera, performer). Keyframe the camera, put it on a dolly, jib, Steadicam or handheld rig, ride along inside cars, light it with a real sun and film lights, and add setups for coverage. *Why it matters:* the clay is the director's plan, and every later step follows it exactly. → [Tutorial: ③ Set](docs/TUTORIAL.md#step-3-set) · [the 3D stage in depth](docs/TUTORIAL.md#4-the-3d-stage-in-depth)
+A true-scale 3D stage: type what you need ("cowboy on a horse", "police car", "bedroom 4x3.5 m") or **Build with AI** from one sentence. Pose anyone in 3D (click a joint, drag a hand: IK), make them interact, or copy a real performance with **motion capture** from a clip or your webcam. **Video → 3D set** rebuilds a whole clip (location, tracked camera, performer). Keyframe the camera, put it on a dolly, jib, Steadicam or handheld rig, ride along inside cars, light it with a real sun and film lights, and add setups for coverage. *Why it matters:* the stage is the director's plan, and every later step follows it exactly. → [Tutorial: ③ Set](docs/TUTORIAL.md#step-3-set) · [the 3D stage in depth](docs/TUTORIAL.md#4-the-3d-stage-in-depth)
 
 <p align="center"><img src="docs/media/step2_frame.jpg" width="960" alt="The Frame step: shot row, style cards, camera picker"></p>
 
@@ -303,7 +312,7 @@ A true-scale 3D stage: type what you need ("cowboy on a horse", "police car", "b
 
 #### &#9315; Frame: paint the first frame, then perfect it
 
-FLUX 3 Klein (or Krea 2 locked to the stage's depth) paints the first frame of every shot from your clay, keeping the framing and blocking, in any of 32 film styles with a real camera, lens and aperture picker. Generate a few, pick one, then fix it in **Paint Studio**, a small Photoshop with our own Generative Fill: Fill, Remove, Extend to any aspect, magic select (SAM 3.1), layers, history and before/after variations. *Why it matters:* the video inherits everything in this frame, so a ten-second fix here saves a re-render. → [Tutorial: ④ Frame](docs/TUTORIAL.md#step-4-frame)
+FLUX 3 Klein (or Krea 2 locked to the stage's depth) paints the first frame of every shot from your stage, keeping the framing and blocking, in any of 32 film styles with a real camera, lens and aperture picker. Generate a few, pick one, then fix it in **Paint Studio**, a small Photoshop with our own Generative Fill: Fill, Remove, Extend to any aspect, magic select (SAM 3.1), layers, history and before/after variations. *Why it matters:* the video inherits everything in this frame, so a ten-second fix here saves a re-render. → [Tutorial: ④ Frame](docs/TUTORIAL.md#step-4-frame)
 
 <p align="center"><img src="docs/media/paint_results.jpg" width="700" alt="Paint Studio results: remove a cowboy, fill a barrel, extend to 2.39"></p>
 
@@ -311,13 +320,13 @@ FLUX 3 Klein (or Krea 2 locked to the stage's depth) paints the first frame of e
 
 #### &#9316; Motion: animate it with sound
 
-LTX-2.5 Layout-to-Render animates each shot from its frame, following your clay: positions, camera, timing. **Draft** (quick look), **Final** (the default) or **Advanced** (your own steps, shift, scheduler, CFG, resolution up to 2624×1408 for hero shots), saved per shot; one shot or every shot. Sound effects and music are generated with the final, and typing a **dialogue line** turns on audio-driven lip sync, so the mouth follows the words. MiniMax H3 is an optional second engine. Every take then checks itself (freezes, jumps, face drift, cars driving backwards) and gets a **Follows your blocking %** score. *Why it matters:* the motion is directed, not hoped for. → [Tutorial: ⑤ Motion](docs/TUTORIAL.md#step-5-motion)
+LTX-2.5 Layout-to-Render animates each shot from its frame, following your stage: positions, camera, timing. **Draft** (quick look), **Final** (the default) or **Advanced** (your own steps, shift, scheduler, CFG, resolution up to 2624×1408 for hero shots), saved per shot; one shot or every shot. Sound effects and music are generated with the final, and typing a **dialogue line** turns on audio-driven lip sync, so the mouth follows the words. MiniMax H3 is an optional second engine. Every take then checks itself (freezes, jumps, face drift, cars driving backwards) and gets a **Follows your blocking %** score. *Why it matters:* the motion is directed, not hoped for. → [Tutorial: ⑤ Motion](docs/TUTORIAL.md#step-5-motion)
 
 <p align="center"><img src="docs/media/step4_ladder.jpg" width="960" alt="Review on the Ladder"></p>
 
 #### &#9317; Review: the Ladder, plus dailies
 
-The Ladder compares the same frame across stages with a **3-way slider**: Clay (or Color) | Draft | Final, two handles you drag across the picture, every layer cropped to line up. Wipe, side by side and fade too. *Why it matters:* you see at a glance whether the final still matches your blocking. → [Tutorial: ⑥ Review](docs/TUTORIAL.md#step-6-review)
+The Ladder compares the same frame across stages with a **3-way slider**: Stage (or Wire, Frame) | Frame or Draft | Final, two handles you drag across the picture, every layer cropped to line up. Wipe, side by side and fade too. *Why it matters:* you see at a glance whether the final still matches your blocking. → [Tutorial: ⑥ Review](docs/TUTORIAL.md#step-6-review)
 
 <table>
 <tr>
@@ -400,9 +409,9 @@ The App has one step bar, in production order. Every step works on every shot in
 1. **Script.** Optional. Import a screenplay; browse it scene by scene (outline, breakdown, page, director's notes). Each scene keeps its own stage, shots and cut. No writing tools: it is your script.
 2. **Cast & Locations.** Characters, props and locations from the breakdown (or the stage), each with a reference picture (upload or generate). They become the image model's references.
 3. **Set.** Block the scene in 3D: cast, set, light, cameras and timing. Add several camera setups to cover the scene.
-4. **Frame.** Paint the first frame of each shot from its clay render with FLUX 3 Klein (default) or Krea 2 + stage depth.
+4. **Frame.** Paint the first frame of each shot from its stage render with FLUX 3 Klein (default) or Krea 2 + stage depth.
 5. **Motion.** Animate each shot with LTX-2.5 Layout-to-Render, with sound. The video follows the staged blocking and camera. LTX is the default; MiniMax H3 is an optional second engine in the same list (richer motion and its own sound, looser blocking, slower), with first + last frame, reference images and the clay as a motion reference.
-6. **Review.** Scrub clay, frame, draft and final for each shot on the Ladder, with a wipe/fade compare.
+6. **Review.** Scrub stage, frame, draft and final for each shot on the Ladder, with a wipe/fade compare.
 7. **Deliver.** Export a Layer Pack for VFX, assemble the cut into one video, or export the edit to your NLE.
 
 ComfyUI's cache means each Run only does the new work.
@@ -412,10 +421,10 @@ ComfyUI's cache means each Run only does the new work.
 - **Script import.** Fountain, Final Draft, PDF or plain text: scenes, outlines, a breakdown sheet per scene, director's notes, a scene switcher in every step, scene numbers in the cut and NLE export.
 - **Cast & Locations.** Reference sheets per character, prop and location, generated with FLUX 3 Klein or uploaded; they flow into the Frame step's references by name.
 - **Pose in 3D and Pose Studio.** Click a body part to turn it, drag hands and feet (IK), or use a slider for every joint and finger knuckle; a pose gallery; interactions between people, animals and objects (look at, talk, shake hands, hug, hold hands, point, pet, lead by the reins).
-- **Motion capture.** Capture from video or act it out on the webcam: SAM 3D Body (ComfyUI core) retargets body, hands and fingers onto the clay actor, with the path and the jumps.
+- **Motion capture.** Capture from video or act it out on the webcam: SAM 3D Body (ComfyUI core) retargets body, hands and fingers onto the person on the stage, with the path and the jumps.
 - **Video → 3D set.** A clip becomes a 3D scene: location mesh, tracked camera, set pieces and the performer on the rebuilt floor, dressed from the vision model's description.
 - **Paint Studio.** Inpaint and outpaint the first frame with Soundstage's own Generative Fill nodes (`SoundstageFill`, crop and stitch): fill, remove, replace with a reference, extend to any aspect.
-- **Camera rigs.** Real camera supports with their physics, deterministic per frame, so the clay, the frame and the video all see the same move.
+- **Camera rigs.** Real camera supports with their physics, deterministic per frame, so the stage, the frame and the video all see the same move.
 - **Dailies and ScriptSync.** Setups and takes as an Avid-style bin with circled takes; ScriptSync (lined script): thumbnails on the coverage lines, click a line to play that take from there, editable lining.
 - **Tool dock.** Every Set feature has a labelled icon (Build with AI, Add object, Person, Interact, Capture motion, Video → 3D set, Photo → 3D, Camera, Set & weather, Lighting, Phone camera).
 - **Multi-shot through every step.** One scene, several camera setups. Frame, Motion, Review and Deliver all run per shot.
@@ -575,7 +584,7 @@ This link only opens for other people once the owner shares them publicly.
 
 **Requirements**
 
-- ComfyUI, a recent version with App mode.
+- ComfyUI **0.39 or newer** with App mode (FLUX 3 Klein needs 0.39+); the latest stable, 0.44.2 at this release, is recommended.
 - An NVIDIA GPU. 48 GB of VRAM is recommended (tested on an RTX 6000 Ada). 24 GB cards need offloading and are untested.
 - About 60 GB of disk for the models.
 - The stage, the Look tab and the Edit tab (the Cut) run in any browser and need no GPU models.
@@ -591,7 +600,9 @@ pip install -r ComfyUI-Soundstage/requirements.txt
 pip install -r ComfyUI-LTXVideo/requirements.txt
 ```
 
-Use the same Python environment that runs ComfyUI. Then download the models listed in [MODELS.md](MODELS.md) into `ComfyUI/models/`. Some repos are gated: accept the license on Hugging Face first, then `hf auth login`.
+Use the same Python environment that runs ComfyUI. Then download the models yourself (the App never downloads weights) listed in [MODELS.md](MODELS.md) into `ComfyUI/models/`. Some repos are gated: accept the license on Hugging Face first, then `hf auth login`.
+
+**Lifelike people (Microsoft Rocketbox, MIT, about 27 MB, not in this repo):** without them every person on the stage shows as a marked stand-in. Copy the two adult avatars, their textures (converted to 1024 px PNG) and the idle / walk / run / talk / seated clips from [microsoft/Microsoft-Rocketbox](https://github.com/microsoft/Microsoft-Rocketbox) at commit `0943055db6ec570bcef9f2c8b41c9e5467c808f9` (or later: earlier commits are not MIT) into `web/stage/people/rocketbox/`, with its `LICENSE.md`. The exact file list is in [web/stage/people/README.md](web/stage/people/README.md).
 
 **Linux / RunPod:** one script installs the node packs, copies the workflows and downloads the models:
 
@@ -674,11 +685,12 @@ To add an image, video, matte or clean-plate model (one registry entry plus one 
 - [LTX-2.5](https://huggingface.co/Lightricks/LTX-2.5) and the [Layout-to-Render IC-LoRA](https://huggingface.co/Lightricks/LTX-2.5-22b-IC-LoRA-Layout-To-Render) by Lightricks, via [ComfyUI-LTXVideo](https://github.com/Lightricks/ComfyUI-LTXVideo): video with sound.
 - [MiniMax H3](https://huggingface.co/MiniMaxAI/MiniMax-H3) by MiniMax: the optional second video engine, with its own sound.
 - Gemma (LTX text encoder) and Qwen3-VL / Qwen3.5 (Krea text encoder, object designer, scene agent).
-- [SAM 3D Body](https://huggingface.co/Comfy-Org/sam-3d-body) by Meta (ComfyUI core nodes): motion capture from video onto the clay actors. Demo clips from [Pexels](https://www.pexels.com/license/) (free licence).
+- [SAM 3D Body](https://huggingface.co/Comfy-Org/sam-3d-body) by Meta (ComfyUI core nodes): motion capture from video onto the people on the stage. Demo clips from [Pexels](https://www.pexels.com/license/) (free licence).
 - [SAM 3.1](https://huggingface.co/facebook/sam3) by Meta and [BiRefNet](https://github.com/ZhengPeng7/BiRefNet): mattes for the Layer Pack.
 - Chatterbox by Resemble AI (open TTS).
 - [three.js](https://threejs.org) and [Spark](https://sparkjs.dev): the 3D stage and splat rendering.
 - [Quaternius](https://quaternius.com): the CC0 horse and car models.
+- [Microsoft Rocketbox](https://github.com/microsoft/Microsoft-Rocketbox) (MIT): the lifelike people on the stage (fetched separately, see Install).
 - [Lucide](https://lucide.dev): icons. [Space Grotesk](https://fonts.google.com/specimen/Space+Grotesk): the UI font.
 
 Vendored components and their licenses are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
@@ -696,4 +708,4 @@ Vendored components and their licenses are listed in [THIRD_PARTY_NOTICES.md](TH
 
 </details>
 
-**Licence:** MIT for the code in this repo; see [LICENSE](LICENSE). Models and node packs keep their own licenses; see [MODELS.md](MODELS.md) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Previz figures are deliberately faceless and no real person's likeness is used. Clone voices only with consent.
+**Licence:** MIT for the code in this repo; see [LICENSE](LICENSE). Models and node packs keep their own licenses; see [MODELS.md](MODELS.md) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). People on the stage are Microsoft Rocketbox avatars (MIT; a Faceless option per person) and no real person's likeness is used. Clone voices only with consent.
