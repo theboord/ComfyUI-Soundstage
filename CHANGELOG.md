@@ -3,6 +3,25 @@
 Soundstage is updated continuously on `main`. Newest first. Times are US Pacific.
 Each entry links to the code; every milestone ships with tests.
 
+## 2026-11-10 PST · ⑤ Motion renders from the frame you picked, always; no pick = it says so
+
+**Still wrong or not verified (read first):**
+1. **Not run on a GPU yet.** The new path (the picked file through "Use touched-up still") is covered by unit tests and checked in the local try-it demo build, where the Final queued with the switch on and the picked file in the still node. No live ComfyUI render has confirmed that the Final's first frame matches the pick pixel for pixel.
+2. **The ComfyUI server needs a restart** for the touch-up still node (`soundstage/nodes_canvas.py`) to read `name [output]` / `name [temp]`. On an old server the render stops with a node error. It no longer paints a new frame.
+3. **A picked frame whose file is gone stops the render** with "pick the frame again". Example: a temp/ frame that was never copied, then a server restart. Before, the App quietly re-painted the frame from its seed.
+4. **Follow = Pose renders (experimental) are unchanged.** They still go through `ripple.runPose` and were not checked.
+5. The Final now re-saves the picked frame as a new rung-2 image (a new look_000NN in output/). Same pixels, extra file.
+
+- **What went wrong** (walkthrough, FLUX 3 Klein, "Tracking, front 3/4" car shot): each draft or final re-painted the first frame from its seed and showed the copy on rung 2. ④ Frame filed that copy as a new candidate with no seed, model, depth lock or frame prompt. look_00005 and look_00010 are pixel-identical to look_00001. Picking look_00010 made Render re-paint from whatever seed the last Generate had left, with the depth lock off. The result, look_00015, was a clay-looking frame, and Render #3's Final started from it. 244bcd3 only made the seed replay more faithful; the replay itself was the weak point.
+- [web/pipeline/pipeline.mjs](web/pipeline/pipeline.mjs):
+  - Draft, Final, Final for every shot and the Layer Pack now hand the video the picked frame's **file**. They turn on "Use touched-up still" and point its still node at the file, then put both back (`startFramePath`, `_withPickedFrame`).
+  - A video queue's rung-2 image is no longer a ④ candidate.
+  - With no pick, Render says "No frame picked for <shot>: pick one in ④ Frame (“Use this frame”) first. Nothing was rendered." Final for every shot skips those shots and names them.
+  - The audio-driven final is wired to the same start frame.
+- [soundstage/nodes_canvas.py](soundstage/nodes_canvas.py): the touch-up still reads ComfyUI annotated names (`[output]`, `[temp]`, `[input]`) and still refuses paths outside those folders.
+- The demo graphs ([web/demo/demo.mjs](web/demo/demo.mjs), [tools/tryit/shell/demo.mjs](tools/tryit/shell/demo.mjs)) gained the touch-up still node. [web/agent/director.mjs](web/agent/director.mjs) counts only renders that were queued.
+- Tests: [tests/js/render_picked_frame.test.mjs](tests/js/render_picked_frame.test.mjs) (10) and [tests/test_canvas_node.py](tests/test_canvas_node.py) (3 new).
+
 ## 2026-11-10 PST · Lifelike people in one command: `python3 tools/fetch_rocketbox.py`
 
 **Still wrong or not verified (read first):**

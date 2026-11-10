@@ -1,7 +1,8 @@
 """Soundstage Canvas: the touched-up look still from the stage widget's Canvas tab.
 
-SoundstageCanvasImage  image (input/-relative path the Canvas tab writes, e.g. "soundstage/look_still_ab12.png")
-                       -> IMAGE (RGB). Sits behind the App's lazy "Use touched-up still" switch, so with the switch
+SoundstageCanvasImage  image (input/-relative path the Canvas tab writes, e.g. "soundstage/look_still_ab12.png";
+                       or a ComfyUI annotated name "look_00010.png [output]" / "x.png [temp]", which is how ⑤ Motion
+                       hands the video the exact frame picked in ④ Frame) -> IMAGE (RGB). Sits behind the App's lazy "Use touched-up still" switch, so with the switch
                        off it is never run. A plain LoadImage can't do this job: it validates that its file exists
                        even when nothing downstream will ever evaluate it, so a fresh App (no canvas still yet)
                        would refuse to queue.
@@ -13,10 +14,18 @@ import os
 from comfy_api.latest import IO
 
 
+_ANNOTATIONS = {"[input]": "get_input_directory", "[output]": "get_output_directory", "[temp]": "get_temp_directory"}
+
+
 def resolve_input_path(rel: str) -> str:
-    """input/-relative path -> absolute path inside the input dir (no escaping it)."""
+    """input/-relative path (or "name [output]" / "name [temp]") -> absolute path inside that folder (no escaping it)."""
     import folder_paths
-    base = os.path.realpath(folder_paths.get_input_directory())
+    rel, getter = rel.strip(), "get_input_directory"
+    for tag, fn in _ANNOTATIONS.items():
+        if rel.endswith(" " + tag):
+            rel, getter = rel[: -len(tag) - 1].rstrip(), fn
+            break
+    base = os.path.realpath(getattr(folder_paths, getter)())
     path = os.path.realpath(os.path.join(base, rel.replace("\\", "/").lstrip("/")))
     if os.path.commonpath([base, path]) != base:
         raise ValueError(f"canvas still must be inside the input folder: {rel!r}")
@@ -61,7 +70,8 @@ class SoundstageCanvasImage(IO.ComfyNode):
                              "(or turn 'Use touched-up still' off).")
         path = resolve_input_path(image.strip())
         if not os.path.isfile(path):
-            raise ValueError(f"Canvas still {image!r} is missing from input/: press 'Use as look still' again.")
+            raise ValueError(f"The start frame {image!r} is missing on the ComfyUI server: pick the frame again in "
+                             "④ Frame (or press 'Use as look still' again in the Canvas tab).")
         return IO.NodeOutput(load_rgb(path))
 
 

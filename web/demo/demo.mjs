@@ -56,6 +56,7 @@ g.add(new Node(9082, "ComfySwitchNode", "Still model · use picker", [W("switch"
 g.add(new Node(9083, "SoundstageGenerateVideo", "Video model (any)", [W("model", data.videoModels?.[0] || "", { values: data.videoModels || [] }), W("seed", 0)]));
 g.add(new Node(9084, "ComfySwitchNode", "Video model · use picker", [W("switch", false)]));
 g.add(new Node(9086, "ComfySwitchNode", "Use touched-up still", [W("switch", false)]));
+g.add(new Node(9085, "SoundstageCanvasImage", "Touch-up · canvas still", [W("image", "")]));   // ⑤ feeds the picked frame through it
 g.add(new Node(9087, "SoundstageShotSound", "Sound · line, SFX, music", ["line", "character", "voice", "dialogue_engine", "sfx_prompt", "music_mood"]
   .map((n) => W(n, (v.sound || {})[n] ?? ""))));
 g.add(new Node(9092, "SoundstageWhen", "Audio drives the video", [W("enabled", false)]));

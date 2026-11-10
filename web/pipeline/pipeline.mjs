@@ -4,7 +4,7 @@
 // Every view ends with one "Next →" button. Renders come back per shot and land on the Ladder (⑥ Review).
 import { icon } from "../ui/icons.mjs";
 import { queueSummary, idsIn } from "../ui/queue.mjs";
-import { setTouchupStill } from "../touchup/touchup.mjs";
+import { setTouchupStill, findTouchupNodes } from "../touchup/touchup.mjs";
 import { Mover, hudPanel, hudPop, cvEl, clipText } from "../ui/canvasui.mjs";
 import { RippleControls } from "../motion/ripple.mjs";
 import { LtxAdvanced, ADHERENCE, ADHERENCE_NAMES, adherenceKnobs } from "../motion/ltxadvanced.mjs";
@@ -56,6 +56,26 @@ export function frameLockFor(c) {
 }
 /** The depth_lock a candidate was painted with (0 = off: every frame from before LOOK_START 3, and Paint Studio frames). */
 export const depthLockFor = (c) => (!c || c.edited || c.seed == null || (c.ls || 0) < 3 ? 0 : +c.dlock || 0);
+/** The picked frame as the touch-up still node reads it (soundstage/nodes_canvas.py): an input/-relative path, or
+ *  "sub/name [output]" / "sub/name [temp]". ⑤ Motion feeds the video this file itself, through the "Use touched-up
+ *  still" switch, instead of re-painting the still from its seed at render time (walkthrough 2026-11-10: a re-paint
+ *  turned up as a new tile with no seed; picking it re-painted a clay copy, look_00015, for the Final). "" = none. */
+export function startFramePath(c) {
+  if (!c) return "";
+  if (c.edited) return String(c.edited);
+  let f = c.file;
+  if (!f?.filename && c.url) {
+    try {
+      const q = new URL(String(c.url), "http://x").searchParams;
+      if (q.get("filename")) f = { filename: q.get("filename"), subfolder: q.get("subfolder") || "", type: q.get("type") || "output" };
+    } catch { /* not a /view url */ }
+  }
+  if (!f?.filename) return "";
+  const rel = `${f.subfolder ? `${f.subfolder}/` : ""}${f.filename}`;
+  return !f.type || f.type === "input" ? rel : `${rel} [${f.type}]`;
+}
+/** Said instead of rendering when a shot has no picked frame (nothing is painted behind your back). */
+export const noFrameText = (names) => `No frame picked for ${names}: pick one in ④ Frame (“Use this frame”) first. Nothing was rendered.`;
 /** The video's negative for one queue: yours, then the compiled pieces it doesn't already say (comma-separated). */
 export function joinNegative(mine, add) {
   const have = new Set(String(mine || "").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean));
@@ -1507,7 +1527,9 @@ export class Pipeline {
       this.m.status.textContent = ev.rung === 3 ? "Draft ready: it plays below and waits in ⑥ Review. Happy with the motion? Render the final." :
         "Final ready: it plays below and waits in ⑥ Review.";
     }
-    if (ev.rung === 2) {
+    // A draft/final/Layer Pack queue shows its start frame on rung 2 too: that is the picked frame again, not a new
+    // candidate (walkthrough 2026-11-10: render #2's copy became tile look_00010 with no seed, model or depth lock).
+    if (ev.rung === 2 && !(this.inflight?.get(ev.promptId)?.step >= 3)) {
       const meta = this.pending.get(ev.promptId);
       const list = (this.candidates[ev.shotId] = this.candidates[ev.shotId] || []);
       const cand = { url: ev.url, file: ev.file, seed: meta?.seed, model: meta?.model, seedNode: meta?.seedNode, refFiles: meta?.refFiles, ls: meta?.ls,
@@ -2123,28 +2145,36 @@ export class Pipeline {
     for (const b of btns) b.disabled = true;
     try {
       if (!allShots) {
-        this._applyShot(this.ctx.stage.activeShot().id);
-        await this._queueVideo(step);
+        const shot = this.ctx.stage.activeShot();
+        if (!this._hasStartFrame(shot.id)) { m.status.textContent = noFrameText(shot.name); return false; }
+        this._applyShot(shot.id);
+        await this._withPickedFrame(shot.id, () => this._queueVideo(step));
         const t = step === 3
           ? "Draft rendering: about 2–4 min warm (longer on a cold GPU or a long shot). It appears below and in ⑥ Review."
           : h3 ? "MiniMax H3 final queued: about 20–30 min (picture + its own sound). It appears below and in ⑥ Review."
           : "Final rendering: about 4–6 min warm (upscale + sound). It appears below and in ⑥ Review.";
         this._tick(m.status, t);
+        return true;
       } else {
         const has = (sid) => { const r = this.ctx.getRenders(sid) || {}; return step === 3 ? !!r.draft : !!(r.final_sound || r.final_audio || r.final); };
-        const todo = this.shots().filter((s) => !has(s.id));
-        if (!todo.length) { m.status.textContent = `Every shot already has a ${step === 3 ? "draft" : "final"}. Pick a shot and use the buttons above to redo one.`; return; }
-        const noFrame = todo.filter((s) => !this.chosen[s.id]).map((s) => s.name);
+        const want = this.shots().filter((s) => !has(s.id));
+        if (!want.length) { m.status.textContent = `Every shot already has a ${step === 3 ? "draft" : "final"}. Pick a shot and use the buttons above to redo one.`; return false; }
+        // a shot without a picked frame is skipped and named, never given a frame painted at render time
+        const noFrame = want.filter((s) => !this._hasStartFrame(s.id)).map((s) => s.name);
+        const todo = want.filter((s) => this._hasStartFrame(s.id));
+        if (!todo.length) { m.status.textContent = noFrameText(noFrame.join(", ")); return false; }
         await this.forEachShot(async (s, i) => {
           m.status.textContent = `Queueing ${step === 3 ? "draft" : "final"} ${i + 1}/${todo.length}: ${s.name} (capturing the stage)…`;
           this._applyShot(s.id);
-          await this._queueVideo(step);
+          await this._withPickedFrame(s.id, () => this._queueVideo(step));
         }, todo);
         m.status.textContent = `${todo.length} ${step === 3 ? "draft" : "final"}${todo.length > 1 ? "s" : ""} queued, one after another (${each} each). Each lands on its shot.` +
-          (noFrame.length ? ` No frame chosen yet for ${noFrame.join(", ")}: those paint a new one.` : "");
+          (noFrame.length ? ` Skipped: ${noFrameText(noFrame.join(", "))}` : "");
+        return true;
       }
     } catch (e) {
       m.status.textContent = `Couldn't queue: ${e.message}`;
+      return false;
     } finally {
       for (const b of btns) b.disabled = false;
     }
@@ -2211,6 +2241,30 @@ export class Pipeline {
     const h3 = !!this.w(9084, "switch")?.value && isH3(this.w(9083, "model")?.value);
     const cast = h3 ? pickRefs(P.pool, this._shotCastKeys(sid, P), Math.max(0, H3_MAX_REFS - manual.length)).use.map((it) => it.ref) : [];
     this.set(9083, "ref_files", [...new Set([...cast, ...manual])].join("\n"));
+  }
+
+  /** A shot can render: it has a picked frame, or the Canvas tab's touched-up still is switched on for it. */
+  _hasStartFrame(sid) { return !!startFramePath(this.chosen?.[sid]) || !!this.touched?.[sid]; }
+
+  /** Run one queue with the video starting from the picked frame's FILE (the "Use touched-up still" switch on, its
+   *  still node pointed at the frame), then put the switch and the still back. The seed/model/prompt replay in
+   *  _applyShot stays for ④, but no longer decides what the video starts from: any drift there re-painted a different
+   *  first frame at render time. The Canvas tab's own still (touched, no Paint Studio record) is used as it is. */
+  async _withPickedFrame(sid, fn) {
+    const c = this.chosen?.[sid];
+    const path = startFramePath(c);
+    if (!path || (this.touched?.[sid] && !c?.edited)) return fn();
+    const still = findTouchupNodes(this.ctx.app).still?.widgets?.find((x) => x.name === "image");
+    const sw = this.w(9086, "switch");
+    if (!still || !sw) throw new Error("this workflow has no “Use touched-up still” switch, so the video can't start from the picked frame. Reload the Soundstage App workflow.");
+    const keep = { img: still.value, on: sw.value };
+    this._wireChosenFrame();   // the audio-driven final too (its first_frame came straight from the Krea still)
+    this.set(9086, "switch", true);
+    setTouchupStill(this.ctx.app, path);
+    try { return await fn(); } finally {
+      this.set(9086, "switch", keep.on);
+      setTouchupStill(this.ctx.app, keep.img ?? "");
+    }
   }
 
   _setChosen(sid, c) {
@@ -2362,12 +2416,12 @@ export class Pipeline {
           ghost("Render missing shots first", () => this.ctx.renderMissing(), "Shots without a Final are rendered before the cut is made"),
           ghost("Open the editor", () => this.ctx.showView("cut"), "Trim and reorder in the editor, then export for Avid, Premiere, Resolve, Final Cut or OTIO")] }),
       mk("layers", "Layer Pack for VFX", "Each actor on its own layer with a clean matte, plus depth and the camera, ready for After Effects, Nuke, Resolve, Blender or Photoshop.",
-        "Make the Layer Pack", async () => { this._applyShot(this.ctx.stage.activeShot().id); await this.queueAt(5); status.textContent = `Layer Pack queued for ${this.ctx.stage.activeShot().name}: the final is reused from cache, then about 1 min for the mattes.`; },
+        "Make the Layer Pack", async () => { const sid = this.ctx.stage.activeShot().id; this._applyShot(sid); await this._withPickedFrame(sid, () => this.queueAt(5)); status.textContent = `Layer Pack queued for ${this.ctx.stage.activeShot().name}: the final is reused from cache, then about 1 min for the mattes.`; },
         { extra: [ghost("Every shot with a final", async () => {
           const fin = (sid) => { const r = this.ctx.getRenders(sid) || {}; return !!(r.final_sound || r.final_audio || r.final); };
           const list = this.shots().filter((s) => fin(s.id));
           if (!list.length) { status.textContent = "No shot has a final yet: render them in ⑤ Motion first."; return; }
-          await this.forEachShot(async (s) => { this._applyShot(s.id); await this.queueAt(5); }, list);
+          await this.forEachShot(async (s) => { this._applyShot(s.id); await this._withPickedFrame(s.id, () => this.queueAt(5)); }, list);
           status.textContent = `${list.length} Layer Pack${list.length > 1 ? "s" : ""} queued (${list.map((s) => s.name).join(", ")}).`;
         }, "Layer Packs for every shot that has a final (mattes from SAM 3.1 with BiRefNet edges)")] }),
       this.dLinks,

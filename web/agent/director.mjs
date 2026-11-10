@@ -791,8 +791,7 @@ export const EXEC = {
     let n = 0;
     for (const sid of a.shots || []) {
       p.selectShot?.(sid);
-      await p._render(step, false);
-      n++;
+      if (await p._render(step, false) !== false) n++;   // false: not queued (no picked frame: the App says so)
     }
     if (prev && (a.shots || []).length > 1) p.selectShot?.(prev);
     const each = step === 3 ? "about 2-4 min each" : "about 4-6 min each";
