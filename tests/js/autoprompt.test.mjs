@@ -2,12 +2,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { FramePrompt, frameTarget, sourceOf, withEntry, noteText, PROMPT_SOURCES } from "../../web/pipeline/autoprompt.mjs";
+import { FramePrompt, frameTarget, sourceOf, withEntry, noteText, PROMPT_SOURCES, tryAllPlan, slimVariants } from "../../web/pipeline/autoprompt.mjs";
 
 // a tiny h(): enough DOM for the block (no browser)
 const h = (tag, attrs = {}, ...kids) => {
   const el = { tag, children: [], dataset: {}, attrs: {}, value: "", hidden: false, disabled: false, textContent: "", on: attrs.on || {},
-    setAttribute(k, v) { this.attrs[k] = v; }, getAttribute(k) { return this.attrs[k]; } };
+    setAttribute(k, v) { this.attrs[k] = v; }, getAttribute(k) { return this.attrs[k]; },
+    replaceChildren(...k) { this.children = k; } };
   for (const [k, v] of Object.entries(attrs)) if (k.startsWith("data-")) el.dataset[k.slice(5)] = v; else if (k !== "on") el.attrs[k] = v;
   for (const k of kids.flat()) if (k != null) el.children.push(k);
   return el;
@@ -101,9 +102,114 @@ test("noteText says the fallback reason", () => {
 test("④ Frame wires the block in and writes the prompt before queueing", () => {
   const src = readFileSync(new URL("../../web/pipeline/pipeline.mjs", import.meta.url), "utf8");
   assert.match(src, /this\.fp = new FramePrompt\(/);
-  assert.match(src, /await this\.fp\?\.ensure\(\);[\s\S]{0,80}for \(let i = 0; i < f\.count; i\+\+\)/);
+  assert.match(src, /await this\.fp\?\.ensure\(\);[\s\S]{0,400}for \(let i = 0; i < jobs\.length; i\+\+\)/);
+  assert.match(src, /const jobs = plan \|\| Array\.from\(\{ length: f\.count \}/);
   const look = readFileSync(new URL("../../web/look/look.mjs", import.meta.url), "utf8");
   assert.match(look, /frame_prompts: \{\},/);
   const app = readFileSync(new URL("../../web/soundstage.js", import.meta.url), "utf8");
   assert.match(app, /frameScene: \(\) => \(\{ \.\.\.stage\.toJSON\(\), camera_track/);
+});
+
+// ---- Auto variants (2026-11-09): cards to pick from, editing makes it Manual, Try all labels each frame ----------
+const V = (key, label, words) => ({ key, label, words, prompt: `STAGE FACTS, ${words}`, notes: ["x"] });
+const AUTO4 = { ...AUTO, prompt: "STAGE FACTS, warm glow", variant: "natural",
+  variants: [V("natural", "Naturalistic", "warm glow"), V("cinematic", "Moody cinematic", "brooding"),
+    V("documentary", "Documentary", "plain available light"), V("contrast", "High-contrast night", "hard pools of light")] };
+
+test("Auto shows one card per variant; picking one makes it the shot's prompt", async () => {
+  const { fp, look } = rig({ reply: AUTO4 });
+  await fp.refreshStatus();
+  await fp.ensure();
+  assert.equal(fp.cards.hidden, false);
+  assert.deepEqual(fp.cards.children.map((c) => c.dataset.k), ["natural", "cinematic", "documentary", "contrast"]);
+  const card = fp.cards.children[1];
+  assert.equal(card.children[0].children[0].children[0], "Moody cinematic");          // the short label
+  assert.equal(card.children[1].children[1].children[0], "STAGE FACTS, brooding");      // the full text, in <details>
+  assert.equal(look.state.frame_prompts.s1.variant, "natural");
+  assert.equal(fp.cards.children[0].attrs["aria-pressed"], "true");
+  card.children[0].on.click();
+  const e = look.state.frame_prompts.s1;
+  assert.equal(e.source, "auto");
+  assert.equal(e.text, "STAGE FACTS, brooding");
+  assert.equal(e.variant, "cinematic");
+  assert.equal(e.variants.length, 4);
+  assert.equal(fp.box.value, "STAGE FACTS, brooding");
+  assert.equal(fp.cards.children[1].attrs["aria-pressed"], "true");
+  // Generate again on an unchanged stage (the server's cache answers): the pick stays
+  await fp.ensure();
+  assert.equal(look.state.frame_prompts.s1.text, "STAGE FACTS, brooding");
+});
+
+test("editing a picked variant switches to Manual and hides the cards; Compiled and Rewrite stay", async () => {
+  const { fp, look, calls } = rig({ reply: AUTO4 });
+  await fp.refreshStatus();
+  await fp.ensure();
+  fp.pick("documentary");
+  fp.box.value = "STAGE FACTS, plain available light, my own words";
+  fp._typed();
+  assert.deepEqual(look.state.frame_prompts.s1, { source: "manual", text: "STAGE FACTS, plain available light, my own words", target: "edit" });
+  assert.equal(fp.source(), "manual");
+  assert.equal(fp.cards.hidden, true);
+  assert.equal(fp.tryAllBtn.hidden, true);
+  fp.setSource("auto");
+  assert.equal(fp.rewrite.hidden, false);
+  await new Promise((r) => setTimeout(r, 0));             // Auto picked again writes at once (no text kept)
+  await fp.write(true);                                   // ↻ Rewrite: a new set, force
+  assert.equal(calls.filter((c) => c.url === "/soundstage/look/autoprompt").at(-1).body.force, true);
+  fp.setSource("compiled");
+  assert.deepEqual(look.state.frame_prompts.s1, { source: "compiled" });
+  assert.equal(fp.cards.hidden, true);
+});
+
+test("variants survive a reload from the shot's entry", async () => {
+  const { fp, look } = rig({ reply: AUTO4 });
+  await fp.refreshStatus();
+  await fp.ensure();
+  fp.pick("contrast");
+  const saved = JSON.parse(JSON.stringify(look.state.frame_prompts));
+  const again = rig({ reply: AUTO4 });
+  again.look.state.frame_prompts = saved;
+  await again.fp.refreshStatus();
+  await again.fp.show();
+  assert.equal(again.fp.cards.children.length, 4);
+  assert.equal(again.fp.pickedOf(), "contrast");
+  assert.equal(again.fp.box.value, "STAGE FACTS, hard pools of light");
+});
+
+test("Try all: one frame per variant or the count split, each queued with its own prompt, then the pick is back", async () => {
+  assert.equal(tryAllPlan([V("a", "A", "x")], 4), null);                  // one variant: nothing to compare
+  assert.deepEqual(tryAllPlan(AUTO4.variants, 4).map((v) => v.key), ["natural", "cinematic", "documentary", "contrast"]);
+  assert.equal(tryAllPlan(AUTO4.variants, 1).length, 4);                    // at least one each
+  assert.deepEqual(tryAllPlan(AUTO4.variants.slice(0, 2), 4).map((v) => v.key), ["natural", "natural", "cinematic", "cinematic"]);
+  assert.deepEqual(slimVariants(AUTO4.variants)[0], { key: "natural", label: "Naturalistic", words: "warm glow", prompt: "STAGE FACTS, warm glow" });
+
+  const { fp, look } = rig({ reply: AUTO4 });
+  await fp.refreshStatus();
+  await fp.ensure();
+  fp.pick("cinematic");
+  assert.equal(fp.tryAllPlan(4), null);                                     // off until asked
+  assert.equal(fp.tryAllBtn.hidden, false);
+  fp.tryAllBtn.on.click();
+  assert.equal(fp.tryAllBtn.attrs["aria-pressed"], "true");
+  const plan = fp.tryAllPlan(4);
+  const sent = [];
+  for (const v of plan) {
+    await fp.withVariant(v, async () => { sent.push({ label: v.label, text: look.state.frame_prompts.s1.text }); });
+  }
+  assert.deepEqual(sent.map((x) => x.label), ["Naturalistic", "Moody cinematic", "Documentary", "High-contrast night"]);
+  assert.deepEqual(sent.map((x) => x.text), AUTO4.variants.map((v) => v.prompt));
+  assert.equal(look.state.frame_prompts.s1.text, "STAGE FACTS, brooding");  // the pick is back
+  assert.equal(look.state.frame_prompts.s1.variant, "cinematic");
+  fp.setSource("manual");
+  assert.equal(fp.tryAllPlan(4), null);                                     // only on Auto
+});
+
+test("④ Frame labels each Try all frame with its variant and re-rolls it with its own prompt", () => {
+  const src = readFileSync(new URL("../../web/pipeline/pipeline.mjs", import.meta.url), "utf8");
+  assert.match(src, /const plan = this\.fp\?\.tryAllPlan\?\.\(f\.count\)/);
+  assert.match(src, /variant: v\.label, variantKey: v\.key/);
+  assert.match(src, /if \(v\) await this\.fp\.withVariant\(v, queue, shot\.id\)/);
+  assert.match(src, /variant: meta\.variant, variantKey: meta\.variantKey/);
+  assert.match(src, /class: "ss-cvar"/);
+  assert.match(src, /this\.fp\.withVariant\(v, q, sid\)/);
 });

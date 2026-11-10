@@ -240,6 +240,15 @@ const CSS = `
 .ss-pipeview .cand img { width:100%; display:block; aspect-ratio:1.85; object-fit:cover; }
 .ss-pipeview .cand .cap { position:absolute; left:6px; bottom:6px; right:6px; display:flex; justify-content:space-between; align-items:center; font-size:11px; color:#fff; text-shadow:0 1px 2px #000; }
 .ss-pipeview .cand[data-chosen="true"] { border-color:var(--ss-accent,#F2FF59); }
+.ss-pipeview .cand .ss-cvar { position:absolute; top:8px; right:8px; max-width:45%; text-align:right; background:rgba(18,14,21,.7); border-radius:999px; padding:2px 8px; font-size:11px; color:#fff; text-shadow:0 1px 2px #000; pointer-events:none; }
+.ss-pipeview .ss-fvariants { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:6px; }
+.ss-pipeview .ss-fvariants[hidden] { display:none; }
+.ss-pipeview .ss-fvar { border:1px solid rgba(255,255,255,.15); border-radius:10px; padding:6px 8px; font-size:12px; min-width:0; }
+.ss-pipeview .ss-fvar[aria-pressed="true"] { border-color:var(--ss-accent,#F2FF59); }
+.ss-stage .ss-pipeview .ss-fvar > button.ss-fvar-pick { all:unset; box-sizing:border-box; display:flex; flex-direction:column; gap:2px; width:100%; cursor:pointer; color:var(--ss-text,#f0efed); }
+.ss-pipeview .ss-fvar-pick small { color:var(--ss-muted,#a9a3ad); overflow-wrap:anywhere; }
+.ss-pipeview .ss-fvar details summary { cursor:pointer; color:var(--ss-muted,#a9a3ad); font-size:11px; margin-top:4px; }
+.ss-pipeview .ss-fvar details p { margin:4px 0 0; font-size:11px; overflow-wrap:anywhere; }
 .ss-pipeview .cand .pill { background:var(--ss-accent,#F2FF59); color:#1a1420; border-radius:999px; padding:2px 8px; font-weight:700; text-shadow:none; }
 .ss-stage .ss-pipeview .cand > button.ss-cdel { all:unset; box-sizing:border-box; position:absolute; left:6px; top:6px; z-index:3; width:26px !important; height:26px !important;
   min-width:0 !important; min-height:0 !important; padding:0 !important; display:grid !important; place-items:center; border-radius:50% !important; cursor:pointer; color:#fff !important;
@@ -1382,22 +1391,30 @@ export class Pipeline {
       const refFiles = this._refFilesNow();
       if (this.fp?.source() === "auto") this._tick(f.status, `Writing the frame prompt for ${shot.name} from your stage…`);
       try { await this.fp?.ensure(); } catch { /* the compiled prompt stays */ }
-      for (let i = 0; i < f.count; i++) {
+      // Try all: one frame per Auto variant (or the Variations count split across them), each labelled with it
+      const plan = this.fp?.tryAllPlan?.(f.count) || null;
+      const jobs = plan || Array.from({ length: f.count }, () => null);
+      for (let i = 0; i < jobs.length; i++) {
+        const v = jobs[i];
         const seed = base + i * 7919;
         this.set(seedNode, "seed", seed);
-        this._tick(f.status, `Queueing ${n > 1 ? `${shot.name} (${si + 1}/${n}), ` : ""}frame ${i + 1}/${f.count}${i === 0 ? ": capturing your stage passes for the whole shot first" : ""}…`);
+        this._tick(f.status, `Queueing ${n > 1 ? `${shot.name} (${si + 1}/${n}), ` : ""}frame ${i + 1}/${jobs.length}${v ? ` (${v.label})` : ""}${i === 0 ? ": capturing your stage passes for the whole shot first" : ""}…`);
         this.ctx.setLookStart?.(true);
         this.ctx.setFrameLock?.(true);
         // the frame node's own model: Strict paints on Krea 2 Turbo, so the pick reproduces on it
-        await this.queueAt(2, { seed, model: krea ? f.model.value : (this.w(9081, "model")?.value || f.model.value), seedNode, refFiles,
-          ls: LOOK_START, lock: krea ? undefined : +f.follow.value, dlock: krea ? undefined : this._depthLockNow() });
+        const queue = () => this.queueAt(2, { seed, model: krea ? f.model.value : (this.w(9081, "model")?.value || f.model.value), seedNode, refFiles,
+          ls: LOOK_START, lock: krea ? undefined : +f.follow.value, dlock: krea ? undefined : this._depthLockNow(),
+          ...(v ? { variant: v.label, variantKey: v.key } : {}) });
+        if (v) await this.fp.withVariant(v, queue, shot.id); else await queue();
+        queued++;
       }
     };
+    let queued = 0;
     try {
       const n = allShots ? this.shots().length : 1;
       if (allShots) await this.forEachShot((s, i) => one(s, i, n));
       else await one(this.ctx.stage.activeShot(), 0, 1);
-      const total = f.count * n;
+      const total = queued || f.count * n;
       this._tick(f.status, `Rendering ${total} frame${total > 1 ? "s" : ""}${n > 1 ? ` for ${n} shots` : ""} on the GPU: the first can take 1–3 min while the model loads and the stage passes render, then about 6–10 s each`);
     } catch (e) {
       f.status.textContent = `Couldn't queue: ${e.message}`;
@@ -1417,7 +1434,7 @@ export class Pipeline {
       const meta = this.pending.get(ev.promptId);
       const list = (this.candidates[ev.shotId] = this.candidates[ev.shotId] || []);
       const cand = { url: ev.url, file: ev.file, seed: meta?.seed, model: meta?.model, seedNode: meta?.seedNode, refFiles: meta?.refFiles, ls: meta?.ls,
-        lock: meta?.lock, dlock: meta?.dlock };
+        lock: meta?.lock, dlock: meta?.dlock, ...(meta?.variant ? { variant: meta.variant, variantKey: meta.variantKey } : {}) };
       list.unshift(cand);
       if (meta) this.pending.delete(ev.promptId);
       // A shot's first frame is its pick until you choose another, so "every shot" flows straight into Motion.
@@ -1458,7 +1475,10 @@ export class Pipeline {
         if (this.f?.status) this.f.status.textContent = `${b.text.replace(/^⚠ /, "Off the blocking: ")}. Re-rolling it with a new seed (${this._rerolls[sid]} more re-roll${this._rerolls[sid] === 1 ? "" : "s"} allowed)…${meta.model === STILL_KREA ? "" : depthTip(res, meta.dlock || 0)}`;
         this.ctx.setLookStart?.(true);
         this.ctx.setFrameLock?.(meta.ls >= 2);
-        this.queueAt(2, { ...meta, seed, reroll: true }).catch(() => { /* the status says why on the next queue */ });
+        // a Try all frame re-rolls with its own variant's prompt, then the picked one is back
+        const v = meta.variantKey && this.fp?.variantsOf(sid).find((x) => x.key === meta.variantKey);
+        const q = () => this.queueAt(2, { ...meta, seed, reroll: true });
+        (v ? this.fp.withVariant(v, q, sid) : q()).catch(() => { /* the status says why on the next queue */ });
       }
       redraw();
     });
@@ -1475,7 +1495,8 @@ export class Pipeline {
       const isChosen = chosen && chosen.url === c.url;
       return h("div", { class: "cand", "data-chosen": String(!!isChosen), title: c.seed != null ? `seed ${c.seed}` : "",
         on: { click: () => this.choose(c) } },
-        h("img", { src: c.url, alt: "candidate frame" }),
+        h("img", { src: c.url, alt: c.variant ? `candidate frame, ${c.variant} prompt` : "candidate frame" }),
+        ...(c.variant ? [h("span", { class: "ss-cvar", title: `Painted from the ${c.variant} Auto prompt` }, c.variant)] : []),
         h("button", { type: "button", class: "ss-cdel", "aria-label": isChosen ? "Delete this frame (the shot's chosen frame: asks first)" : "Delete this frame",
           title: isChosen ? "Delete: take this frame off the list. It is the shot's chosen frame, so you are asked first. Undo for 5 s."
             : "Delete: take this frame off the list (the file stays on disk). Undo for 5 s. Reject (the round badge) keeps it on record instead.",

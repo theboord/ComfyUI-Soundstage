@@ -3,6 +3,9 @@
 // per frame model, the head count and every placement stay the stage's). Compiled: the rules in look/compile.py.
 // Manual: the user's own text, sent untouched. Stored per shot in the Look JSON's `frame_prompts`, which the Look node
 // applies (apply_override) to the output the frame model reads: edit_prompt for FLUX Klein, still_prompt otherwise.
+// Auto comes in up to four variants (Naturalistic, Moody cinematic, Documentary, High contrast), each the compiled
+// prompt's stage facts plus the vision model's light, mood and texture words: cards to pick from, and "Try all" paints
+// a frame from each so you pick by the picture.
 
 export const PROMPT_SOURCES = [["auto", "Auto"], ["compiled", "Compiled"], ["manual", "Manual"]];
 export const SOURCE_TITLES = {
@@ -54,6 +57,18 @@ export function noteText(res) {
   return bits.join(" ");
 }
 
+/** The variants kept in a shot's entry: key, label, the added words and the full prompt (no notes). */
+export const slimVariants = (vs) => (Array.isArray(vs) ? vs : []).filter((v) => v?.key && v.prompt)
+  .map(({ key, label, words, prompt, builtin }) => ({ key, label: label || key, words: words || "", prompt, ...(builtin ? { builtin: true } : {}) }));
+
+/** Try all: which variant each queued frame uses. One frame each, or the Variations count split across them. */
+export function tryAllPlan(variants, count) {
+  const vs = Array.isArray(variants) ? variants.filter((v) => v?.prompt) : [];
+  if (vs.length < 2) return null;
+  const per = Math.max(1, Math.round((count || 1) / vs.length));
+  return vs.flatMap((v) => Array.from({ length: per }, () => v));
+}
+
 /** A canvas as a JPEG data URL, longest side `side` (what the vision model sees). */
 export function canvasDataUrl(canvas, side = 768, doc = globalThis.document) {
   if (!canvas?.width || !doc) return "";
@@ -85,9 +100,15 @@ export class FramePrompt {
     this.rewrite = h("button", { type: "button", class: "ghost", title: "Write the Auto prompt again from the stage as it is now",
       on: { click: () => this.write(true) } }, "↻ Rewrite");
     this.note = h("small", { class: "status ss-fprompt-note" });
+    this.tryAll = false;
+    this.tryAllBtn = h("button", { type: "button", class: "ghost", "aria-pressed": "false",
+      title: "Try all: Generate paints a frame from each Auto variant (the Variations count split across them), each labelled with its variant, so you can pick by the picture",
+      on: { click: () => this.setTryAll(!this.tryAll) } }, "Try all");
+    this.cards = h("div", { class: "ss-fvariants", role: "group", "aria-label": "Auto prompt variants" });
     this.el = h("div", { class: "f ss-fprompt-block" },
-      h("span", { class: "row" }, "Frame prompt", this.seg, h("span", { style: "flex:1" }), this.rewrite),
-      this.box, this.note);
+      h("span", { class: "row" }, "Frame prompt", this.seg, h("span", { style: "flex:1" }), this.tryAllBtn, this.rewrite),
+      this.cards, this.box, this.note);
+    this.cards.hidden = this.tryAllBtn.hidden = true;   // drawn by show() once a shot is active
   }
 
   sid() { return this.io.shotId(); }
@@ -119,6 +140,70 @@ export class FramePrompt {
       b.title = b.disabled ? AUTO_MISSING : SOURCE_TITLES[b.dataset.k];
     }
     this.rewrite.hidden = src !== "auto";
+    this._drawCards();
+  }
+
+  /** The Auto variants of a shot: the last answer's, else the ones kept in its entry. */
+  variantsOf(sid = this.sid()) {
+    const last = this.last[sid];
+    if (last?.source === "auto" && last.variants?.length) return slimVariants(last.variants);
+    return slimVariants(entryOf(this.state(), sid)?.variants);
+  }
+
+  /** The picked variant's key (the entry's, else the one whose text it holds). */
+  pickedOf(sid = this.sid()) {
+    const e = entryOf(this.state(), sid);
+    if (!e || e.source !== "auto") return "";
+    const vs = this.variantsOf(sid);
+    return vs.find((v) => v.key === e.variant)?.key || vs.find((v) => v.prompt === e.text)?.key || "";
+  }
+
+  _drawCards() {
+    const h = this.io.h, sid = this.sid();
+    const vs = this.source(sid) === "auto" ? this.variantsOf(sid) : [];
+    const picked = this.pickedOf(sid);
+    this.cards.hidden = vs.length < 1;
+    this.tryAllBtn.hidden = vs.length < 2;
+    this.tryAllBtn.setAttribute("aria-pressed", String(this.tryAll && vs.length >= 2));
+    this.cards.replaceChildren(...vs.map((v) => h("div", { class: "ss-fvar", "data-k": v.key, "aria-pressed": String(v.key === picked) },
+      h("button", { type: "button", class: "ss-fvar-pick", "aria-pressed": String(v.key === picked),
+        title: `Use the ${v.label} prompt for this shot`, on: { click: () => this.pick(v.key) } },
+        h("b", {}, v.label), h("small", {}, v.words || "")),
+      h("details", {}, h("summary", {}, "Full prompt"), h("p", {}, v.prompt)))));
+  }
+
+  /** Make one Auto variant this shot's prompt. */
+  pick(key, sid = this.sid()) {
+    const v = this.variantsOf(sid).find((x) => x.key === key);
+    if (!v) return null;
+    const e = entryOf(this.state(), sid) || {}, last = this.last[sid];
+    this._save(sid, { source: "auto", text: v.prompt, target: e.target || last?.target || this.io.target(), sig: e.sig || last?.sig,
+      variant: v.key, variants: this.variantsOf(sid) });
+    if (sid === this.sid()) {
+      this.box.value = v.prompt;
+      this.note.textContent = `Auto, ${v.label}${v.words ? `: ${v.words}` : ""}${v.builtin ? " (built-in words: the vision model's did not pass the checks)" : ""}. Edit it to make it Manual.`;
+      this._drawSeg();
+    }
+    return v;
+  }
+
+  setTryAll(on) {
+    this.tryAll = !!on;
+    this._drawCards();
+  }
+
+  /** The variants Generate paints, one per queued frame, when Try all is on (else null). */
+  tryAllPlan(count, sid = this.sid()) {
+    if (!this.tryAll || this.source(sid) !== "auto") return null;
+    return tryAllPlan(this.variantsOf(sid), count);
+  }
+
+  /** Run fn (one queue) with variant v as the shot's prompt, then put the picked one back. */
+  async withVariant(v, fn, sid = this.sid()) {
+    const prev = entryOf(this.state(), sid);
+    this._save(sid, { ...(prev || { source: "auto" }), source: "auto", text: v.prompt, variant: v.key,
+      target: prev?.target || this.io.target() });
+    try { return await fn(); } finally { this._save(sid, prev); }
   }
 
   /** Show the active shot's prompt in the box (the Auto text, the typed text, or the compiled one). */
@@ -176,10 +261,17 @@ export class FramePrompt {
     this.last[sid] = res;
     if (this.source(sid) !== "auto") return res;   // the user switched away while it was writing
     const ok = res && !res.error && res.source === "auto" && res.prompt;
-    this._save(sid, ok ? { source: "auto", text: res.prompt, target: res.target, sig: res.sig } : { source: "auto" });
+    // the variant picked before (a card, or Try all's last pick) stays picked when the stage did not change
+    const was = entryOf(this.state(), sid)?.variant;
+    const vs = ok ? slimVariants(res.variants) : [];
+    const v = vs.find((x) => x.key === was) || vs[0];
+    const text = v?.prompt || (ok ? res.prompt : "");
+    this._save(sid, ok ? { source: "auto", text, target: res.target, sig: res.sig, ...(v ? { variant: v.key, variants: vs } : {}) }
+      : { source: "auto" });
     if (sid === this.sid()) {
-      this.box.value = ok ? res.prompt : (res?.compiled || await this.compiled());
-      this.note.textContent = noteText(res);
+      this.box.value = ok ? text : (res?.compiled || await this.compiled());
+      this.note.textContent = noteText(res) + (v && vs.length > 1 ? ` ${vs.length} variants: ${v.label} picked.` : "");
+      this._drawCards();
     }
     return res;
   }
