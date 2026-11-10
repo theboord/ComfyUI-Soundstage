@@ -15,6 +15,8 @@ import { stillLoraGroups, stillLoraWarning, LORA_MATCH_LABEL, LORA_OTHER_LABEL, 
 import { createLoraStack } from "./lorastack.mjs";
 import { FramePrompt, frameTarget, canvasDataUrl } from "./autoprompt.mjs";
 import { setStyles, setProp } from "../ui/domwrite.mjs";   // polls write only what changed
+import { LivePreviews, attachLivePreviews, previewMethodFor, vaeApprox, stepLabel, loadVideoPreview, saveVideoPreview,
+  VIDEO_PREVIEW_LABEL, VIDEO_PREVIEW_TIP, LIVE_CSS } from "./livepreview.mjs";
 
 /** ④'s look box placeholder: optional, and no example that fights the scene (QA 2026-11-02: a western example on a rainy night chase). */
 export const FRAME_DESC_PLACEHOLDER = "Optional: the look you want on top of the stage, e.g. light, weather, mood, film stock…";
@@ -433,6 +435,13 @@ export class Pipeline {
     this.chosen = {};                // shotId -> the chosen frame {url, file, seed, model, seedNode}; saved with the workflow
     this.touched = {};               // shotId -> true when that shot uses its Canvas touch-up
     this.inflight = new Map();       // promptId -> {sid, step} while a render is queued or running
+    // Live sampling previews (web/pipeline/livepreview.mjs): ④ always, ⑤ with its switch on; only this App's prompts.
+    this.lp = new LivePreviews();
+    this._offLive = attachLivePreviews(ctx.api, this.lp);
+    this.lp.onChange(() => this._drawLive());
+    this._liveSel = null;            // the live ④ tile you clicked (null: follow the newest)
+    vaeApprox(ctx.api).catch(() => {});
+    if (!document.getElementById("ss-live-css")) document.head.append(h("style", { id: "ss-live-css" }, LIVE_CSS));
     this.views = { frame: this._frameView(), motion: this._motionView(), deliver: this._deliverView() };
     this.pending = new Map();        // promptId -> {seed, model} for Frame variations
     // The first-frame check (web/pipeline/framecheck.mjs): a badge per candidate, flagged ones re-rolled.
@@ -441,7 +450,7 @@ export class Pipeline {
     this._autoPick = {};              // shotId -> true while its pick is the App's, not yours
     if (!document.getElementById("ss-framecheck-css")) document.head.append(h("style", { id: "ss-framecheck-css" }, FRAMECHECK_CSS));
     ctx.onRung((ev) => this._onRung(ev));
-    const settle = (ev) => { if (this.inflight.delete(ev.detail?.prompt_id)) this._drawShotRows(); };
+    const settle = (ev) => { const pid = ev.detail?.prompt_id; this.lp?.untrack(pid); if (this.inflight.delete(pid)) this._drawShotRows(); };
     for (const t of ["execution_success", "execution_error", "execution_interrupted"]) ctx.api?.addEventListener?.(t, settle);
     // C32: a ④ Frame run that errors says the router's own sentence on the status line (ComfyUI shows only its
     // generic "Still model (any) failed" card, and the status stayed on "Rendering 1 frame…")
@@ -464,12 +473,74 @@ export class Pipeline {
     const held = !this._holding;
     if (held) { this._holding = true; this.ctx.setBatch?.(true); }
     let r;
-    try { r = await this.ctx.app.queuePrompt(0, 1); } finally { if (held) { this._holding = false; this.ctx.setBatch?.(false); } }
+    const method = await this._previewMethod(step);
+    const api = this.ctx.api;
+    if (api) api.__ssNextPreview = method;   // consumed by the api.queuePrompt wrapper in web/soundstage.js
+    try { r = await this.ctx.app.queuePrompt(0, 1); } finally {
+      if (api) api.__ssNextPreview = null;
+      if (held) { this._holding = false; this.ctx.setBatch?.(false); }
+    }
     const pid = this.ctx.lastPromptId?.();
+    if (pid && method && method !== "none") this.lp.track(pid, { sid: this.ctx.stage.activeShot().id, rung: step, video: step >= 3, method });
     if (pid && Object.keys(extra).length) this.pending.set(pid, extra);
     if (pid) { this.inflight.set(pid, { sid: this.ctx.stage.activeShot().id, step, t: Date.now() }); this._drawShotRows(); }
     this.ctx.app.graph.setDirtyCanvas(true);
     return r;
+  }
+
+  /** The preview method for one ladder queue: ④ Frame always; ⑤ Draft (LTX) / Final (LTX or MiniMax H3) only with the
+   *  Motion switch on ("none" when off: zero cost even on a server started with --preview-method); others untouched. */
+  async _previewMethod(step) {
+    const kind = step === 2 ? "image" : step === 3 ? "ltx" : step === 4 ? (isH3(this.m?.engine?.value) ? "h3" : "ltx") : null;
+    if (!kind) return null;
+    let approx = [];
+    try { approx = await vaeApprox(this.ctx.api); } catch { /* Latent2RGB */ }
+    return previewMethodFor({ kind, approx, videoOn: this._videoPreviewOn() });
+  }
+
+  _videoPreviewOn() { return this.m?.livePrev ? !!this.m.livePrev.checked : loadVideoPreview(); }
+
+  /** Paint the live previews into ④'s tiles and centre view and ⑤'s strip (in place; a new or finished job redraws). */
+  _drawLive() {
+    const sid = this.ctx.stage.activeShot().id;
+    const f = this.f;
+    if (f?.grid && !this.views?.frame?.hidden) {
+      const live = this.lp.list((st) => !st.video && st.sid === sid);
+      const want = live.map((st) => st.pid).join(",");
+      if (want !== (this._liveTiles?.key ?? "")) this._drawCandidates();
+      else for (const st of live) {
+        const t = this._liveTiles.map.get(st.pid);
+        if (!t) continue;
+        if (st.url && t.img.getAttribute("src") !== st.url) { t.img.src = st.url; t.img.hidden = false; t.empty.hidden = true; }
+        t.step.textContent = stepLabel(st);
+      }
+      this._drawLiveHero(live);
+    }
+    const m = this.m;
+    if (m?.live && !this.views?.motion?.hidden) {
+      const st = this.lp.list((x) => x.video && x.sid === sid).sort((a, b) => b.at - a.at)[0];
+      m.live.hidden = !st;
+      if (st) {
+        if (st.url && m.liveImg.getAttribute("src") !== st.url) m.liveImg.src = st.url;
+        m.liveImg.hidden = !st.url;
+        m.liveStep.textContent = `${st.rung >= 4 ? "Final" : "Draft"} preview · ${stepLabel(st)}`;
+        const frames = st.frames.slice(-12);
+        m.liveStrip.replaceChildren(...frames.map((u) => h("img", { src: u, alt: "preview at an earlier step", "data-cur": String(u === st.url) })));
+      }
+    }
+  }
+
+  /** ④'s centre view while a frame of this shot samples: the clicked live tile, else the newest preview. */
+  _drawLiveHero(live) {
+    const f = this.f;
+    if (!f?.liveHero) return;
+    const sel = live.find((st) => st.pid === this._liveSel) || live.filter((st) => st.url).sort((a, b) => b.at - a.at)[0] || null;
+    f.liveHero.hidden = !sel;
+    if (f.hero) f.hero.style.display = sel ? "none" : "";
+    if (!sel) return;
+    if (sel.url && f.liveImg.getAttribute("src") !== sel.url) f.liveImg.src = sel.url;
+    f.liveImg.hidden = !sel.url;
+    f.liveStep.textContent = stepLabel(sel);
   }
 
   async _refreshStop() {
@@ -765,6 +836,10 @@ export class Pipeline {
           h("div", { class: "card" }, f.clayCap = h("div", { class: "status" }, "Your stage, frame 1"), f.clay)),
         h("div", { class: "ss-studio-main" },
           f.status,
+          f.liveHero = h("div", { class: "ss-livehero", hidden: "", role: "img", "aria-label": "Live preview of the frame being painted" },
+            f.liveImg = h("img", { alt: "live preview of the frame being painted", hidden: "" }),
+            f.liveStep = h("span", { class: "ss-live-step", "aria-live": "off" }),
+            h("span", { class: "ss-live-tag" }, "LIVE")),
           f.hero = h("img", { alt: "The chosen frame for this shot", hidden: "",
             style: "width:100%;aspect-ratio:16/9;object-fit:contain;background:#0f0d11;border-radius:14px;border:1px solid rgba(255,255,255,.08)" }),
           f.candBar,
@@ -1493,7 +1568,21 @@ export class Pipeline {
     const chosen = this.chosen?.[sid];
     const heroSrc = chosen?.url || (this.ctx.getRenders(sid) || {}).look || "";
     if (f.hero) { if (heroSrc && f.hero.getAttribute("src") !== heroSrc) f.hero.src = heroSrc; f.hero.hidden = !heroSrc || !f.editHost?.isConnected || !!f.editHost.firstChild; }
-    f.grid.replaceChildren(...list.map((c) => {
+    const live = this.lp ? this.lp.list((st) => !st.video && st.sid === sid) : [];
+    this._liveTiles = { key: live.map((st) => st.pid).join(","), map: new Map() };
+    const liveTiles = live.map((st) => {
+      const t = { img: h("img", { alt: "live preview of a frame being painted", hidden: "" }),
+        empty: h("div", { class: "ss-live-empty" }, "Queued: waiting for the GPU…"), step: h("span", { class: "ss-live-step" }) };
+      if (st.url) { t.img.src = st.url; t.img.hidden = false; t.empty.hidden = true; }
+      t.step.textContent = stepLabel(st);
+      this._liveTiles.map.set(st.pid, t);
+      return h("div", { class: "cand ss-live", "data-pid": st.pid, "data-sel": String(this._liveSel === st.pid),
+        title: "Painting now: the live preview (soft colours: the finished frame replaces it)",
+        on: { click: () => { this._liveSel = this._liveSel === st.pid ? null : st.pid; this._drawCandidates(); } } },
+        t.img, t.empty, t.step, h("div", { class: "cap" }, h("span", {}, "Painting…"), h("span", { class: "pill" }, "Live")));
+    });
+    this._drawLiveHero(live);
+    f.grid.replaceChildren(...liveTiles, ...list.map((c) => {
       const isChosen = chosen && chosen.url === c.url;
       return h("div", { class: "cand", "data-chosen": String(!!isChosen), title: c.seed != null ? `seed ${c.seed}` : "",
         on: { click: () => this.choose(c) } },
@@ -1732,6 +1821,13 @@ export class Pipeline {
     m.allFinal = h("button", { type: "button", class: "ghost", title: "Queue a final with sound for every shot that doesn't have one yet",
       on: { click: () => this._render(4, true) } }, "Final for every shot");
     m.status = h("div", { class: "status" });
+    m.livePrev = h("input", { type: "checkbox", on: { change: () => { saveVideoPreview(m.livePrev.checked); } } });
+    m.livePrev.checked = loadVideoPreview();
+    m.live = h("div", { class: "ss-livevid", hidden: "" },
+      h("div", { class: "ss-livehero" }, m.liveImg = h("img", { alt: "live preview of the video's first frame", hidden: "" }),
+        h("span", { class: "ss-live-tag" }, "LIVE")),
+      m.liveStep = h("div", { class: "status" }),
+      m.liveStrip = h("div", { class: "ss-livestrip", "aria-label": "the preview at each step so far" }));
     m.frame = h("img", { class: "clay", alt: "chosen frame" });
     m.frame.addEventListener("error", () => { m.frame.hidden = true; });   // a missing file: no broken-image icon
     m.video = h("video", { controls: "", loop: "", muted: "", playsinline: "" });
@@ -1760,10 +1856,12 @@ export class Pipeline {
           h("div", { class: "status" }, "Line ideas"), m.lineIdeas,
           h("div", { class: "row" }, h("span", { class: "status" }, "Who speaks the line"), m.voiceSeg),
           h("label", { class: "row status" }, m.audio, "Let the sound/dialogue drive the video"),
+          m.livePrevRow = h("label", { class: "row status", title: VIDEO_PREVIEW_TIP }, m.livePrev, VIDEO_PREVIEW_LABEL),
           h("div", { class: "row" }, m.draftBtn, m.finalBtn),
           h("div", { class: "row" }, m.allDraft, m.allFinal))),
       m.castCard = h("div", { class: "card" }),
       m.status,
+      m.live,
       h("div", { class: "card" }, m.vidCap = h("div", { class: "status" }, "Latest result for this shot"), m.video, this.ripple.compare, this.ripple.editHost),
       m.nextRow = h("div", { class: "row" }, h("span", { style: "flex:1" }), this._next("⑥ Review", "review")),
     );
@@ -2496,6 +2594,7 @@ export class Pipeline {
     mv.move(f.editHost, wrap);   // Paint Studio opens over the whole canvas
     // The canvas: the chosen frame, or the clay before there is one.
     mv.move(f.hero, media);
+    mv.move(f.liveHero, media);   // the live preview covers the canvas while a frame of this shot samples
     this._cvClay = cvEl("canvas", "ss-clclay");
     media.append(this._cvClay);
     mv.move(f.status, wrap);
@@ -2577,8 +2676,10 @@ export class Pipeline {
     const right = panel("motion_r", "Starts from this frame", "right");
     const frameCard = m.frame.parentElement;
     mv.move(frameCard, right.body);
+    mv.move(m.livePrevRow, right.body);   // the live-preview switch: room here, the left panel never scrolls
     mv.addClass(frameCard, "ss-clpip");
     mv.move(m.video.parentElement, media);
+    mv.move(m.live, media);   // the live preview covers the canvas while a Draft / Final samples
     mv.move(this.ripple.compare, media);
     this._mStill = this._cvStillPair(media);
     mv.move(this.ripple.editHost, wrap);   // Paint Studio opens over the whole canvas, as in ④ Frame

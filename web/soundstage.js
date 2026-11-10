@@ -29,6 +29,7 @@ import { fetchJSON } from "./look/jsoncache.mjs";
 import { CameraViz, PipViewer, TopView } from "./stage/camviz.mjs";
 import { TrackSheet } from "./stage/tracks.mjs";
 import { Pipeline } from "./pipeline/pipeline.mjs";
+import { withPreviewOption } from "./pipeline/livepreview.mjs";
 import { lensCards, sunDome } from "./ui/cinegear.mjs";
 import { Coach } from "./coach/coach.mjs";
 import { castSig } from "./coach/rules.mjs";
@@ -579,6 +580,7 @@ function createStageWidget(node, inputName) {
       // Queue time only: a big 3D stage goes to the server's stage store and the prompt carries its reference (the
       // queue and the history stay small). serializeValue keeps it inline, so Export (API) stays self-contained.
       try { await stageInputsByRef(api, args[1]?.output); } catch { /* sent inline; the server slims it */ }
+      args = withPreviewOption(args, api.__ssNextPreview); api.__ssNextPreview = null;   // ④/⑤ live previews
       const r = await orig(...args);
       for (const f of api.__ssQueueHooks) { try { f(r?.prompt_id); } catch { /* one listener never breaks the queue */ } }
       return r;

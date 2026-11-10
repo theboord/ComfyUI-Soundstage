@@ -357,9 +357,12 @@ Each line: **control**: what it does.
 - **Sampler**: auto = the model's tuned sampler (Klein euler, Krea 2 euler_ancestral)
 - **Scheduler**: auto = the model's tuned scheduler (Klein simple, Krea 2 beta)
 - **Shift**: Sigma shift (ModelSamplingAuraFlow) on the flow-matching image model. 0 = the model's default, untouched. Not on the Krea 2 + depth path.
+- **Live preview of the frame being painted**
 - **Thumbnail size**
+- **Painting now**: Painting now: the live preview (soft colours: the finished frame replaces it)
 - **Dismiss**
 - **Adherence to the blocking**
+- **the preview at each step so far**
 - **Remove**
 - **Advanced**: Advanced (LTX)
 
