@@ -25,7 +25,7 @@ same flat colour) and what is joined to that; seams go to the object they border
 3. "Lock to the stage depth" (VERSION 3, docs/decisions.md 2026-11-02, share/OneClick/C): Klein still has no depth
    control, so a ghost or a resized car can survive the blurred start. With depth_lock on, the frame gets a pass on
    Krea 2 Turbo + the Krea2 depth-control LoRA steered by the stage's exact depth pass (control_image):
-   - FLUX 3 Klein: Klein paints the frame as before, then Krea 2 repaints it at denoise `depth_lock` (about 0.5) held
+   - FLUX 3 Klein: Klein paints the frame as before, then Krea 2 repaints it at denoise `depth_lock` (0.35; 0.5 before 2026-11-10) held
      to the depth pass, so the silhouettes snap back to the stage while Klein's look and cast likeness mostly stay.
    - Krea 2 Turbo: the frame itself is painted on Krea 2 from the same blurred Color-pass start at stage_denoise,
      held to the depth pass. Cast pictures are not used: the Krea 2 identity-edit patch overrides the depth hold.
@@ -45,7 +45,8 @@ DEFAULT_DENOISE = 0.90    # the frame node's stage_denoise default (measured: sh
 INIT_DOWN = 16            # the latent starts from the Color pass shrunk 16x and blown back up: layout and colour only.
                           # A sharp start (tested at 0.75) made Klein keep the clay mannequins; from noise it recomposed.
 MIN_DENOISE = 0.3
-DEPTH_LOCK = 0.5          # the Klein frame's Krea 2 depth pass denoise when "Lock to the stage depth" is on
+DEPTH_LOCK = 0.35         # the Klein frame's Krea 2 depth pass denoise when "Lock to the stage depth" is on. 0.5 until
+                          # 2026-11-10: at 0.5 Krea added a car in most car-chase frames; 0.35 kept the count (overnight QA)
 DEPTH_LOCK_MIN = 0.2      # below this the depth pass changes nothing a check can see
 DEPTH_LOCK_MAX = 0.9      # above this it is a new Krea frame, not Klein's frame held to the depth
 KREA_STEPS = 8            # Krea 2 Turbo's distilled schedule (8 steps, cfg 1, euler_ancestral / beta)

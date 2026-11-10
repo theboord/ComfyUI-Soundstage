@@ -43,7 +43,7 @@ export function stillLoras(vals, current = null, modelKey = "FLUX 3 Klein") {
  * from the Color pass (stage_denoise) and the prompt states frame 1 as measured on the ID pass. 3 = frames also
  * record "Lock to the stage depth" (dlock: the Krea 2 depth pass's denoise, 0 = off); older ones re-render without it. */
 export const LOOK_START = 3;
-export const DEPTH_LOCK = 0.5;      // soundstage/look/frame_lock.py DEPTH_LOCK: the Klein frame's Krea 2 depth-pass denoise
+export const DEPTH_LOCK = 0.35;     // soundstage/look/frame_lock.py DEPTH_LOCK (0.5 until 2026-11-10: it added cars): the Klein frame's Krea 2 depth-pass denoise
 export const FRAME_DENOISE = 0.9;   // soundstage/look/frame_lock.py DEFAULT_DENOISE: Klein's default "Follow the clay"
 /** input/ subfolder where chosen ④ frames are kept (temp/ is emptied by a server restart). */
 export const KEPT_FRAMES = "soundstage_frames";
