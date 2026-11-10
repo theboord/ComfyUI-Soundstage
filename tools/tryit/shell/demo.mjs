@@ -318,9 +318,9 @@ const ACTIONS = {
     selectKind(/boat|canoe|kayak|raft|dinghy|yacht/); await sleep(300);
     S().setFrame(0); await sleep(200); playStage();
   },
-  // Swimming: Clay view (the kit and the kick read best in clay), the diver selected, playing.
+  // Swimming: Color view (the Clay view is retired), the diver selected, playing.
   async swim() {
-    P().go("set"); await sleep(300); view("Clay"); await sleep(300);
+    P().go("set"); await sleep(300); view("Color"); await sleep(300);
     selectKind(/^(woman|man|child)$/); await sleep(300);
     S().setFrame(0); await sleep(200); playStage();
   },
