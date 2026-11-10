@@ -578,6 +578,38 @@ def without_names(text: str, names: list[str]) -> tuple[str, list[str]]:
     return " ".join(out), [g for g in gone if g]
 
 
+_PERSON_REF_RE = re.compile(
+    r"\b(?:she|he|her|hers|him|his|they|them|their|woman|women|man|men|person|people|girl|boy|child|children|lady|"
+    r"guy|actor|actress|figure)\b", re.I)
+_CLOTHES_ONLY_RE = re.compile(
+    r"^(?:(?:a|an|the|her|his|their|blue|black|white|grey|gray|dark|light|pink|red|green|brown|navy|beige|khaki|faded|"
+    r"worn|rolled-up|button-up|long|short|sleeves?|with|and|of|in)\s+)*(?:jeans|trousers|pants|shorts|skirt|dress|"
+    r"shirt|t-shirt|blouse|jacket|coat|hoodie|sweater|shoes|sneakers|boots|suit)(?:\s+\w+){0,3}$", re.I)
+
+
+def without_people(text: str) -> tuple[str, list[str]]:
+    """Auto's description without the comma pieces about a person ("A woman in her thirties, stands by the window",
+    "her back half to us", "she barely moves") or only their clothes ("Blue jeans"): the stage's people phrase says
+    each person ONCE, with place, facing and clothes, and the vision model adds their looks. Measured on the Maya S1
+    stage: without_names alone left "A woman in her thirties, stands by the window" beside "exactly one woman …
+    standing in the centre": the woman named twice (C22c painted two) and placed where the stage does not have her.
+    Returns (text, pieces gone)."""
+    if not text:
+        return text or "", []
+    out, gone = [], []
+    for sentence in re.split(r"(?<=[.!?:])\s+", text.strip()):
+        end = sentence[-1] if sentence and sentence[-1] in ".!?:" else ""
+        body = sentence[:-1] if end else sentence
+        keep = []
+        for piece in re.split(r",\s*", body):
+            p = piece.strip()
+            (gone if p and (_PERSON_REF_RE.search(p) or _CLOTHES_ONLY_RE.match(p)) else keep).append(p)
+        if [k for k in keep if k]:
+            t = ", ".join(k for k in keep if k)
+            out.append(t[:1].upper() + t[1:] + ("." if end in ("", ":") else end))
+    return " ".join(out), [g for g in gone if g]
+
+
 def assemble(look_in: dict | None, scene: dict | None, llm: dict, target: str, steps: int | None = None,
              words: str | None = None) -> dict:
     """The frame prompt in the target model's form: the compiled prompt's own stage words (compile_look with `add`),
@@ -595,6 +627,9 @@ def assemble(look_in: dict | None, scene: dict | None, llm: dict, target: str, s
     if look.get("description") and names:
         look["description"], gone = without_names(look["description"], names)
         notes += [f"dropped “{c}” from the description (a name: the image model does not know it)" for c in gone]
+    if look.get("description") and facts["people"]:
+        look["description"], gone = without_people(look["description"])
+        notes += [f"dropped “{c}” from the description (each person is said once, from the stage)" for c in gone]
     raw = words if words is not None else ((llm.get("variants") or {}).get("natural") or llm.get("setting", ""))
     added, n1 = clean_add(raw, facts)
     notes += n1

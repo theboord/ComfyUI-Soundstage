@@ -326,3 +326,22 @@ def test_auto_names_each_person_once_and_drops_names_from_the_description():
         assert "Sam" not in v["prompt"] and "Maya" not in v["prompt"]
         assert v["prompt"].lower().count("woman") <= r["compiled"].lower().count("woman")
         assert "slim build" in v["prompt"] and "short grey hair" in v["prompt"]
+
+
+def test_auto_description_says_no_person_and_no_stray_clothes():
+    """Maya S1 (2026-11-10): the name went, "A woman in her thirties, stands by the window" stayed beside the stage's
+    "exactly one woman … standing in the centre" (named twice, placed elsewhere), and "Blue jeans" dangled alone."""
+    look = {"description": "A bare room at dusk: sun through the blinds. One wooden chair, a table. Maya wears a pink "
+                           "shirt, blue jeans, her dark hair tied back. Maya, a woman in her thirties, stands by the window "
+                           "with her arms folded, her back half to us. Calm on the surface, antsy underneath.",
+            "film_stock": "kodak_250d"}
+    t, gone = A.without_people(A.without_names(look["description"], ["Maya"])[0])
+    assert "woman" not in t and "jeans" not in t.lower() and "her" not in t.split()
+    assert "One wooden chair, a table" in t and "Calm on the surface, antsy underneath" in t
+    assert "A woman in her thirties" in gone and "Blue jeans" in gone
+    for target in ("still", "edit"):
+        r = A.auto_prompt(look, _scene(), target, _png(), [], backend=A.CannedBackend(GOOD), force=True)
+        assert r["source"] == "auto"
+        for v in r["variants"]:
+            assert "stands by the window" not in v["prompt"] and "A woman in her thirties" not in v["prompt"]
+            assert v["prompt"].lower().count("woman") == 1, v["prompt"]
