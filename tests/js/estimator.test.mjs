@@ -6,7 +6,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { jobShape, unitsOf, Estimator, sureText, SEEDS, EST_KEY } from "../../web/ui/estimator.mjs";
+import { readFileSync } from "node:fs";
+import { jobShape, liveIds, unitsOf, Estimator, sureText, SEEDS, EST_KEY } from "../../web/ui/estimator.mjs";
 import { ActivityRegistry, EtaBook } from "../../web/ui/activity.mjs";
 
 const memStore = () => { const m = new Map(); return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, String(v)), m }; };
@@ -163,4 +164,95 @@ test("the book in storage: per machine, survives a reload, quiet when storage is
   assert.doesNotThrow(() => c.learn(jobShape(draft()), "draft", run(true)));
   const junk = memStore(); junk.setItem(EST_KEY, "{oops");
   assert.deepEqual(new Estimator({ storage: junk }).book, {});
+});
+
+// ---- 2026-11-10: the band said "TIME LEFT 33:06" for Finals that took 8-12 min on an L40. The App queues ONE graph for
+// every rung (Look still, Draft, Final, Layers): the Krea still's KSampler (switched off: the frame is Klein's) and the
+// SoundstageGenerateVideo (switched off) were counted as stages of the Final, with the last stage's rate and 12 + 8
+// steps, and the frame count (linked to the 3D Stage) was unknown, so the job looked 120x smaller than it is.
+const APP_FINAL = JSON.parse(readFileSync(new URL("./fixtures/app_final_graph.json", import.meta.url), "utf8"));
+
+test("the App's Final: only what runs counts (gates below their rung, switched-off branches, a disabled When are out)", () => {
+  const s = jobShape(APP_FINAL);
+  assert.deepEqual(s.stages.map((x) => x.id), ["5516:4829", "9034:9033"], "the two LTX stages; not the Krea still nor the switched-off video node");
+  assert.equal(s.model, "ltx-2.5-22b-distilled-transformer-bf16", "named by the model that runs, not the first loader in the file");
+  assert.deepEqual([s.width, s.height, s.frames], [1920, 1088, 121], "size and the stage's own 121 frames");
+  assert.ok(!s.loaderIds.includes("9047"), "the Krea loaders don't run in a Klein Final");
+  const live = liveIds(APP_FINAL);
+  assert.ok(!live.has("9091"), "the audio-driven shot behind a disabled When never runs");
+  assert.ok(!live.has("9081"), "the Final animates the picked frame (switch 9086), so no new Klein frame is painted");
+  // The same graph at the Look-still rung: nothing past the frame.
+  const still = JSON.parse(JSON.stringify(APP_FINAL));
+  still["9059"].inputs.step = 2;
+  assert.deepEqual(jobShape(still).stages, [], "rung 2: no video sampler runs");
+});
+
+test("gates, switches and When: each skips only its untaken input", () => {
+  const g = {
+    1: { class_type: "KSampler", inputs: { steps: 4 } }, 2: { class_type: "KSampler", inputs: { steps: 6 } },
+    3: { class_type: "ComfySwitchNode", inputs: { switch: false, on_true: ["1", 0], on_false: ["2", 0] } },
+    4: { class_type: "SaveImage", inputs: { images: ["3", 0] } },
+    5: { class_type: "SoundstageStep", inputs: { step: 3 } },
+    6: { class_type: "KSampler", inputs: { steps: 9 } },
+    7: { class_type: "SoundstageGate", inputs: { rung: 4, step: ["5", 0], value: ["6", 0] } },
+    8: { class_type: "SaveImage", inputs: { images: ["7", 0] } },
+    9: { class_type: "KSampler", inputs: { steps: 5 } },
+    10: { class_type: "SoundstageGate", inputs: { rung: 3, step: ["5", 0], value: ["9", 0] } },
+    11: { class_type: "SaveImage", inputs: { images: ["10", 0] } },
+    12: { class_type: "KSampler", inputs: { steps: 7 } },
+    13: { class_type: "SoundstageWhen", inputs: { enabled: false, value: ["12", 0] } },
+    14: { class_type: "SaveImage", inputs: { images: ["13", 0] } },
+    15: { class_type: "KSampler", inputs: { steps: 2 } }, 16: { class_type: "KSampler", inputs: { steps: 3 } },
+    17: { class_type: "ComfySwitchNode", inputs: { switch: ["5", 0], on_true: ["15", 0], on_false: ["16", 0] } },
+    18: { class_type: "SaveImage", inputs: { images: ["17", 0] } },
+  };
+  assert.deepEqual(jobShape(g).stages.map((x) => x.id).sort(), ["15", "16", "2", "9"],
+    "switch false -> on_false; gate at rung 4 above step 3 is off, rung 3 on; When off; a linked switch keeps both");
+});
+
+test("learning from real runs: a stage that never runs costs nothing, and the estimate stays near the measured totals", () => {
+  const est = new Estimator({ storage: memStore(), machine: "NVIDIA L40" });
+  // A shape with a stage that never runs (a switch the graph can't resolve): 12 steps of nothing.
+  const s = { model: "ltx", width: 1920, height: 1088, frames: 121, batch: 1,
+    stages: [{ id: "a", steps: 12 }, { id: "b", steps: 8 }, { id: "c", steps: 3 }], decodeIds: [], loaderIds: [] };
+  const tenMin = { totalMs: 600_000, loadMs: 60_000, cold: true, decodeMs: 60_000,
+    stages: [{ id: "a", steps: 12, ms: 0 }, { id: "b", steps: 8, ms: 240_000 }, { id: "c", steps: 3, ms: 180_000 }] };
+  for (let i = 0; i < 3; i++) est.learn(s, "final", tenMin, est.predict(s, "final", { warm: false })?.ms);
+  const p = est.predict(s, "final", { warm: false });
+  assert.ok(Math.abs(p.ms - 600_000) < 60_000, `about 10 min, not 30 (got ${Math.round(p.ms / 1000)} s)`);
+  assert.equal(p.phases.stages[0].ms, 0, "the stage that never ran");
+  // A book polluted before this fix (rates three times too high) is held to what the runs really took.
+  const key = Object.keys(est.book).find((k) => !k.includes("|*|"));
+  est.book[key].byId.b.rate *= 3; est.book[key].byId.c.rate *= 3;
+  const q = est.predict(s, "final", { warm: false });
+  assert.ok(q.ms <= 1.6 * 600_000 + 1, `held within 1.6x of the measured 10 min (got ${Math.round(q.ms / 1000)} s)`);
+  // ...but twice the steps is allowed to take about twice as long.
+  const s2 = { ...s, stages: [{ id: "a", steps: 12 }, { id: "b", steps: 16 }, { id: "c", steps: 6 }] };
+  est.book[key].byId.b.rate /= 3; est.book[key].byId.c.rate /= 3;
+  assert.ok(est.predict(s2, "final", { warm: false }).ms > 900_000, "16 + 6 steps instead of 8 + 3: well over 15 min");
+});
+
+test("the L40 case end to end: three ~10 min Finals of the App's graph teach a 10 min estimate", () => {
+  const c = { t: 1_000_000 }; const now = () => c.t;
+  const reg = new ActivityRegistry({ clientId: "me", now, eta: new EtaBook({ storage: memStore() }),
+    est: new Estimator({ storage: memStore(), machine: "NVIDIA L40" }) });
+  for (const [i, took] of [[1, 540_000], [2, 660_000], [3, 600_000]]) {
+    const id = `f${i}`;
+    reg.note(id, { name: "Final · shot 1", kind: "final" }); reg.graph(id, APP_FINAL);
+    reg.onEvent("execution_start", { prompt_id: id });
+    const at = (node, ms) => { reg.onEvent("executing", { prompt_id: id, node }); c.t += ms; };
+    // the two LTX stages report their steps; the rest is model loads, the decode and saving
+    at("5004:5602", 0.1 * took);
+    reg.onEvent("executing", { prompt_id: id, node: "5516:4829" });
+    for (let k = 1; k <= 8; k++) { c.t += 0.04 * took; reg.onEvent("progress", { prompt_id: id, node: "5516:4829", value: k, max: 8 }); }
+    reg.onEvent("executing", { prompt_id: id, node: "9034:9033" });
+    for (let k = 1; k <= 3; k++) { c.t += 0.1 * took; reg.onEvent("progress", { prompt_id: id, node: "9034:9033", value: k, max: 3 }); }
+    at("9062:5538", 0.25 * took);
+    reg.onEvent("execution_success", { prompt_id: id });
+  }
+  reg.note("f4", { name: "Final · shot 1", kind: "final" }); reg.graph("f4", APP_FINAL);
+  reg.applySummary({ running: 0, pending: 1, items: [{ prompt_id: "f4", state: "pending", position: 0, client_id: "me" }] });
+  const [q] = reg.view().queued;
+  assert.notEqual(q.estSure, "rough", "from the three runs, not the docs' first guess");
+  assert.ok(q.remainingMs > 8 * 60_000 && q.remainingMs < 12.5 * 60_000, `about 10 min (got ${(q.remainingMs / 60_000).toFixed(1)} min)`);
 });

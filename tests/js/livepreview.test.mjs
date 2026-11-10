@@ -184,3 +184,35 @@ test("wiring: the queue wrapper passes the asked method; ④ tiles, the centre v
   assert.match(pl, /VIDEO_PREVIEW_LABEL\)/);
   assert.match(pl, /this\.lp\?\.untrack\(pid\)/, "a finished job's preview goes");
 });
+
+test("after the last previewed step, ④ says what is still running (the depth pass sends no picture)", () => {
+  const listeners = {};
+  const api = { addEventListener: (t, f) => ((listeners[t] ||= []).push(f)), removeEventListener() {} };
+  const fire = (t, detail) => (listeners[t] || []).forEach((f) => f({ detail }));
+  const lp = new LivePreviews(fakeURLs());
+  attachLivePreviews(api, lp);
+  lp.track("p", { sid: "s", finishing: "depth pass (Krea 2, no preview)" });
+  const seen = [];
+  lp.onChange((pid, st) => seen.push(st && stepLabel(st)));
+  fire("execution_start", { prompt_id: "p" });
+  fire("b_preview_with_metadata", { blob: {}, nodeId: "k", jobId: "p" });
+  fire("progress", { value: 12, max: 12, prompt_id: "p", node: "k" });
+  assert.equal(stepLabel(lp.get("p")), "step 12/12");
+  fire("executing", "vae");                            // the newer frontend: a bare node id
+  assert.equal(stepLabel(lp.get("p")), "finishing: depth pass (Krea 2, no preview)…", "not frozen on step 12/12");
+  fire("progress", { value: 3, max: 8, prompt_id: "p", node: "krea" });
+  assert.equal(stepLabel(lp.get("p")), "finishing: depth pass (Krea 2, no preview) · step 3/8", "the pass's own steps count");
+  assert.equal(seen.at(-1), "finishing: depth pass (Krea 2, no preview) · step 3/8", "the tile repaints on each");
+  // Without a depth pass: just the save.
+  lp.track("q", { sid: "s" });
+  lp.onPreview({ pid: "q", node: "k", blob: {} });
+  lp.onProgress({ value: 4, max: 4, prompt_id: "q", node: "k" });
+  lp.onExecuting("q", "save");
+  assert.equal(stepLabel(lp.get("q")), "finishing: saving the frame…");
+  // A decode's bar mid-way through sampling still doesn't count (unchanged).
+  lp.track("r", {});
+  lp.onPreview({ pid: "r", node: "k", blob: {} });
+  lp.onProgress({ value: 2, max: 8, prompt_id: "r", node: "k" });
+  lp.onExecuting("r", "other");
+  assert.equal(stepLabel(lp.get("r")), "step 2/8");
+});

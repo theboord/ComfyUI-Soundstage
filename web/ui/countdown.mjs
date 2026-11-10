@@ -68,7 +68,10 @@ export function countdownModel(row, totals = null) {
   const rem = row.remainingMs;
   const late = usual != null && el > usual ? `longer than usual +${fmtClock(el - usual)}` : "";
   let mode, leftLabel = "Time left", left, leftNote = "";
-  if (rem != null) {
+  if (rem != null && late && rem <= 2000) {
+    // the estimate has run out and the job is still going: count up past it, never sit on "0:01" (2026-11-10)
+    mode = "overdue"; leftLabel = "Longer than usual"; left = `+${fmtClock(el - usual)}`; leftNote = `usually ${fmtClock(usual)}`;
+  } else if (rem != null) {
     mode = row.estSure === "rough" ? "guess" : late ? "late" : "eta";
     left = fmtClock(rem);
     if (row.remainingAtLeast) leftLabel = "Time left (at least)";

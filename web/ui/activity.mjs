@@ -446,7 +446,7 @@ export class ActivityRegistry {
     const loadMs = ran.length ? ran.reduce((a, b) => a + b, 0) : seenLoaders.length ? 0 : null;
     return {
       totalMs: t - j.startedAt, loadMs, cold: ran.length > 0,
-      stages: sh.stages.map((s) => { const n = j.nodes.get(String(s.id)); return { steps: n?.steps || s.steps, ms: dur(s.id) || 0 }; }),
+      stages: sh.stages.map((s) => { const n = j.nodes.get(String(s.id)); return { id: String(s.id), steps: n?.steps || s.steps, ms: dur(s.id) || 0 }; }),
       decodeMs: sh.decodeIds.map(dur).filter((x) => x != null).reduce((a, b) => a + b, 0),
     };
   }

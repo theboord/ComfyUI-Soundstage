@@ -7,6 +7,7 @@
 // "Use touched-up still" switch, a video queue's rung-2 image is never a candidate, and no pick = a plain refusal.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 class El {
   constructor(tag) { this.tagName = String(tag).toUpperCase(); this.attrs = {}; this.children = []; this.style = {}; this.dataset = {};
@@ -26,7 +27,7 @@ class El {
 globalThis.document ||= { createElement: (t) => new El(t), createElementNS: (_, t) => new El(t), getElementById: () => null, head: { append() {} },
   addEventListener() {}, querySelector: () => null, querySelectorAll: () => [] };
 
-const { Pipeline, startFramePath, noFrameText } = await import("../../web/pipeline/pipeline.mjs");
+const { Pipeline, startFramePath, noFrameText, startFrameLabel } = await import("../../web/pipeline/pipeline.mjs");
 
 const LOOK1 = { url: "/view?filename=look_00001_.png&subfolder=&type=output", file: { filename: "look_00001_.png", subfolder: "", type: "output" },
   seed: 4242, model: "FLUX 3 Klein", seedNode: 9081, ls: 3, lock: 0.9, dlock: 0.5, fprompt: { source: "auto", text: "a silver coupe" } };
@@ -142,4 +143,32 @@ test("a video queue's rung-2 image is not filed as a new ④ candidate (it was t
   p._onRung({ rung: 2, url: "/view?filename=look_00011_.png", file: { filename: "look_00011_.png", type: "output" }, promptId: "frm", shotId: "s1" });
   assert.equal(p.candidates.s1.length, 1);
   assert.equal(p.candidates.s1[0].seed, 77);
+});
+
+test("⑤ Motion's start-frame caption is honest: 'Starts from your frame' only when a frame is picked", () => {
+  assert.equal(startFrameLabel({ picked: true, look: true }).text, "Starts from your frame");
+  assert.equal(startFrameLabel({ touched: true, look: true }).text, "Starts from your touched-up still");
+  const stale = startFrameLabel({ look: true });
+  assert.match(stale.text, /^No frame picked yet/);
+  assert.match(stale.text, /won't be used/);
+  assert.equal(stale.dim, true, "the last look still shows dimmed: it is not what the video starts from");
+  assert.match(startFrameLabel({}).text, /^No frame picked yet: pick one in ④ Frame/);
+  assert.equal(startFrameLabel({ picked: true }).dim, false);
+  const src = readFileSync(new URL("../../web/pipeline/pipeline.mjs", import.meta.url), "utf8");
+  assert.ok(!/"Starts from your frame"\), m\.frame/.test(src), "the caption is no longer a fixed string");
+  assert.match(src, /startFrameLabel\(\{ picked: !!startFramePath\(chosen\)/, "refresh decides it from the pick, the same test Render uses");
+});
+
+test("④ Frame links the Look's still_prompt into the frame node's depth_prompt once (the Krea depth pass's text)", () => {
+  const calls = [];
+  const look = { outputs: [{ name: "still_prompt" }, { name: "still_negative" }, { name: "motion_prompt" }, { name: "look_json" }, { name: "edit_prompt" }],
+    connect: (o, n, s) => { calls.push([o, s]); n.inputs[s].link = 77; } };
+  const frame = { inputs: [{ name: "prompt", link: 5 }, { name: "image", link: 6 }, { name: "depth_prompt", link: null }] };
+  const fake = { node: (id) => (id === 9081 ? frame : id === 9079 ? look : null) };
+  const wire = Pipeline.prototype._wireDepthPrompt;
+  assert.equal(wire.call(fake), true);
+  assert.deepEqual(calls, [[0, 2]], "still_prompt (output 0) -> depth_prompt");
+  assert.equal(wire.call(fake), false, "already linked: left alone");
+  const old = { inputs: [{ name: "prompt", link: 5 }] };   // a server not restarted on this version: no such input
+  assert.equal(wire.call({ node: (id) => (id === 9081 ? old : look) }), false);
 });

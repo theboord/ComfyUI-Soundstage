@@ -802,7 +802,7 @@ Keyboard: Cmd/Ctrl+Z / Shift+Cmd/Ctrl+Z undo and redo, Cmd/Ctrl+A select all, Cm
 
 | Control | What it does |
 |---|---|
-| **Starts from your frame** | The frame this shot will animate. |
+| **Starts from your frame** | The frame this shot will animate. With nothing picked it says **No frame picked yet** (the shot's last look still shows dimmed, and is not used): pick one in ④ Frame with **Use this frame**. |
 | **Video model** | **LTX-2.5 Layout-to-Render (local, follows your blocking; recommended)**. Other installed image-to-video models are listed after it, and **MiniMax H3** if you installed it (see below). |
 | **Adherence to your blocking** | How closely the video follows the blocking: **Loose** (more invention, framing may drift), **Balanced** (close, with a little freedom for gait and limbs), **Exact** (as close as LTX goes; the default). |
 | **Quality** | **Draft**, **Final** (the default) or **Advanced** (every knob yours). Saved per shot, so a shot reopens on its own preset. See [Quality](#quality-draft-final-advanced) below. |

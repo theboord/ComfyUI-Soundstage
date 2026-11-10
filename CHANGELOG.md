@@ -3,6 +3,21 @@
 Soundstage is updated continuously on `main`. Newest first. Times are US Pacific.
 Each entry links to the code; every milestone ships with tests.
 
+## 2026-11-10 03:00 PST · Overnight QA: Klein's depth pass reads the still prompt; honest time left; honest start frame; ④ says what it's finishing
+
+**Still wrong or not verified (read first):**
+1. **The depth-pass prompt fix needs a ComfyUI restart and was measured through an equivalent graph, not the App.** The pod runs the release build and nothing was restarted tonight. The numbers below come from queueing the App's own ④ graph with the Krea 2 depth pass rebuilt node for node (same models, seed, denoise 0.5, depth LoRA), changing only its text. The App path (`depth_prompt` input, linked by ④ Frame) is covered by unit tests only.
+2. **Two shots, six seeds each.** One demo scene (car chase): "Tracking, front 3/4" and "Wide crane". Small samples; see the overnight report for every frame.
+3. **The time-left fix is tested against the App's real Final graph and simulated runs**, not watched on a live render. A book already polluted by the old estimate is held to within 0.6x-1.6x of what the runs really took, and relearns.
+4. **"finishing: depth pass" has no per-second clock.** It updates on each event (node start, each Krea step); during the Krea model load nothing new arrives, so the text holds (but says what it is waiting on).
+
+- **④ Frame, FLUX 3 Klein + "Lock to the stage depth: Light"** ([soundstage/router/adapters.py](soundstage/router/adapters.py) `depth_pass_prompt`, [soundstage/nodes_router.py](soundstage/nodes_router.py) `depth_prompt`, [web/pipeline/pipeline.mjs](web/pipeline/pipeline.mjs) `_wireDepthPrompt`). The Krea 2 depth pass was given Klein's edit instruction ("Turn image 1 … keep every object's position, size and pose exactly"). Krea 2 is text-to-image: it never sees image 1, and that text says nothing about where anything is or how big. It painted the far police car big and beside the red car. Now it reads the Look's still prompt, which states each actor's place and size. Without the new link (an old graph), it gets the edit prompt minus the instruction.
+- **Time left** ([web/ui/estimator.mjs](web/ui/estimator.mjs)). The App queues one graph for every rung. The estimator counted the samplers of branches that never run (the Krea still behind a switch, the switched-off video node) as stages of the Final, at the last stage's rate, and read the Final's frame count as unknown. A 10 min Final on the L40 showed 28-33 min. Now: only nodes that run count (`liveIds`: gates below their rung, switched-off sides, a disabled When are out), the frame count comes from the 3D Stage reference, rates are kept per sampler node, a stage that didn't run last time costs nothing, and the estimate is held near the measured totals per unit of work.
+- **Countdown** ([web/ui/countdown.mjs](web/ui/countdown.mjs)): when the estimate runs out and the job is still going, the band counts up ("Longer than usual +1:40") instead of sitting on 0:01.
+- **⑤ Motion's start frame** ([web/pipeline/pipeline.mjs](web/pipeline/pipeline.mjs) `startFrameLabel`): "Starts from your frame" only when a frame is picked. With none it says "No frame picked yet …" and dims the shot's last look still (Render refuses then anyway). The canvas panel is titled "Start frame".
+- **④ preview** ([web/pipeline/livepreview.mjs](web/pipeline/livepreview.mjs)): after the last previewed step, the tile says "finishing: depth pass (Krea 2, no preview)…", then the pass's own steps, instead of holding "step 12/12" for 100 s. Without a depth pass: "finishing: saving the frame…".
+- Tests: [tests/js/estimator.test.mjs](tests/js/estimator.test.mjs) (4 new, with the App's real Final graph in [tests/js/fixtures/app_final_graph.json](tests/js/fixtures/app_final_graph.json); the old code gives 28.2 min for a 10 min Final there), [tests/js/countdown.test.mjs](tests/js/countdown.test.mjs), [tests/js/livepreview.test.mjs](tests/js/livepreview.test.mjs), [tests/js/render_picked_frame.test.mjs](tests/js/render_picked_frame.test.mjs) (2 new), [tests/test_router_adapters.py](tests/test_router_adapters.py) (2 new).
+
 ## 2026-11-10 PST · ⑤ Motion renders from the frame you picked, always; no pick = it says so
 
 **Still wrong or not verified (read first):**

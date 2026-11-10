@@ -429,3 +429,40 @@ def test_krea_depth_lock_off_is_the_old_look_still():
     g = FakeGraph(); A.krea2(g, m, p)
     ks = next(n for n in g.nodes.values() if n.class_type == "KSampler")
     assert ks.inputs["denoise"] == 0.85 and "ImageScaleBy" not in _classes(g)
+
+
+@pytest.mark.skipif(not OBJECT_INFO, reason="no object_info snapshot")
+def test_klein_depth_pass_reads_the_still_prompt_not_the_edit_instruction():
+    """2026-11-10 overnight QA (car chase "Tracking, front 3/4"): the Krea 2 depth pass got Klein's "Turn image 1 ..."
+    instruction, which a text-to-image model can't follow and which says nothing about where or how big anything is: it
+    painted the far police car big, beside the hero car. Now it reads depth_prompt (the Look's still_prompt)."""
+    edit = ("Turn image 1, a plain 3D stage render, into a real photograph of the same shot: keep the location, the "
+            "camera, and every person's and object's position, size and pose exactly. Shot on an ARRI Alexa 35. "
+            "The police car black and white.")
+    still = "photograph, a sports car in the centre of frame, close to the camera; a police car small in the distance"
+
+    def texts(params):
+        m, p = _frame_p("open.flux3_klein", params={"depth_lock": 0.5, **params}, prompt=edit)
+        g = FakeGraph(); A.flux3_klein(g, m, p)
+        assert check_graph(g) == []
+        krea_clip = next(k for k, n in g.nodes.items() if n.class_type == "CLIPLoader" and n.inputs["type"] == "krea2")
+        enc = [n for n in g.nodes.values() if n.class_type == "CLIPTextEncode"]
+        return ([n.inputs["text"] for n in enc if n.inputs["clip"][0] != krea_clip],
+                [n.inputs["text"] for n in enc if n.inputs["clip"][0] == krea_clip])
+
+    klein, krea = texts({"depth_prompt": still})
+    assert klein == [edit], "Klein keeps its edit instruction"
+    assert krea == [still], "the depth pass paints from the still prompt"
+    _, krea = texts({})
+    assert krea == ["Shot on an ARRI Alexa 35. The police car black and white."], \
+        "no depth_prompt (a graph from before): the edit prompt minus its instruction"
+    assert A.depth_pass_prompt({"prompt": "a plain prompt", "params": {}}) == "a plain prompt"
+    assert A.depth_pass_prompt({"prompt": edit, "params": {"depth_prompt": "  "}}).startswith("Shot on")
+
+
+def test_edit_image_node_takes_depth_prompt_last():
+    """A new input goes last, so saved workflows keep their widget order; the router hands it to the adapters."""
+    src = open(os.path.join(os.path.dirname(__file__), "..", "soundstage", "nodes_router.py")).read()
+    sch = src[src.index("class SoundstageEditImage"):src.index("class SoundstageGenerateVideo")]
+    assert sch.rindex('IO.String.Input("depth_prompt"') > sch.rindex('IO.String.Input("loras"')
+    assert 'p["params"] = {**p["params"], "depth_prompt": str(v["depth_prompt"])}' in src

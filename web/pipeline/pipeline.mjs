@@ -76,6 +76,15 @@ export function startFramePath(c) {
 }
 /** Said instead of rendering when a shot has no picked frame (nothing is painted behind your back). */
 export const noFrameText = (names) => `No frame picked for ${names}: pick one in ④ Frame (“Use this frame”) first. Nothing was rendered.`;
+/** ⑤ Motion's caption over the start frame (2026-11-10: it said "Starts from your frame" over the shot's last look
+ *  still when nothing was picked, and Render then refused). picked: a frame picked in ④ (startFramePath); touched: the
+ *  Canvas tab's touched-up still is on for the shot; look: there is some still to show. -> { text, dim } */
+export function startFrameLabel({ picked = false, touched = false, look = false } = {}) {
+  if (picked) return { text: "Starts from your frame", dim: false };
+  if (touched) return { text: "Starts from your touched-up still", dim: false };
+  if (look) return { text: "No frame picked yet: this is the shot's last look still and it won't be used. Pick one in ④ Frame (“Use this frame”) to render.", dim: true };
+  return { text: "No frame picked yet: pick one in ④ Frame (“Use this frame”) to render.", dim: false };
+}
 /** The video's negative for one queue: yours, then the compiled pieces it doesn't already say (comma-separated). */
 export function joinNegative(mine, add) {
   const have = new Set(String(mine || "").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean));
@@ -501,7 +510,9 @@ export class Pipeline {
       if (held) { this._holding = false; this.ctx.setBatch?.(false); }
     }
     const pid = this.ctx.lastPromptId?.();
-    if (pid && method && method !== "none") this.lp.track(pid, { sid: this.ctx.stage.activeShot().id, rung: step, video: step >= 3, method });
+    // ④ on Klein with "Lock to the stage depth": a Krea 2 pass follows the previewed steps and sends no picture
+    const finishing = step === 2 && this.f?.model && this._depthLockNow() > 0 ? "depth pass (Krea 2, no preview)" : null;
+    if (pid && method && method !== "none") this.lp.track(pid, { sid: this.ctx.stage.activeShot().id, rung: step, video: step >= 3, method, finishing });
     if (pid && Object.keys(extra).length) this.pending.set(pid, extra);
     if (pid) { this.inflight.set(pid, { sid: this.ctx.stage.activeShot().id, step, t: Date.now() }); this._drawShotRows(); }
     this.ctx.app.graph.setDirtyCanvas(true);
@@ -1404,6 +1415,7 @@ export class Pipeline {
     }
     if (f.kleinNote) f.kleinNote.hidden = !isKleinModel(f.model.value);
     this._wireFramePrompt(!krea && isKleinModel(f.model.value) && !(usable && mode === "strict"));
+    this._wireDepthPrompt();
     f.depthNote.textContent = krea ? "always on with Krea 2 + depth" : !has ? "needs ComfyUI restarted (new frame node)" :
       no9b ? "off: Klein 9B has no Krea 2 depth pass" : tp ? TURBO_NOTES[mode] : !klein ? "FLUX 3 Klein only" : DEPTH_NOTES[mode];
   }
@@ -1422,6 +1434,19 @@ export class Pipeline {
     const origin = l.origin_id ?? l[1], oslot = l.origin_slot ?? l[2];
     // Live graphs carry link ids as strings ("9079"), saved ones as numbers.
     if (Number(origin) === 9079 && Number(oslot) !== out) look.connect(out, n, slot);
+  }
+
+  /** The Klein frame's Krea 2 depth pass reads the Look's still_prompt (where each actor is, how big) through the frame
+   *  node's depth_prompt input: Klein's "Turn image 1 …" instruction means nothing to a text-to-image model, and with
+   *  it the depth pass moved the far police car beside the hero car (2026-11-10 overnight QA). Linked once, if the node
+   *  has the input (a ComfyUI restarted on this version) and nothing is linked there yet. */
+  _wireDepthPrompt() {
+    const n = this.node(9081), look = this.node(9079);
+    const slot = n?.inputs?.findIndex((i) => i.name === "depth_prompt") ?? -1;
+    const out = look?.outputs?.findIndex((o) => o.name === "still_prompt") ?? -1;
+    if (slot < 0 || out < 0 || n.inputs[slot].link != null) return false;
+    look.connect(out, n, slot);
+    return true;
   }
 
   _setDepthMode(k) {
@@ -1860,7 +1885,7 @@ export class Pipeline {
       h("p", { class: "lede" }, "LTX follows your stage animation (positions, camera, timing) and paints it in the style of your chosen frame. Pick a shot below, or render them all."),
       this._shotRow("motion"),
       h("div", { class: "two" },
-        h("div", { class: "card" }, h("div", { class: "status" }, "Starts from your frame"), m.frame),
+        h("div", { class: "card" }, m.frameCap = h("div", { class: "status" }, startFrameLabel().text), m.frame),
         h("div", { class: "card" },
           this.ripple.el,
           h("label", { class: "f" }, "Video model", m.engine),
@@ -1949,6 +1974,9 @@ export class Pipeline {
     const chosen = this.chosen?.[this.ctx.stage.activeShot().id];
     m.frame.src = chosen?.url || r.look || "";
     m.frame.hidden = !m.frame.src;
+    const cap = startFrameLabel({ picked: !!startFramePath(chosen), touched: !!this.touched?.[this.ctx.stage.activeShot().id], look: !!(chosen?.url || r.look) });
+    m.frameCap.textContent = cap.text;
+    m.frame.style.opacity = cap.dim ? "0.4" : "";
     m.video.poster = m.frame.src || "";   // before there is a video, the canvas shows the frame it will start from
     const vid = r.final_sound || r.final || r.final_audio || r.draft || r.previz || "";
     if (vid && m.video.getAttribute("src") !== vid) { m.video.src = vid; m.video.play?.().catch(() => {}); }
@@ -2727,7 +2755,7 @@ export class Pipeline {
     if (!m._popL) { m._popL = true; for (const x of [m.sfx, m.music, m.line]) x.addEventListener("input", () => this._popSum?.()); }
     this._popSum();
     sec("Cast in this shot", [m.castCard], false, "cast");
-    const right = panel("motion_r", "Starts from this frame", "right");
+    const right = panel("motion_r", "Start frame", "right");
     const frameCard = m.frame.parentElement;
     mv.move(frameCard, right.body);
     mv.move(m.livePrevRow, right.body);   // the live-preview switch: room here, the left panel never scrolls
