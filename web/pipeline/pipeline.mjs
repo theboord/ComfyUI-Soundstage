@@ -126,9 +126,10 @@ export const KREA_DEPTH_CAST_NOTE = "Krea 2 + depth doesn't take the cast pictur
   "cast: pick FLUX 3 Klein and Lock to the stage depth Strict (Krea 2 Turbo paints on the stage depth, then the cast " +
   "pass runs), or FLUX 3 Klein on Light.";
 /** Said in ④ Frame's cast card when Krea 2 Turbo paints on the frame node (Strict, or picked directly): Krea 2 Turbo
- *  takes no reference pictures there (adapters.krea2), so the character sheet comes in through the cast pass only. */
+ *  takes no reference pictures there (adapters.krea2), so the character sheet comes in through the cast pass only
+ *  (router/castpass.py: FLUX 3 Klein, or FLUX.2 Klein 9B on a ComfyUI without it). */
 export const KREA_TURBO_CAST_NOTE = "Krea 2 Turbo paints from the prompt and your stage depth, not from the cast " +
-  "pictures; the cast pass then paints the character sheet's face and hair onto the one person in frame 1.";
+  "pictures; the cast pass (FLUX 3 Klein) then paints the character sheet's face and hair onto the one person in frame 1.";
 /** The title on the greyed Light button while Krea 2 Turbo itself is the frame model (Light is a pass over a Klein frame). */
 export const TURBO_NO_LIGHT = "Light is a Krea 2 pass over a FLUX 3 Klein frame; Krea 2 Turbo paints on the depth itself (Strict)";
 /** The depth-lock mode when Krea 2 Turbo is the frame node's model (S4, Maya, 2026-11-09: with the lock at 0 Krea 2
@@ -1402,7 +1403,8 @@ export class Pipeline {
         this.ctx.setLookStart?.(true);
         this.ctx.setFrameLock?.(true);
         // the frame node's own model: Strict paints on Krea 2 Turbo, so the pick reproduces on it
-        const queue = () => this.queueAt(2, { seed, model: krea ? f.model.value : (this.w(9081, "model")?.value || f.model.value), seedNode, refFiles,
+        const fpNow = () => { const e = this.ctx.look?.state?.frame_prompts?.[shot.id]; return e && typeof e === "object" ? { ...e } : null; };
+        const queue = () => this.queueAt(2, { seed, model: krea ? f.model.value : (this.w(9081, "model")?.value || f.model.value), seedNode, refFiles, fprompt: fpNow(),
           ls: LOOK_START, lock: krea ? undefined : +f.follow.value, dlock: krea ? undefined : this._depthLockNow(),
           ...(v ? { variant: v.label, variantKey: v.key } : {}) });
         if (v) await this.fp.withVariant(v, queue, shot.id); else await queue();
@@ -1434,7 +1436,7 @@ export class Pipeline {
       const meta = this.pending.get(ev.promptId);
       const list = (this.candidates[ev.shotId] = this.candidates[ev.shotId] || []);
       const cand = { url: ev.url, file: ev.file, seed: meta?.seed, model: meta?.model, seedNode: meta?.seedNode, refFiles: meta?.refFiles, ls: meta?.ls,
-        lock: meta?.lock, dlock: meta?.dlock, ...(meta?.variant ? { variant: meta.variant, variantKey: meta.variantKey } : {}) };
+        lock: meta?.lock, dlock: meta?.dlock, fprompt: meta?.fprompt || undefined, ...(meta?.variant ? { variant: meta.variant, variantKey: meta.variantKey } : {}) };
       list.unshift(cand);
       if (meta) this.pending.delete(ev.promptId);
       // A shot's first frame is its pick until you choose another, so "every shot" flows straight into Motion.
@@ -2090,6 +2092,14 @@ export class Pipeline {
       if (!krea) this.set(9081, "model", c.model);
     }
     if (c?.seed != null) this.set(c.seedNode || 9056, "seed", c.seed);
+    // ...and with the frame prompt it was painted with: painting another model's frames on this shot since (Krea 2's
+    // still prompt, a re-written Auto) left the shot's entry on other words, and the video started from a different
+    // car than the frame picked (carpush, 2026-11-09: a Klein frame re-rendered with Krea 2's prompt, depth lock off).
+    if (c?.fprompt && !c.edited && this.ctx.look?.state) {
+      const fpm = this.ctx.look.state.frame_prompts;
+      if (JSON.stringify(fpm?.[sid] || null) !== JSON.stringify(c.fprompt)) this.ctx.look.state.frame_prompts = { ...(fpm || {}), [sid]: { ...c.fprompt } };
+      try { this.ctx.look.onChange?.(this.ctx.look.toJSON()); } catch { /* look not ready */ }
+    }
     this.set(9086, "switch", !!this.touched[sid]);
     if (this.touched[sid] && c?.edited) setTouchupStill(this.ctx.app, c.edited);   // each shot keeps its own painted frame
     this.set(9083, "last_file", loadName(c?.last));
@@ -2107,7 +2117,7 @@ export class Pipeline {
 
   _setChosen(sid, c) {
     this.chosen[sid] = { ...this.chosen[sid], url: c.url, file: c.file, seed: c.seed, model: c.model, seedNode: c.seedNode, edited: c.edited || undefined,
-      refFiles: c.refFiles, ls: c.ls, lock: c.lock, check: c.check && !c.check.pending ? c.check : undefined };
+      refFiles: c.refFiles, ls: c.ls, lock: c.lock, dlock: c.dlock, fprompt: c.fprompt, variant: c.variant, check: c.check && !c.check.pending ? c.check : undefined };
     if (c.file) this.ctx.rememberRender?.(sid, "look", c.file);
     this.ctx.saveChosen?.({ chosen: this.chosen, touched: this.touched });
     this._keepFrame(sid);
