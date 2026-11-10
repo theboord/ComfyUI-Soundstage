@@ -7,7 +7,8 @@ import { depthTip } from "../../web/pipeline/framecheck.mjs";
 // painted with, so picking it again (or animating it) reproduces exactly that frame.
 test("a depth-locked frame comes back with its depth pass", () => {
   assert.equal(LOOK_START, 3);
-  assert.equal(depthLockFor({ seed: 5, ls: LOOK_START, dlock: DEPTH_LOCK }), 0.5);
+  assert.equal(depthLockFor({ seed: 5, ls: LOOK_START, dlock: DEPTH_LOCK }), 0.35);
+  assert.equal(depthLockFor({ seed: 5, ls: LOOK_START, dlock: 0.5 }), 0.5, "a frame painted at the old 0.5 reproduces at 0.5");
   assert.equal(depthLockFor({ seed: 5, ls: LOOK_START, dlock: 0 }), 0);
   assert.equal(depthLockFor({ seed: 5, ls: LOOK_START }), 0);
 });

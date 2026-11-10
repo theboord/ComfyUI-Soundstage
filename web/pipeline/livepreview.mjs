@@ -102,9 +102,16 @@ export function withPreviewOption(args, method) {
   return a;
 }
 
-/** "step 6/12"; a second sampler in the same job (the depth pass, the cast pass) says which pass it is. */
+/** "step 6/12"; a second sampler in the same job (the depth pass, the cast pass) says which pass it is. After the last
+ *  previewed step, while the job still runs nodes that send no picture ("Lock to the stage depth"'s Krea 2 pass loads
+ *  and samples for a minute or more with none: 2026-11-10, ④ held "step 12/12" for ~100 s), it says what it is doing:
+ *  "finishing: depth pass · step 3/8" (st.finishing, from the queue; else "saving the frame"). */
 export function stepLabel(st) {
   if (!st || !st.steps) return st?.url ? "sampling…" : "waiting for the GPU…";
+  if (st.tail && st.step >= st.steps) {
+    const o = st.other;
+    return `finishing: ${st.finishing || "saving the frame"}${o && o.max > 1 ? ` · step ${Math.max(0, Math.min(o.value, o.max))}/${o.max}` : "…"}`;
+  }
   const step = `step ${Math.max(0, Math.min(st.step, st.steps))}/${st.steps}`;
   return st.pass > 1 ? `pass ${st.pass} · ${step}` : step;
 }
@@ -184,14 +191,29 @@ export class LivePreviews {
     if (!st || !Number.isFinite(d.value) || !Number.isFinite(d.max) || d.max <= 0) return null;
     const node = d.node != null ? String(d.node) : st.node;
     // A step bar from a node that never previews (a VAE decode, a stage pass) doesn't count as a pass or a step.
-    if (node !== st.node && !st.nodes.includes(node)) { st.other = { node, value: d.value, max: d.max }; return null; }
+    if (node !== st.node && !st.nodes.includes(node)) {
+      st.other = { node, value: d.value, max: d.max };
+      if (!(st.steps && st.step >= st.steps)) return null;
+      st.tail = true;          // past the last previewed step: say what runs now
+      this._emit(st.pid, st);
+      return st;
+    }
     if (node !== st.node) this._enterNode(st, node);
     st.step = d.value; st.steps = d.max;
     this._emit(st.pid, st);
     return st;
   }
 
-  onExecuting(pid) { this.running = pid == null ? null : String(pid); }
+  /** A node starts. pid null: the running job's (the frontend's bare node id). A node other than the previewing sampler,
+   *  after its last step, means the job is finishing without pictures (decode, save, the depth pass). */
+  onExecuting(pid, node = null) {
+    if (pid != null) this.running = String(pid);
+    const st = node == null ? null : this.get(pid ?? this.running);
+    if (!st || !st.steps || st.step < st.steps || String(node) === st.node || st.tail) return;
+    st.tail = true;
+    st.other = null;
+    this._emit(st.pid, st);
+  }
 
   _enterNode(st, node) {
     st.node = node;
@@ -199,6 +221,7 @@ export class LivePreviews {
     // the step count we saw for this node before its first preview (progress comes right after each preview)
     if (st.other?.node === node) { st.step = st.other.value; st.steps = st.other.max; } else { st.step = 0; st.steps = 0; }
     st.other = null;
+    st.tail = false;
   }
 
   dispose() { for (const pid of [...this.jobs.keys()]) this.untrack(pid); this.listeners.clear(); }
@@ -211,7 +234,11 @@ export function attachLivePreviews(api, lp) {
   const onMeta = (ev) => { sawMeta = true; lp.onPreview(previewFromEvent("b_preview_with_metadata", ev?.detail)); };
   const onBare = (ev) => { if (!sawMeta) lp.onPreview(previewFromEvent("b_preview", ev?.detail)); };
   const onProg = (ev) => lp.onProgress(ev?.detail);
-  const onExec = (ev) => { const d = ev?.detail; const pid = d && typeof d === "object" ? d.prompt_id : null; if (pid) lp.onExecuting(pid); };
+  const onExec = (ev) => {
+    const d = ev?.detail;
+    if (d && typeof d === "object") { if (d.prompt_id || d.node != null) lp.onExecuting(d.prompt_id ?? null, d.node ?? null); }
+    else if (d != null) lp.onExecuting(null, String(d));     // newer frontends: the bare node id of the running prompt
+  };
   const onStart = (ev) => { if (ev?.detail?.prompt_id) lp.onExecuting(ev.detail.prompt_id); };
   const pairs = [["b_preview_with_metadata", onMeta], ["b_preview", onBare], ["progress", onProg], ["executing", onExec], ["execution_start", onStart]];
   for (const [t, f] of pairs) api?.addEventListener?.(t, f);

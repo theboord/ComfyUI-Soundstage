@@ -271,3 +271,12 @@ test("the App mounts the band at the top", () => {
   const src = readFileSync(fileURLToPath(new URL("../../web/soundstage.js", import.meta.url)), "utf8");
   assert.match(src, /mountActivity\(\{ api, row: tabs, before: guideBtn, theme: el, bigTimer: true \}\)/);
 });
+
+test("an estimate that ran out never sits on 0:01: past the usual time it counts up (2026-11-10)", () => {
+  const m = countdownModel({ id: "x", name: "Frame · shot 1", elapsedMs: 140_000, predMs: 40_000, estSure: "about", estRuns: 4, remainingMs: 1000 });
+  assert.equal(m.mode, "overdue");
+  assert.equal(m.leftLabel, "Longer than usual");
+  assert.match(m.left, /^\+0?1:40$/);
+  const ok = countdownModel({ id: "y", name: "Final", elapsedMs: 20_000, predMs: 600_000, estSure: "about", estRuns: 4, remainingMs: 580_000 });
+  assert.equal(ok.mode, "eta");
+});

@@ -14,8 +14,9 @@ image, images, mask, params (the chosen option's nested widgets), weights {role:
 """
 import json
 import math
+import re
 
-from ..look.frame_lock import DEFAULT_DENOISE, INIT_DOWN, KREA_STEPS, depth_lock, stage_denoise
+from ..look.frame_lock import DEFAULT_DENOISE, DEPTH_PREBLUR, INIT_DOWN, KREA_STEPS, depth_lock, stage_denoise
 
 
 class RouterError(ValueError):
@@ -519,6 +520,20 @@ def krea2(g, m, p):
     return {"image": g.node("VAEDecode", samples=s, vae=vae).out(0)}
 
 
+_EDIT_HEAD = re.compile(r"^\s*Turn image 1[^.]*\.\s*")
+
+
+def depth_pass_prompt(p) -> str:
+    """The text for the Klein frame's Krea 2 depth pass. Krea 2 Turbo is a text-to-image model: it never sees "image 1",
+    so Klein's edit instruction told it nothing about where anything is, and with no size words it painted the far
+    police car big and beside the hero car (2026-11-10, car chase "Tracking, front 3/4": Light flagged 13 of 14 frames
+    "police car off its mark"; overnight QA: with the Look's still prompt, which states each actor's place and size, the
+    police car stayed on its mark). params.depth_prompt = the Look's still_prompt (④ Frame wires it); without it (a graph
+    from before), the edit prompt minus its "Turn image 1 ..." instruction."""
+    dp = str((p.get("params") or {}).get("depth_prompt") or "").strip()
+    return dp or _EDIT_HEAD.sub("", p.get("prompt") or "", count=1)
+
+
 def krea_depth_pass(g, p, image, seed):
     """④ Frame "Lock to the stage depth" on a FLUX 3 Klein frame: Krea 2 Turbo repaints it at denoise depth_lock,
     held to the stage's depth pass (control). The Klein frame is the start, so its look and likeness mostly stay;
@@ -529,9 +544,11 @@ def krea_depth_pass(g, p, image, seed):
         raise RouterError(DEPTH_MISSING)
     model, clip, vae = _loaders(g, {"unet": w["krea_unet"], "text_encoder": w["krea_text_encoder"],
                                     "vae": w["krea_vae"]}, "krea2")
+    if DEPTH_PREBLUR:   # Klein's grain would grow into a maze pattern on flat skies under the depth LoRA (frame_lock.py)
+        image = g.node("ImageBlur", image=image, blur_radius=DEPTH_PREBLUR, sigma=DEPTH_PREBLUR / 2).out(0)
     latent = g.node("VAEEncode", pixels=image, vae=vae).out(0)
     model = depth_control(g, model, vae, p["control"], latent, w["depth_lora"])
-    pos, neg = _text(g, clip, p["prompt"])
+    pos, neg = _text(g, clip, depth_pass_prompt(p))
     s = g.node("KSampler", model=model, seed=int(seed), steps=KREA_STEPS, cfg=1.0, sampler_name="euler_ancestral",
                scheduler="beta", positive=pos, negative=neg, latent_image=latent,
                denoise=depth_lock((p.get("params") or {}).get("depth_lock"))).out(0)

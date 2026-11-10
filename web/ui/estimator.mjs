@@ -83,17 +83,64 @@ function ancestors(prompt, id, seen = new Set()) {
 
 const baseName = (s) => String(s || "").split(/[\\/]/).pop().replace(/\.(safetensors|gguf|ckpt|pt|pth|bin)$/i, "").slice(0, 60);
 
+// ---- What will actually run. The App queues ONE graph for every rung of its ladder: rungs above the chosen step sit
+// behind SoundstageGate (lazy: skipped below its rung), switched-off branches behind ComfySwitchNode / SoundstageWhen.
+// Counting their samplers made a Final's estimate three times its real 10 min (2026-11-10: "TIME LEFT 33:06").
+const literal = (v) => !Array.isArray(v);
+/** The step a SoundstageGate sees: a literal, or a link to a node holding one (SoundstageStep). null: unknown. */
+function gateStep(prompt, v) {
+  if (literal(v)) return num(v);
+  const src = prompt[v[0]];
+  return src ? num(src.inputs?.step) : null;
+}
+
+/** Ids of the nodes that will execute: everything reachable from the graph's ends, not through a gate below its rung,
+ *  a switch's untaken side or a disabled When. Links it can't resolve (a switch fed by another node) count as taken. */
+export function liveIds(prompt) {
+  const ids = Object.keys(prompt).filter((id) => typeof prompt[id]?.class_type === "string");
+  const used = new Set();
+  for (const id of ids) for (const v of Object.values(prompt[id].inputs || {})) if (Array.isArray(v) && v.length === 2) used.add(String(v[0]));
+  const live = new Set(), todo = ids.filter((id) => !used.has(id));
+  while (todo.length) {
+    const id = todo.pop();
+    if (live.has(id) || !prompt[id]) continue;
+    live.add(id);
+    const n = prompt[id], i = n.inputs || {}, ct = n.class_type;
+    const skip = new Set();
+    if (ct === "SoundstageGate") { const st = gateStep(prompt, i.step), r = num(i.rung); if (st != null && r != null && st < r) skip.add("value"); }
+    if (ct === "SoundstageWhen" && i.enabled === false) skip.add("value");
+    if (typeof i.switch === "boolean" && ("on_true" in i || "on_false" in i)) skip.add(i.switch ? "on_false" : "on_true");
+    for (const [k, v] of Object.entries(i)) if (!skip.has(k) && Array.isArray(v) && v.length === 2 && prompt[v[0]]) todo.push(String(v[0]));
+  }
+  return live;
+}
+
+/** A frame count: a literal, a primitive, or the stage's own frame count when it is linked to the 3D Stage node (whose
+ *  input carries {"frames": 121}). */
+function framesOf(prompt, v) {
+  const n = valueOf(prompt, v);
+  if (n != null || !Array.isArray(v)) return n;
+  const st = prompt[v[0]]?.inputs?.stage;
+  if (typeof st === "string") { try { const f = num(JSON.parse(st)?.frames); if (f) return f; } catch { /* not JSON */ } }
+  return null;
+}
+
 export function jobShape(prompt) {
   if (!prompt || typeof prompt !== "object") return null;
-  const ids = Object.keys(prompt).filter((id) => typeof prompt[id]?.class_type === "string");
-  if (!ids.length) return null;
+  const all = Object.keys(prompt).filter((id) => typeof prompt[id]?.class_type === "string");
+  if (!all.length) return null;
+  const live = liveIds(prompt);
+  const ids = all.filter((id) => live.has(id));
   const samplerIds = ids.filter((id) => SAMPLER.test(prompt[id].class_type));
   // Stage order: a sampler that depends on another runs after it.
   const depth = new Map(samplerIds.map((id) => { const a = ancestors(prompt, id); return [id, samplerIds.filter((o) => o !== id && a.has(o)).length]; }));
   const stages = samplerIds.sort((x, y) => depth.get(x) - depth.get(y) || Number(x) - Number(y))
     .map((id) => ({ id, steps: stepsOf(prompt, prompt[id]) }));
   let width = null, height = null, frames = null, batch = null, area = 0;
-  for (const id of ids) {
+  // The size from what runs; when its sizes are all links (the App's LTX path reads them off the Quality node), from
+  // any node that states one: the App's switched-off video node carries the render size and the stage's frame count.
+  for (const id of [...ids, ...all.filter((x) => !live.has(x))]) {
+    if (width != null && !live.has(id)) break;
     const n = prompt[id], i = n.inputs || {};
     const w = valueOf(prompt, i.width), h = valueOf(prompt, i.height);
     if (w == null || h == null) continue;
@@ -101,7 +148,7 @@ export function jobShape(prompt) {
     if (pref + w * h <= area) continue;
     area = pref + w * h;
     width = w; height = h;
-    frames = valueOf(prompt, i.length ?? i.frames ?? i.num_frames ?? i.frame_count);
+    frames = framesOf(prompt, i.length ?? i.frames ?? i.num_frames ?? i.frame_count);
     batch = valueOf(prompt, i.batch_size ?? i.variations ?? i.count);
   }
   let model = null;
@@ -180,14 +227,35 @@ export class Estimator {
     const isWarm = warm != null ? !!warm : !!(shape?.model && this.lastModel === shape.model);
     if (e && e.n && u != null && Array.isArray(e.step) && e.step.length) {
       const load = isWarm ? (e.loadWarm ?? (e.loadCold != null ? e.loadCold * 0.1 : 0)) : (e.loadCold ?? e.loadWarm ?? 0);
+      const known = e.step.filter((x) => x > 0);
       const stages = (shape?.stages?.length ? shape.stages : e.step.map(() => ({ steps: null }))).map((s, i) => {
-        const per = (e.step[i] ?? e.step[e.step.length - 1]) * u;
-        const steps = s.steps ?? e.steps?.[i] ?? 8;
-        return { steps, msPerStep: per, ms: steps * per };
+        // this stage's own rate (by node id), else by position, else the mean of the stages measured
+        const rate = e.byId?.[s.id]?.rate ?? (e.step[i] > 0 ? e.step[i] : known.reduce((a, x) => a + x, 0) / known.length);
+        const per = rate * u;
+        const steps = s.steps ?? e.byId?.[s.id]?.steps ?? e.steps?.[i] ?? 8;
+        // a stage that didn't run last time (cached, or behind a switch the graph can't show) costs what it usually did
+        const ran = e.byId?.[s.id]?.ran ?? 1;
+        return { steps, msPerStep: per, ms: steps * per * (ran >= 0.5 ? 1 : 0) };
       });
       const decode = (e.decode ?? 0) * u;
       const other = e.other ?? 0;
-      const ms = load + stages.reduce((a, s) => a + s.ms, 0) + decode + other;
+      let ms = load + stages.reduce((a, s) => a + s.ms, 0) + decode + other;
+      // Never far from what this job really took here: the phase model is held within 0.6x..1.6x of the measured
+      // totals (per unit), so one wrong phase (a stage that never runs, a step count it can't read) can't triple it.
+      if (e.totU > 0 && e.n >= 1) {
+        // more (or fewer) sampler steps than the runs it learned from widen the window by that much
+        let now = 0, then = 0;
+        (shape?.stages || []).forEach((x, i) => { const was = e.byId?.[x.id]?.steps ?? e.steps?.[i]; if (x.steps > 0 && was > 0) { now += x.steps; then += was; } });
+        const k = then > 0 ? now / then : 1;
+        const tot = e.totU * u, lo = tot * 0.6 * Math.min(1, k), hi = tot * 1.6 * Math.max(1, k);
+        if (ms < lo || ms > hi) {
+          const f = Math.max(lo, Math.min(hi, ms)) / ms;
+          ms *= f;
+          stages.forEach((x) => { x.ms *= f; x.msPerStep *= f; });
+          return { ms, pm: ms * Math.max(0.08, e.err ?? 0.3), sure: e.n >= 3 ? "about" : "range", runs: e.n, warm: isWarm, u,
+            phases: { load: load * f, stages, decode: decode * f, other: other * f } };
+        }
+      }
       const err = e.err ?? (e.n >= 3 ? 0.15 : 0.3);
       return { ms, pm: ms * Math.max(0.08, err), sure: e.n >= 3 ? "about" : "range", runs: e.n, warm: isWarm, u,
         phases: { load, stages, decode, other } };
@@ -256,12 +324,17 @@ export class Estimator {
     if (u != null && m.stages?.length) {
       e.step = e.step || [];
       e.steps = e.steps || [];
+      e.byId = e.byId || {};
       m.stages.forEach((s, i) => {
+        const r = s.id != null ? (e.byId[s.id] = e.byId[s.id] || { n: 0 }) : null;
+        if (r) { r.ran = ewma(r.ran, s.ms > 0 ? 1 : 0, r.n); r.n += 1; }
         if (!(s.steps > 0) || !(s.ms > 0)) return;
-        e.step[i] = ewma(e.step[i], s.ms / s.steps / u, e.n);
+        e.step[i] = ewma(e.step[i] > 0 ? e.step[i] : null, s.ms / s.steps / u, e.n);
         e.steps[i] = s.steps;
+        if (r) { r.rate = ewma(r.rate, s.ms / s.steps / u, r.n - 1); r.steps = s.steps; }
       });
       if (m.decodeMs > 0) e.decode = ewma(e.decode, m.decodeMs / u, e.n);
+      e.totU = ewma(e.totU, m.totalMs / u, e.n);
     }
     if (m.loadMs != null) {
       if (m.cold) { e.loadCold = ewma(e.loadCold, m.loadMs, e.nc); e.nc = (e.nc || 0) + 1; }

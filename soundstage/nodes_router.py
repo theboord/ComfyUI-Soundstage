@@ -155,6 +155,8 @@ class _Router(IO.ComfyNode):
                 p["params"] = {**p["params"], "stage_denoise": float(v["stage_denoise"])}
             if v.get("depth_lock") is not None:
                 p["params"] = {**p["params"], "depth_lock": FL.depth_lock(v["depth_lock"])}
+            if str(v.get("depth_prompt") or "").strip():
+                p["params"] = {**p["params"], "depth_prompt": str(v["depth_prompt"])}
             refs = _parse_ref_files(v.get("ref_files"))
             first = len(p["refs"]) + (2 if p["image"] is not None else 1)   # image 1 is the clay frame being edited
             labels = [""] * len(p["refs"]) + [lab for _, lab in refs]
@@ -308,6 +310,11 @@ class SoundstageEditImage(_Router):
                 IO.String.Input("loras", multiline=True, default="", optional=True,
                                 tooltip="The ④ Frame LoRA stack as JSON: [{\"name\": \"file.safetensors\", \"strength\": 0.8}, …], "
                                         "applied in order on the image model. Wins over the single lora / lora_strength above."),
+                # Added last so saved workflows keep their widget order.
+                IO.String.Input("depth_prompt", multiline=True, default="", optional=True, advanced=True,
+                                tooltip="FLUX 3 Klein + 'Lock to the stage depth': the Krea 2 depth pass's own text (the "
+                                        "Look's still_prompt: where each actor is and how big). Blank = the frame prompt "
+                                        "without its 'Turn image 1 …' instruction."),
             ],
             outputs=[IO.Image.Output(display_name="image")],
             hidden=HIDDEN + [IO.Hidden.prompt],   # the queued prompt: ④ Frame's cast pass reads the stage from it
