@@ -166,3 +166,161 @@ def test_face_words_go_for_someone_seen_from_behind():
     assert t == "thirties, dark hair in a ponytail" and len(notes) == 2
     t, _ = A.clean_looks("thirties, serious expression", {**away[0], "facing": "toward"}, [])
     assert "expression" in t
+
+
+# ---- v2: Auto keeps the stage's facts, in four variants (2026-11-09) -------------------------------------------------
+# The live test on the demo chase (scene 2, "Tracking, front 3/4"): the v1 Auto prompt lost "in a city street", the
+# deserted street, both cars' paint and body words, and said "empty ground in the foreground"; Krea 2 painted an open
+# lot with grass and a grey classic car.
+
+def _at(f, p):
+    return {"frame": f, "position": p}
+
+
+def _chase():
+    """web/tryit/scenes.mjs policeChase(), on its "Tracking, front 3/4" shot (the camera rides along with the sports car)."""
+    lamp = lambda x, z, i: {"id": f"sodium_{i}", "type": "practical", "name": f"Street lamp {i + 1}", "position": [x, 4.3, z],  # noqa: E731
+                            "target": [x, 0, z], "kelvin": 2100, "intensity": 2.2, "softness": 1, "angle": 180}
+    track = {"id": "tracking", "name": "Tracking, front 3/4", "setup": "single_a", "camera_follow": "sports_car",
+             "camera_keys": [{"frame": 0, "position": [2.8, 1.05, 4.6], "target": [0, 0.7, 0], "focal_mm": 30}]}
+    return {
+        "version": 2, "shot_id": "tracking", "active_shot": "tracking", "shot": {"frames": 121, "fps": 24},
+        "environment": {"set": "street_night", "weather": "none", "density": 0.5, "water_level": 2.5},
+        "lighting": {"mode": "time", "hour": 21.5, "day_of_year": 300, "latitude": 34.05, "north_deg": 0, "overcast": False,
+                     "preset": "night", "lights": [lamp(-5.4, -22, 0), lamp(5.4, -11, 1), lamp(-5.4, 0, 2), lamp(5.4, 11, 3),
+                                                   lamp(-5.4, 22, 4)]},
+        "sun": {"azimuth_deg": 250, "elevation_deg": -18},
+        "actors": [
+            {"id": "getaway", "name": "Getaway driver", "kind": "man", "height_m": 1.8, "keys": [_at(0, [1.6, 0, -24])],
+             "mount_id": "sports_car", "seat": 0, "pose": "sit", "position": [1.6, 0, -24]},
+            {"id": "cop", "name": "Officer", "kind": "woman", "height_m": 1.72, "keys": [_at(0, [1.6, 0, -36])],
+             "mount_id": "police_car", "seat": 0, "pose": "sit", "position": [1.6, 0, -36]},
+            {"id": "sports_car", "name": "Sports car", "kind": "sports_car", "height_m": 1.2, "appearance": {"color": "#c23b2a"},
+             "keys": [_at(0, [1.6, 0, -24]), _at(40, [-1.4, 0, -5]), _at(80, [1.6, 0, 15]), _at(120, [0, 0, 35])],
+             "position": [1.6, 0, -24]},
+            {"id": "police_car", "name": "Police car", "kind": "police_car", "height_m": 1.6,
+             "keys": [_at(0, [1.6, 0, -36]), _at(40, [1.0, 0, -16]), _at(80, [-1.0, 0, 4]), _at(120, [0.8, 0, 24])],
+             "position": [1.6, 0, -36]}],
+        "props": [], "shots": [track], "camera_keys": track["camera_keys"],
+    }
+
+
+CHASE_LOOK = {"film_stock": "kodak_250d"}
+# what a 4B vision model said about the chase's clay frame, more or less: a lot, grass, a grey car, daylight, rain
+CHASE_REPLY = json.dumps({
+    "seen": "a red car and a second car on a road at night",
+    "people": [],
+    "variants": {
+        "natural": {"light": "warm sodium lamp glow on the asphalt", "mood": "quiet tension",
+                    "texture": "an open lot with grass, a grey classic car, empty ground in the foreground"},
+        "cinematic": {"light": "bright daylight sun", "mood": "brooding", "texture": "wet asphalt sheen, rain puddles"},
+        "documentary": "plain available light, a woman watching from the sidewalk",
+        "contrast": {"light": "hard pools of sodium light", "mood": "tense", "texture": "crisp reflections on the paint"}},
+    "changed": ""})
+# the v1 Auto prompt from the live test, in short
+V1_AUTO = ("photograph shot on an ARRI Alexa 35 with a 30mm Cooke S4 prime lens at T2, an open lot with grass, empty ground "
+           "in the foreground, a grey classic car, wide shot, a sports car in the centre of frame, a police car right of frame, "
+           "no people in frame, exactly two vehicles, no other cars, night, cool moonlight, warm tungsten practical")
+
+
+def _chase_auto(target="still", reply=CHASE_REPLY, **kw):
+    return A.auto_prompt(CHASE_LOOK, _chase(), target, _png(), [], backend=A.CannedBackend(reply), force=True, **kw)
+
+
+def test_chase_auto_keeps_every_stage_fact_in_every_variant():
+    r = _chase_auto()
+    assert r["source"] == "auto", r["problems"]
+    assert [v["key"] for v in r["variants"]] == ["natural", "cinematic", "documentary", "contrast"]
+    for v in r["variants"]:
+        p = v["prompt"]
+        for fact in ("in a city street", "a deserted street with empty sidewalks", "crimson", "fastback",
+                     "the police car black and white with a light bar on its roof", "light bar", "two vehicles", "night"):
+            assert fact in p, (v["key"], fact)
+        for wrong in ("open lot", "grass", "grey classic car", "empty ground", "daylight sun", "wet asphalt", "puddles", "woman"):
+            assert wrong not in p, (v["key"], wrong)
+        assert "the empty road in the foreground" in p     # the set's own ground, not "empty ground"
+    assert r["prompt"] == r["variants"][0]["prompt"] and r["variant"] == "natural"
+    assert "warm sodium lamp glow on the asphalt" in r["prompt"]
+    notes = " ".join(r["variants"][0]["notes"])
+    assert "open lot" in notes and "vehicles and animals come from the stage" in notes
+
+
+def test_chase_edit_auto_keeps_the_cars_and_the_street():
+    r = _chase_auto("edit")
+    assert r["source"] == "auto"
+    for v in r["variants"]:
+        p = v["prompt"]
+        assert p.startswith("Turn image 1")
+        for fact in ("deserted street", "crimson", "fastback", "black and white", "light bar", "two vehicles"):
+            assert fact in p, (v["key"], fact)
+
+
+def test_validator_finds_the_lost_facts_and_puts_them_back():
+    scene = _chase()
+    compiled = A.compiled_prompt(CHASE_LOOK, scene, "still")
+    req = A.required_facts(CHASE_LOOK, scene, compiled)
+    for fact in ("in a city street", "the sports car painted crimson", "two vehicles in frame"):
+        assert fact in req
+    assert any("fastback" in x for x in req) and any("light bar" in x for x in req)
+    missing, extra = A.validate(V1_AUTO, compiled, req)
+    assert "in a city street" in missing and any("crimson" in m for m in missing) and any("fastback" in m for m in missing)
+    fixed = A.reinsert(V1_AUTO, missing, "still")
+    assert A.validate(fixed, compiled, req) == ([], [])
+    # one person named twice is a problem (two appeared when one was named twice)
+    _, extra = A.validate(compiled + ", a woman, a woman", compiled, req)
+    assert extra and "woman" in extra[0]
+
+
+def test_clean_add_keeps_only_light_mood_and_texture_true_to_the_stage():
+    facts = A.stage_facts(CHASE_LOOK, _chase())
+    t, notes = A.clean_add("sodium glow, an open lot with grass, a grey classic car, sunset light, foggy air, "
+                           "empty ground in the foreground, gritty asphalt texture, shallow depth of field, masterpiece", facts)
+    assert t == "sodium glow, gritty asphalt texture, shallow depth of field"
+    assert len(notes) == 6
+    # on a daytime plaza the same check keeps the day and drops the night
+    day = A.stage_facts(LOOK, _scene())
+    t, _ = A.clean_add("soft golden light, moonlit glow, worn stone plaza paving, a grassy field", day)
+    assert "golden" in t and "moonlit" not in t and "plaza paving" in t and "field" not in t
+
+
+def test_variants_from_one_call_cached_and_rewritten():
+    be = A.CannedBackend(CHASE_REPLY)
+    a = A.auto_prompt(CHASE_LOOK, {**_chase(), "shot_id": "tracking_v"}, "still", _png((4, 5, 6)), [], backend=be)
+    assert len(be.calls) == 1 and len(a["variants"]) == 4
+    assert len({v["prompt"] for v in a["variants"]}) == 4              # distinct
+    labels = [v["label"] for v in a["variants"]]
+    assert labels == ["Naturalistic", "Moody cinematic", "Documentary", "High-contrast night"]   # night: its own label
+    doc = next(v for v in a["variants"] if v["key"] == "documentary")
+    assert doc["words"] == "plain available light" and not doc["builtin"]
+    b = A.auto_prompt(CHASE_LOOK, {**_chase(), "shot_id": "tracking_v"}, "still", _png((4, 5, 6)), [], backend=be)
+    assert b["cached"] and b["variants"] == a["variants"] and len(be.calls) == 1
+    assert be.temperature == 0.0
+    A.auto_prompt(CHASE_LOOK, {**_chase(), "shot_id": "tracking_v"}, "still", _png((4, 5, 6)), [], backend=be, force=True)
+    assert len(be.calls) == 2 and be.temperature == 0.7                # ↻ Rewrite: another set of words
+
+
+def test_a_variant_with_no_surviving_words_gets_its_built_in_words():
+    reply = json.loads(CHASE_REPLY)
+    reply["variants"]["cinematic"] = {"light": "daylight", "texture": "a parking lot"}
+    del reply["variants"]["documentary"]
+    r = _chase_auto(reply=json.dumps(reply))
+    by = {v["key"]: v for v in r["variants"]}
+    assert by["cinematic"]["builtin"] and by["cinematic"]["words"] == "moody cinematic atmosphere, deep shadows, rich contrast"
+    assert by["documentary"]["builtin"] and "documentary" in by["documentary"]["prompt"]
+    assert not by["natural"]["builtin"]
+
+
+def test_old_one_prompt_reply_still_works_as_the_natural_variant():
+    llm = A.parse_reply(GOOD)
+    assert llm["variants"] == {"natural": json.loads(GOOD)["setting"]}
+    llm = A.parse_reply(json.dumps({"variants": [{"light": "a"}, {"key": "contrast", "mood": "b"}]}))
+    assert llm["variants"] == {"natural": "a", "contrast": "b"}
+
+
+def test_auto_names_each_person_once_and_drops_names_from_the_description():
+    r = A.auto_prompt(LOOK, _scene(), "still", _png(), [], backend=A.CannedBackend(GOOD), force=True)
+    assert r["source"] == "auto"
+    for v in r["variants"]:
+        assert "Sam" not in v["prompt"] and "Maya" not in v["prompt"]
+        assert v["prompt"].lower().count("woman") <= r["compiled"].lower().count("woman")
+        assert "slim build" in v["prompt"] and "short grey hair" in v["prompt"]

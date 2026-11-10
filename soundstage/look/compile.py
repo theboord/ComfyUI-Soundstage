@@ -604,7 +604,7 @@ def _drop_repeated_people(desc: str, people_words: str) -> str:
 
 
 def compile_still(look: dict, scene: dict, parts: dict, edit: bool = False,
-                  steps: int | None = None) -> tuple[str, str]:
+                  steps: int | None = None, add: dict | None = None) -> tuple[str, str]:
     """The frame-1 still prompt and negative. edit=True is the text for an edit model that sees the stage's Color pass
     as image 1 (FLUX Klein, the Look's `edit_prompt`): the shot-size and the who-is-where slots go, because the picture
     already says where everyone is and those words made Klein recompose the shot (share/QA/klein_fix s_nopos).
@@ -612,9 +612,16 @@ def compile_still(look: dict, scene: dict, parts: dict, edit: bool = False,
 
     A photographic look (real people wanted, not a frame picked before Milestone 5) opens with the camera block
     (camera_block, C28) instead of "cinematic film still"; a drawn or rendered look, and a legacy frame, keep the
-    old head."""
+    old head.
+
+    add: ④ Frame's Auto prompt (look/autoprompt.py) on top of these same stage words, never instead of them:
+    {"looks": {actor id: "thirties, short dark hair"}, "words": "wet asphalt sheen, moody contrast"}. The looks go in
+    front of each person's clothes; the words after the stage's lighting; and a street with a traffic lock gets its
+    vehicle count ("two vehicles in frame"), which Auto must keep."""
     f1 = S.frame1_facts(scene)
     c = parts["chosen"]
+    add = add if isinstance(add, dict) else None
+    add_looks = (add or {}).get("looks") or {}
     legacy = scene.get("look_start") is False
     photo = real_people_wanted(look) and not legacy
     cam = camera_block(look, scene, parts, f1, steps, edit) if photo else None
@@ -639,7 +646,7 @@ def compile_still(look: dict, scene: dict, parts: dict, edit: bool = False,
         if S.hands_only(e):   # an insert on the hands: the sleeves show, never the jeans or the shoes
             top = top_wear(w)
             return f"wearing {top}" if top else ""
-        return w
+        return _join([add_looks.get(e["id"], ""), w])
     one_phrase = not legacy and S.ride_host(scene) is None
     if one_phrase:
         # kept whole through _dedupe: two people both "full figure, mid-distance" each keep their own words
@@ -713,6 +720,9 @@ def compile_still(look: dict, scene: dict, parts: dict, edit: bool = False,
         lock["still"] if lock else "",
         # The count line stays: C22c's ablation F2 (count kept, group phrase gone) painted one person on both seeds.
         _still_count(n) if count else "",
+        # Auto: the street's own count of the vehicles in frame (the lock names them; Auto must keep how many)
+        (f"{NUM.get(nv, nv)} vehicle{'s' if nv > 1 else ''} in frame" if add is not None and lock and
+         (nv := sum(1 for e in f1["others"] if e.get("rig") == "vehicle")) else ""),
         # no face in frame (every head out of it): no expressions; only hands: no body language either
         (REAL_HANDS if hands else REAL_PEOPLE.replace(", natural expressions", "")
          if all(e.get("crop") for e in f1["people"]) else REAL_PEOPLE) if n and real else "",
@@ -729,6 +739,7 @@ def compile_still(look: dict, scene: dict, parts: dict, edit: bool = False,
         still_words(scene, {e["id"] for e in f1["people"] + f1["others"]}).rstrip("."),   # Milestone 26: lamps, doors, paint
         loc["weather"],
         f1["lighting"],
+        (add or {}).get("words", ""),          # Auto: the vision model's light, mood, texture (look/autoprompt.py)
         c.get("technique", {}).get("still", ""),
         _intensity(c.get("mood", {}).get("still", ""), look) if c.get("mood") else "",
         "black and white" if parts["bw"] else parts["palette_still"],
@@ -1073,8 +1084,9 @@ def _kb_card(ref: str) -> dict:
     return {"id": ref, "name": e.get("name", ref), "summary": first}
 
 
-def compile_look(look_in: dict | None, scene: dict | None) -> dict:
-    """The whole compile: normalised look + the three prompts + notes and KB refs."""
+def compile_look(look_in: dict | None, scene: dict | None, add: dict | None = None) -> dict:
+    """The whole compile: normalised look + the three prompts + notes and KB refs. add: ④ Frame's Auto words on top
+    of the stage's (compile_still; look/autoprompt.py), for the still and edit prompts only."""
     look, notes = normalize_look(look_in)
     scene = scene if isinstance(scene, dict) and scene else dict(DEFAULT_SCENE)
     scene = without_rigs(scene)   # SFX rigs are crew equipment, never things in the shot (their effects get beats)
@@ -1084,8 +1096,8 @@ def compile_look(look_in: dict | None, scene: dict | None) -> dict:
         steps = int((look_in or {}).get("frame_steps") or 0) if isinstance(look_in, dict) else 0
     except (TypeError, ValueError):
         steps = 0
-    still, negative = compile_still(look, scene, parts, steps=steps or None)
-    edit_still, _ = compile_still(look, scene, parts, edit=True, steps=steps or None)
+    still, negative = compile_still(look, scene, parts, steps=steps or None, add=add)
+    edit_still, _ = compile_still(look, scene, parts, edit=True, steps=steps or None, add=add)
     sw = sfx_still_words(scene)
     if sw:
         still = f"{still.rstrip(' .')}. {sw}"

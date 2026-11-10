@@ -2,17 +2,21 @@
 of the frame prompt. Mike, 2026-11-09: "Can the LLM that we have in there, Qwen, design a prompt by looking and
 understanding what needs to go in it with the character you add and everything?"
 
-What the LLM writes, and what it does not. The measured rules (C22c, C26, C28, C31) stay in code, because a 4B
-vision model does not keep them reliably:
-  - FLUX Klein wants a short edit instruction ("Turn image 1 … into a real photograph of the same shot: keep …"),
-    Krea 2 + depth the camera-block description: the FORM is assembled here, per target model;
-  - each person is named once (a woman named twice came out as two women): the head count and the one people phrase
-    come from the stage, the LLM only adds what each person looks like, with no noun;
-  - placement and size words can override the reference: they come from the stage (Krea) or from image 1 (Klein),
-    never from the LLM, and an LLM clause that places someone, or a prop on the wrong side, is dropped;
-  - no quality tags (8k, masterpiece …), no names (the image model does not know them), nothing after frame 1.
-The LLM writes: `setting` (the place in frame 1 as a real set: surfaces, materials, the props it can see, the light),
-`people[].looks` (age, hair, build from the cast picture) and two notes for the user, `seen` and `changed`.
+What the LLM writes, and what it does not (v2, 2026-11-09). The stage's facts are not the LLM's to write: an Auto
+prompt is the COMPILED prompt (compile_look with `add`, the same stage words) plus the LLM's own words on top. On the
+demo chase the v1 Auto prompt (the LLM wrote the setting) lost "in a city street", the deserted street and both cars'
+paint and body words, and Krea 2 painted an open lot with grass and a grey classic car. Now:
+  - the place and set type, set dressing and props in frame, each person's and vehicle's description, the people and
+    vehicle count, the time of day and the weather come from the stage (scene.frame1_facts, identity.py);
+  - the LLM adds only light, mood, texture and photographic feel (clean_add drops a clause naming a person, a name, a
+    vehicle or animal, a kind of place the stage is not, a time of day or weather it lacks, a placement, a later beat,
+    or a quality tag), plus each person's looks (age, hair, build: clean_looks, no noun, so each person is named once);
+  - every variant is validated (required_facts / validate): a missing stage fact is put back, a person named more often
+    than in the compiled prompt fails it; a variant that still fails is left out, and none left means Compiled;
+  - four variants from one call (VARIANTS: naturalistic, moody cinematic, documentary, high contrast); a variant
+    whose words all fail gets built-in words for its emphasis;
+  - FLUX Klein wants a short edit instruction, Krea 2 + depth the camera-block description: compile writes both forms;
+  - the stage's own "empty ground in the foreground" becomes the set's ground on a street, plaza or interior (fix_ground).
 The cast pass (Klein 9B repainting each silhouette with the cast picture) still carries identity on its own.
 
 Backends (pluggable, all local, no cloud):
@@ -38,7 +42,7 @@ import urllib.request
 
 from . import scene as S
 
-VERSION = 1
+VERSION = 2   # 2: Auto is the compiled prompt plus the LLM's words, in four variants (v1 prompts are stale)
 TIMEOUT_S = float(os.environ.get("SOUNDSTAGE_AUTOPROMPT_TIMEOUT") or 150)   # the whole LLM call; then compiled
 # (qwen3-vl:4b on an 8-core Xeon CPU: 60-75 s with a cast picture; a GPU answers in a few seconds)
 MAX_REFS = 3              # cast pictures shown to the LLM (more slow a CPU model down a lot)
@@ -119,7 +123,9 @@ def stage_facts(look: dict | None, scene: dict | None) -> dict:
     names = [a.get("name") for a in scene.get("actors") or [] if a.get("name") and S.classify(a)[1] in ("biped", "quadruped")]
     props = [{"word": p["word"], "side": _where_word(p.get("sx", 0.0))} for p in f1["props"][:6]]
     others = [re.sub(r"^(?:a|an) ", "", e["noun"]) for e in f1["others"]]
+    from .identity import still_identity
     return {
+        "set": f1["location"]["set"], "identity": still_identity(scene, {e["id"] for e in f1["others"]}),
         "shot_id": scene.get("shot_id") or "",
         "size": f1["size_still"], "focal_mm": round(f1["focal_mm"]), "angle": f1["angle"],
         "place": f1["location"]["place"], "int_ext": f1["location"]["int_ext"], "weather": f1["location"]["weather"],
@@ -136,22 +142,54 @@ def facts_sig(facts: dict, target: str) -> str:
     return hashlib.sha1(json.dumps(core, sort_keys=True, default=str).encode()).hexdigest()[:16]
 
 
+# ------------------------------------------------------------------------------------------------ the variants
+
+# Four emphases from ONE vision-model call (a CPU model takes a minute a call). Every variant keeps every stage fact:
+# compile_still writes them, the same words as Compiled; only the words the LLM adds differ. `brief` is what the LLM is
+# asked for; `words` are the built-in words when none of its own survive the checks (time-neutral; `night_words` and
+# `night_label` only on a night stage).
+VARIANTS = (
+    {"key": "natural", "label": "Naturalistic",
+     "brief": "naturalistic: true-to-life light and colour from the light sources already there, real surface textures",
+     "words": "true-to-life colour, soft natural contrast, real surface textures"},
+    {"key": "cinematic", "label": "Moody cinematic",
+     "brief": "moody and cinematic: deeper shadows, richer contrast, atmosphere, the same light sources",
+     "words": "moody cinematic atmosphere, deep shadows, rich contrast"},
+    {"key": "documentary", "label": "Documentary",
+     "brief": "documentary and plain: unstyled available light, honest everyday textures, no glamour",
+     "words": "plain documentary realism, unstyled available light, honest everyday textures"},
+    {"key": "contrast", "label": "High contrast", "night_label": "High-contrast night",
+     "brief": "high contrast: hard light, deep blacks, crisp highlights and reflections",
+     "words": "high contrast, hard light, deep shadows, crisp highlights",
+     "night_words": "high-contrast night, deep inky blacks, hard pools of light, crisp specular highlights"},
+)
+VARIANT_KEYS = tuple(v["key"] for v in VARIANTS)
+
+
+def variant_label(v: dict, facts: dict) -> str:
+    return v.get("night_label") if v.get("night_label") and _time_class(facts.get("lighting", "")) == "night" else v["label"]
+
+
 # ------------------------------------------------------------------------------------------------ the LLM's brief
 
 SYSTEM = (
     "You help paint the first frame of a film shot. Image 1 is a plain 3D stage render of that frame: simple "
-    "mannequins stand in for the actors and plain shapes for the furniture; the camera, the framing and where everyone "
-    "stands are already right. Any further images are cast pictures: what each person really looks like.\n"
+    "mannequins stand in for the actors and plain shapes for the cars, furniture and props. The stage already says "
+    "the place, the camera, the framing, who and what is there, how many, their colours and clothes, where they are, "
+    "the time of day and the weather. Any further images are cast pictures: what each person really looks like.\n"
+    "You only ADD words about the light, the mood, the surface textures and the photographic feel, in four versions.\n"
     "Reply with JSON only:\n"
     '{"seen": "one short sentence: what image 1 shows",\n'
-    ' "setting": "one sentence, at most 30 words: the place in this frame as a real film set: walls, floor, the '
-    'furniture and props you can see in image 1 with their real materials and colours, and the light",\n'
     ' "people": [{"id": "<the id from the list>", "looks": "at most 14 words: age, hair, build and face from that '
     'person\'s cast picture"}],\n'
+    ' "variants": {"natural": {"light": "", "mood": "", "texture": ""}, "cinematic": {…}, "documentary": {…}, '
+    '"contrast": {…}},\n'
     ' "changed": "one short sentence: what you left out of the director\'s notes, and why"}\n'
-    "Rules. Describe frame 1 only, as a still photograph: no movement, nothing that happens later. People appear only "
-    "in \"people\", once each, never in \"setting\". No names, no clothes in \"looks\" (the stage sets the clothes). "
-    "No positions or sizes (left, right, centre, foreground, background, close-up): the stage sets them. "
+    'Each "light", "mood" and "texture" is at most 10 words, in that version\'s emphasis (listed below).\n'
+    "Rules. Never name the place, a person, a vehicle, an animal or a prop, never say how many there are, their colour "
+    "or where they are: the stage says that. Never change the time of day or the weather. Describe frame 1 only, as a "
+    "still photograph: no movement, nothing that happens later. No names, no clothes in \"looks\". No positions or "
+    "sizes (left, right, centre, foreground, background, close-up). "
     "No quality words such as 8k, masterpiece, best quality or highly detailed."
 )
 
@@ -172,29 +210,58 @@ def user_prompt(facts: dict, ref_labels: list[str], target: str) -> str:
     else:
         lines.append("- nobody is in frame 1")
     if facts["others"]:
-        lines.append("- also in frame: " + ", ".join(facts["others"]))
+        lines.append("- also in frame: " + ", ".join(facts["others"]) + (f" ({facts['identity']})" if facts.get("identity") else ""))
     if facts["props"]:
         lines.append("- set pieces in frame: " + ", ".join(p["word"] for p in facts["props"]))
     if facts["notes"]:
         lines.append(f"- the director's notes: {facts['notes']}")
     lines.append("- the image model: " + ("an edit model that turns image 1 into a photograph" if target == "edit"
                                           else "a depth-guided image model that paints from a description"))
+    night = _time_class(facts.get("lighting", "")) == "night"
+    lines.append("The four versions:")
+    for v in VARIANTS:
+        lines.append(f"- {v['key']}: {v['brief']}" + (" (it is night: keep it night)" if night and v["key"] == "contrast" else ""))
     lines.append("Write the JSON.")
     return "\n".join(lines)
 
 
 # ------------------------------------------------------------------------------------------------ parse + validate
 
+def _flat(v) -> str:
+    """A variant's words, whatever shape the LLM gave them: a string, or {light, mood, texture, …}."""
+    if isinstance(v, dict):
+        return ", ".join(str(v[k]).strip() for k in ("light", "mood", "texture", "composition", "words", "setting")
+                         if isinstance(v.get(k), str) and v[k].strip())
+    return str(v or "").strip() if isinstance(v, (str, int, float)) else ""
+
+
 def parse_reply(text: str) -> dict:
-    """The LLM's JSON, forgiving (video2stage.vlm's reader). Raises ValueError when there is none."""
+    """The LLM's JSON, forgiving (video2stage.vlm's reader). Raises ValueError when there is none.
+    variants: {key: words} for the keys in VARIANTS; an old one-prompt reply's "setting" is the natural one."""
     from ..video2stage.vlm import _json_obj
     obj = _json_obj(text)
     if not isinstance(obj, dict):
         raise ValueError("the model did not return a JSON object")
     people = obj.get("people") if isinstance(obj.get("people"), list) else []
-    return {"seen": str(obj.get("seen") or "").strip(), "setting": str(obj.get("setting") or "").strip(),
+    raw = obj.get("variants")
+    variants: dict[str, str] = {}
+    if isinstance(raw, dict):
+        for k, v in raw.items():
+            key = str(k).strip().lower()
+            if key in VARIANT_KEYS and _flat(v):
+                variants[key] = _flat(v)
+    elif isinstance(raw, list):
+        for i, v in enumerate(raw):
+            key = str((v.get("key") or v.get("name") or "") if isinstance(v, dict) else "").strip().lower()
+            key = key if key in VARIANT_KEYS else (VARIANT_KEYS[i] if i < len(VARIANT_KEYS) else "")
+            if key and key not in variants and _flat(v):
+                variants[key] = _flat(v)
+    setting = str(obj.get("setting") or "").strip()
+    if setting and "natural" not in variants:
+        variants["natural"] = setting
+    return {"seen": str(obj.get("seen") or "").strip(), "setting": setting,
             "people": [p if isinstance(p, dict) else {"looks": str(p)} for p in people],
-            "changed": str(obj.get("changed") or "").strip()}
+            "variants": variants, "changed": str(obj.get("changed") or "").strip()}
 
 
 def banned_in(text: str) -> list[str]:
@@ -214,37 +281,141 @@ def _limit_words(text: str, n: int) -> str:
     return (cut[:i] if i > len(cut) // 2 else cut).rstrip(" ,;")
 
 
-def clean_setting(text: str, facts: dict) -> tuple[str, list[str]]:
-    """The LLM's setting sentence, frame-1 true: clauses naming a person, a name, a later beat, a quality tag, or a
-    prop on the wrong side go; a placement word on its own stays only when it agrees with the stage. Returns
-    (text, notes on what went)."""
+# What the LLM may not add: things the stage owns. Vehicles and animals (the stage counts and paints them: the chase
+# shot's Auto said "a grey classic car" and Krea painted one), a kind of place the stage is not (an open lot with grass
+# on a city street), a time of day or weather the stage does not have.
+_VEHICLE_RE = re.compile(
+    r"\b(?:cars?|vehicles?|trucks?|vans?|bus(?:es)?|sedans?|coup[eé]s?|suvs?|jeeps?|taxis?|cabs?|motorbikes?|motorcycles?|"
+    r"bikes?|bicycles?|cruisers?|boats?|ships?|planes?|aircraft|helicopters?|trains?|horses?|dogs?|cats?|animals?)\b", re.I)
+_PLACE_NOUN_RE = re.compile(
+    r"\b(?:parking lot|open lot|empty lot|vacant lot|field|meadow|grass|grassy|lawn|park|beach|sand|sandy|desert|dunes?|"
+    r"forest|woods|jungle|room|kitchen|bedroom|living room|office|warehouse|garage|studio|cabin|ocean|sea|lake|river|"
+    r"mountains?|hills?|countryside|farm|barn|runway|airport|station|platform|stadium|highway|alley|street|road|avenue|"
+    r"boulevard|plaza|square|courtyard|yard|backyard|dirt|gravel|reef|underwater)\b", re.I)
+# kinds of place that go together: a street is also a road; a desert is sand and dunes
+_PLACE_GROUPS = ({"street", "road", "avenue", "boulevard"}, {"plaza", "square", "courtyard"},
+                 {"desert", "sand", "sandy", "dune", "dunes", "dirt", "gravel"}, {"beach", "sand", "sandy", "ocean", "sea"},
+                 {"forest", "woods", "dirt"}, {"runway", "airport"}, {"station", "platform"},
+                 {"stadium", "field", "grass", "grassy", "lawn", "ballfield"}, {"reef", "underwater", "ocean", "sea"},
+                 {"lake", "river"})
+_INTERIOR_WORDS = {"room", "kitchen", "bedroom", "living room", "office", "studio"}
+_DAY_RE = re.compile(r"\b(?:daylight|daytime|sunlight|sunlit|sunny|sunshine|midday|noon|morning|afternoon|blue sky|"
+                     r"bright sun|harsh sun|sun-drenched)\b", re.I)
+_NIGHT_RE = re.compile(r"\b(?:night|nighttime|night-time|moonlight|moonlit|starlight|starry|after dark|midnight)\b", re.I)
+_GOLDEN_RE = re.compile(r"\b(?:golden hour|sunset|sunrise|dusk|dawn|magic hour|twilight|blue hour)\b", re.I)
+_NOON_RE = re.compile(r"\b(?:midday|noon|overhead sun)\b", re.I)
+# weather words, by the stage word that allows them
+_WEATHER = {"rain": r"rain|raining|rainy|drizzle|downpour|storm|stormy|rain-slicked", "wet": r"wet|puddles?|rain-slicked",
+            "fog": r"fog|foggy|mist|misty|haze|hazy", "smoke": r"smoke|smoky", "dust": r"dust|dusty",
+            "snow": r"snow|snowy|snowing", "overcast": r"overcast|cloudy"}
+_WEATHER_RE = {k: re.compile(r"\b(?:" + v + r")\b", re.I) for k, v in _WEATHER.items()}
+
+
+def _time_class(lighting: str) -> str:
+    """'night' / 'twilight' / 'golden' / 'day' from the stage's lighting words, '' when they do not say."""
+    t = (lighting or "").lower()
+    if "night" in t or "moonlight" in t:
+        return "night"
+    if "twilight" in t or "blue hour" in t:
+        return "twilight"
+    if "magic hour" in t or "golden hour" in t or "low sun" in t:
+        return "golden"
+    if "daylight" in t or re.search(r"\bsun\b", t):
+        return "day"
+    return ""
+
+
+def _place_ok(noun: str, facts: dict) -> bool:
+    place = (facts.get("place") or "").lower()
+    if not place:
+        return True                              # an empty set: no place to contradict
+    noun = noun.lower()
+    words = set(re.findall(r"[a-z]+", place))
+    if noun in words or noun in place:
+        return True
+    if facts.get("int_ext") == "INT" and noun in _INTERIOR_WORDS and "interior" in words:
+        return True
+    return any(noun in g and g & words for g in _PLACE_GROUPS)
+
+
+def _time_bad(clause: str, cls: str) -> str:
+    if cls == "night":
+        m = _DAY_RE.search(clause) or _GOLDEN_RE.search(clause)
+    elif cls == "twilight":
+        m = _DAY_RE.search(clause)
+    elif cls == "golden":
+        m = _NIGHT_RE.search(clause) or _NOON_RE.search(clause)
+    elif cls == "day":
+        m = _NIGHT_RE.search(clause) or _GOLDEN_RE.search(clause)
+    else:
+        m = None
+    return m.group(0) if m else ""
+
+
+def _weather_bad(clause: str, facts: dict) -> str:
+    have = f"{facts.get('weather') or ''} {facts.get('lighting') or ''}".lower()
+    for k, rx in _WEATHER_RE.items():
+        m = rx.search(clause)
+        if not m:
+            continue
+        ok = k in have or (k == "wet" and "rain" in have) or (k == "fog" and "haze" in have)
+        if not ok:
+            return m.group(0)
+    return ""
+
+
+def clean_add(text: str, facts: dict) -> tuple[str, list[str]]:
+    """The words the LLM adds to the stage's (light, mood, texture), frame-1 true and stage true. A clause goes when it
+    names a person, a name, a vehicle or an animal, a kind of place the stage is not, a time of day or weather the stage
+    does not have, a later beat, or a placement ("empty ground in the foreground"); a left / right word stays only
+    for a prop the stage puts on that side. Quality tags go. Returns (text, notes on what went)."""
     from .compile import frame1_safe
     notes: list[str] = []
     names = [n for n in facts.get("names") or [] if n]
     name_re = re.compile(r"\b(?:" + "|".join(re.escape(n) for n in names) + r")\b", re.I) if names else None
+    cls = _time_class(facts.get("lighting", ""))
     keep = []
     for c in _clauses(frame1_safe(text, (), names) if text else ""):
         if _PERSON_NOUN_RE.search(c) or re.search(r"\b(?:she|he|her|his|they|their|them)\b", c, re.I) or \
                 (name_re and name_re.search(c)):
             notes.append(f"dropped “{c}” (people are said once, from the stage)")
             continue
+        if _VEHICLE_RE.search(c):
+            notes.append(f"dropped “{c}” (vehicles and animals come from the stage)")
+            continue
         if _LATER_WORDS.search(c):
             notes.append(f"dropped “{c}” (after frame 1)")
             continue
-        side = _SIDE_RE.search(c)
-        if side:
+        bare = re.sub(r"\bdepth of field\b", "", c, flags=re.I)
+        noun = next((m.group(0) for m in _PLACE_NOUN_RE.finditer(bare) if not _place_ok(m.group(0), facts)), "")
+        if noun:
+            notes.append(f"dropped “{c}” (“{noun}”: the stage is {facts.get('place') or 'another place'})")
+            continue
+        t = _time_bad(c, cls)
+        if t:
+            notes.append(f"dropped “{c}” (“{t}”: the stage's time of day is {facts.get('lighting', '').split(',')[0]})")
+            continue
+        w = _weather_bad(c, facts)
+        if w:
+            notes.append(f"dropped “{c}” (“{w}”: the stage has no such weather)")
+            continue
+        placed = {m.group(0).lower() for m in _PLACE_RE.finditer(c)}
+        if placed:
             prop = next((p for p in facts.get("props") or []
                          if re.search(r"\b" + re.escape(re.sub(r"^(?:a|an) ", "", p["word"])) + r"s?\b", c, re.I)), None)
-            if not prop or prop["side"] != side.group(1).lower():
+            if not (placed <= {"left", "right"} and prop and prop["side"] in placed and len(placed) == 1):
                 notes.append(f"dropped “{c}” (a placement the stage does not have)")
                 continue
         keep.append(c)
-    out = ", ".join(keep)
+    out = ", ".join(dict.fromkeys(keep))
     for w in banned_in(out):
         notes.append(f"removed “{w}” (a quality tag)")
     out = re.sub(r"\s{2,}", " ", _BANNED_RE.sub("", out)).strip(" ,")
     out = re.sub(r",\s*,", ",", out)
-    return _limit_words(out, 40), notes
+    return _limit_words(out, 36), notes
+
+
+clean_setting = clean_add   # the one-prompt name (v1)
 
 
 def clean_looks(text: str, person: dict, names: list[str]) -> tuple[str, list[str]]:
@@ -307,102 +478,182 @@ def check_prompt(text: str, facts: dict) -> list[str]:
     return out
 
 
+# ------------------------------------------------------------------------------------------------ the stage's facts, kept
+
+# The stage's own "empty ground in the foreground" (scene._distance_words) on a set whose foreground is not open
+# ground: Krea 2 painted an open lot with grass for the chase on the city street. Auto says the set's own ground.
+GROUND_WORDS = {"street_night": "the empty road in the foreground", "burning_building": "the empty road in the foreground",
+                "plaza": "empty paving in the foreground", "runway": "empty runway tarmac in the foreground",
+                "train_station": "the empty platform in the foreground"}
+_EMPTY_GROUND = "empty ground in the foreground"
+
+
+def fix_ground(prompt: str, facts: dict) -> str:
+    if _EMPTY_GROUND not in (prompt or ""):
+        return prompt
+    words = GROUND_WORDS.get(facts.get("set") or "") or ("open floor in the foreground" if facts.get("int_ext") == "INT" else "")
+    return prompt.replace(_EMPTY_GROUND, words) if words else prompt
+
+
+def _pieces(text: str) -> list[str]:
+    """Comma / semicolon / sentence pieces, the grain compile's _dedupe keeps or drops."""
+    return [p.strip(" .") for p in re.split(r"[,;]\s*|\.\s+", text or "") if p.strip(" .")]
+
+
+_PERSON_WORDS = ("woman", "man", "child", "girl", "boy", "person")
+
+
+def required_facts(look: dict, scene: dict, compiled: str) -> list[str]:
+    """The stage's facts an Auto prompt must keep, as the pieces the compiled prompt says them in: the place and set
+    type, the street's own words, which car is which and what each car is, each person (noun and clothes), the head
+    count, the weather and the time of day. Only pieces the compiled prompt really carries (an edit prompt has no
+    "in a city street": image 1 holds the place); plus, on a street with its traffic lock, how many vehicles."""
+    from .compile import NUM, _still_count
+    from .identity import body_words, still_identity, wardrobe
+    f1 = S.frame1_facts(scene)
+    ids = {e["id"] for e in f1["people"] + f1["others"]}
+    loc = f1["location"]
+    lock = S.traffic_lock(scene, ids)
+    by_id = {a.get("id"): a for a in scene.get("actors") or []}
+    cands = [f"in {loc['place']}" if loc["place"] else "", loc["place"], loc["weather"],
+             (f1["lighting"] or "").split(",")[0], lock["still"] if lock else "",
+             still_identity(scene, ids), body_words(scene, {e["id"] for e in f1["others"]}), _still_count(len(f1["people"]))]
+    for e in f1["people"]:
+        cands.append(wardrobe(scene, by_id.get(e["id"]) or e["actor"], look))
+    low = fix_ground(compiled, {"set": loc["set"], "int_ext": loc["int_ext"]}).lower()
+    out: list[str] = []
+    for c in cands:
+        for p in ([c] if c and c.lower() in low else []) + _pieces(c):
+            if p and p.lower() in low and p not in out:
+                out.append(p)
+    nv = sum(1 for e in f1["others"] if e.get("rig") == "vehicle")
+    if lock and nv:
+        out.append(f"{NUM.get(nv, nv)} vehicle{'s' if nv > 1 else ''} in frame")
+    return out
+
+
+def _person_counts(text: str) -> dict:
+    t = (text or "").lower()
+    return {w: len(re.findall(r"\b" + w + r"\b", t)) for w in _PERSON_WORDS}
+
+
+def validate(prompt: str, compiled: str, required: list[str]) -> tuple[list[str], list[str]]:
+    """(missing stage facts, other problems): every required piece is in the Auto prompt, and no person is named more
+    often than the compiled prompt names them (a woman named twice came out as two women)."""
+    low = (prompt or "").lower()
+    missing = [r for r in required if r.lower() not in low]
+    a, c = _person_counts(prompt), _person_counts(compiled)
+    extra = [f"names “{w}” {a[w]} times; the stage {c[w]}" for w in _PERSON_WORDS if a[w] > c[w]]
+    return missing, extra
+
+
+def reinsert(prompt: str, missing: list[str], target: str) -> str:
+    """Put missing stage facts back: at the end of the description, or as a sentence of the edit instruction."""
+    if not missing:
+        return prompt
+    if target == "edit":
+        tail = "; ".join(missing)
+        return f"{prompt.rstrip(' .')}. {tail[:1].upper()}{tail[1:]}."
+    return f"{prompt.rstrip(' ,.')}, {', '.join(missing)}"
+
+
 # ------------------------------------------------------------------------------------------------ assemble
 
-def _sep(words: str) -> str:
-    """'the man in his forties' / 'the man wearing …' read on; 'the man, forties, short grey hair' needs the comma."""
-    return " " if re.match(r"(?:in|with|wearing|aged)\b", words or "") else ", "
+def without_names(text: str, names: list[str]) -> tuple[str, list[str]]:
+    """The description without the comma pieces that name someone ("Sam and Maya wait by the building"): the image
+    model does not know a name, the stage says who is where, the cast picture who it is. Returns (text, pieces gone)."""
+    rx = re.compile(r"\b(?:" + "|".join(re.escape(n) for n in names if n) + r")\b", re.I) if any(names) else None
+    if not rx or not text:
+        return text or "", []
+    out, gone = [], []
+    for sentence in re.split(r"(?<=[.!?])\s+", text.strip()):
+        end = sentence[-1] if sentence and sentence[-1] in ".!?" else ""
+        body = sentence[:-1] if end else sentence
+        keep = []
+        for piece in re.split(r",\s*", body):
+            (gone if rx.search(piece) else keep).append(piece.strip())
+        if keep:
+            t = ", ".join(k for k in keep if k)
+            out.append(t[:1].upper() + t[1:] + (end or "."))
+    return " ".join(out), [g for g in gone if g]
 
 
-def assemble(look_in: dict | None, scene: dict | None, llm: dict, target: str, steps: int | None = None) -> dict:
-    """The frame prompt in the target model's form, built from the stage's structure and the LLM's words.
+def assemble(look_in: dict | None, scene: dict | None, llm: dict, target: str, steps: int | None = None,
+             words: str | None = None) -> dict:
+    """The frame prompt in the target model's form: the compiled prompt's own stage words (compile_look with `add`),
+    plus the LLM's cleaned words (`words`, else the reply's natural variant / setting) and each person's looks.
     Returns {"prompt", "notes": [...], "used": {"setting", "looks": {id: text}}}."""
-    from ..cine.prompts import SIZE_STILL, _cap, _join
-    from .compile import (NUM, REAL_PEOPLE, _only_blocking, _still_count, camera_block, look_context, look_parts,
-                          real_people_wanted, skin_fabric_tail)
-    from .identity import wardrobe
+    from .compile import compile_look
     from .sfx import without_rigs
-    from .vocab import normalize_look
-    look, _ = normalize_look({k: v for k, v in (look_in or {}).items() if k != "frame_prompts"})
+    look = {k: v for k, v in (look_in or {}).items() if k != "frame_prompts"}
+    if steps and not look.get("frame_steps"):
+        look["frame_steps"] = steps
     scene = without_rigs(scene or {})
     facts = stage_facts(look, scene)
-    parts = look_parts(look, look_context(scene))
-    f1 = S.frame1_facts(scene)
-    photo = real_people_wanted(look) and scene.get("look_start") is not False
-    edit = target == "edit"
-    cam = camera_block(look, scene, parts, f1, steps, edit) if photo else None
     names = facts["names"]
     notes: list[str] = []
-    setting, n1 = clean_setting(llm.get("setting", ""), facts)
+    if look.get("description") and names:
+        look["description"], gone = without_names(look["description"], names)
+        notes += [f"dropped “{c}” from the description (a name: the image model does not know it)" for c in gone]
+    raw = words if words is not None else ((llm.get("variants") or {}).get("natural") or llm.get("setting", ""))
+    added, n1 = clean_add(raw, facts)
     notes += n1
     by_pid = {str(p.get("id") or ""): p for p in llm.get("people") or [] if isinstance(p, dict)}
     looks: dict[str, str] = {}
     unmatched = [p for p in llm.get("people") or [] if isinstance(p, dict) and str(p.get("id") or "") not in
                  {q["id"] for q in facts["people"]}]
     for i, p in enumerate(facts["people"]):
-        raw = by_pid.get(p["id"]) or (unmatched[i] if i < len(unmatched) else None)
-        t, n2 = clean_looks((raw or {}).get("looks", ""), p, names)
+        raw_p = by_pid.get(p["id"]) or (unmatched[i] if i < len(unmatched) else None)
+        t, n2 = clean_looks((raw_p or {}).get("looks", ""), p, names)
         notes += n2
         if t:
             looks[p["id"]] = t
-    by_id = {a.get("id"): a for a in scene.get("actors") or []}
-
-    def wear_of(e):
-        w = wardrobe(scene, by_id.get(e["id"]) or e["actor"], look)
-        return _join([looks.get(e["id"], ""), w])
-
-    n = len(f1["people"])
-    inside = f1["location"]["int_ext"] == "INT"
-    palette = "black and white" if parts["bw"] else parts["palette_still"]
-    if edit:
-        others = f1["others"]
-        if n == 1 and not others:
-            marks = f"{S.definite(f1['people'][0]['noun'])}'s position, size and pose"
-        elif n or others:
-            marks = "every person's and object's position, size and pose"
-        else:
-            marks = "every object's position and size"
-        place = "room" if inside else "location"
-        head = (f"Turn image 1, a plain 3D stage render, into a real photograph of the same shot: keep the {place}, "
-                f"the camera, and {marks} exactly.")
-        block = (_cap(cam["text"].replace("photograph shot on", "Shot on", 1)) + ".") if cam else ""
-        if n == 1:
-            who = f"Exactly one {re.sub(r'^(?:a|an|the) ', '', f1['people'][0]['noun'])}, {wear_of(f1['people'][0])}"
-        elif n:
-            who = f"Exactly {NUM.get(n, n)} people: " + "; ".join(
-                f"{S.definite(e['noun'])}{_sep(wear_of(e))}{wear_of(e)}" for e in sorted(f1["people"], key=lambda e: e["sx"]))
-        else:
-            who = ""
-        tail = _join([who, skin_fabric_tail(scene, f1, look, short=True) if n and photo else "",
-                      "real materials on every surface", f"nobody else in the {'room' if inside else 'frame'}" if n else ""])
-        if not photo:   # a drawn or rendered look: the generic instruction, then the words
-            from ..router.edit_graph import frame_instruction
-            prompt = frame_instruction(_join([setting, who, palette]))
-        else:
-            prompt = " ".join(x for x in (head, block, _cap(setting) + "." if setting else "", _cap(tail) + ".",
-                                          _cap(palette) + "." if palette else "") if x)
-    else:
-        people = S.person_still_phrase(f1["people"], f1["camera"], wear_of) if n else ""
-        props = "; ".join(f"{p['word']} {p['where']}" for p in f1["props"][:3])
-        prompt = _join([
-            cam["text"] if cam else "film still",
-            setting,
-            SIZE_STILL[f1["size"]] + ("" if n or f1["others"] else " of the location"),
-            people,
-            S.group_phrase(f1["others"], f1["camera"]) and "; ".join(S.group_phrase(f1["others"], f1["camera"])),
-            _still_count(n),
-            REAL_PEOPLE if n and photo else "",
-            _only_blocking(n, sum(1 for e in f1["others"] if e.get("rig") == "vehicle")),
-            "" if cam else f"{round(f1['focal_mm'])}mm lens",
-            props,
-            f1["lighting"],
-            palette,
-            skin_fabric_tail(scene, f1, look) if cam and n else "",
-        ])
+    r = compile_look(look, scene, add={"looks": looks, "words": added})
+    prompt = fix_ground(r["edit_prompt"] if target == "edit" else r["still_prompt"], facts)
     for w in banned_in(prompt):   # the look's own words never carry one (compile's test), but say so if they do
         notes.append(f"removed “{w}” (a quality tag)")
     prompt = re.sub(r"\s{2,}", " ", _BANNED_RE.sub("", prompt)).replace(" ,", ",")
-    return {"prompt": prompt, "notes": notes, "used": {"setting": setting, "looks": looks}}
+    return {"prompt": prompt, "notes": notes, "used": {"setting": added, "looks": looks}}
+
+
+def build_variants(look: dict, scene: dict, llm: dict, target: str, compiled: str, steps: int | None = None) -> dict:
+    """Every variant's prompt, each checked against the stage: {"variants": [...], "dropped": [notes], "llm_words": bool}.
+    A variant whose LLM words all fail the checks gets the built-in words for its emphasis; one that still misses a
+    stage fact after putting it back is left out."""
+    facts = stage_facts(look, scene)
+    required = required_facts(look, scene, compiled)
+    night = _time_class(facts.get("lighting", "")) == "night"
+    out, dropped, llm_words, seen = [], [], False, set()
+    for v in VARIANTS:
+        raw = (llm.get("variants") or {}).get(v["key"], "")
+        a = assemble(look, scene, llm, target, steps, words=raw)
+        builtin = not a["used"]["setting"]
+        notes = list(a["notes"])
+        if builtin:
+            if raw:
+                notes.append("none of the vision model's words survived the checks: the built-in words for this emphasis")
+            a = assemble(look, scene, llm, target, steps, words=(v.get("night_words") if night else None) or v["words"])
+        else:
+            llm_words = True
+        prompt = a["prompt"]
+        missing, extra = validate(prompt, compiled, required)
+        if missing:
+            notes.append("put back what the stage says: " + "; ".join(f"“{m}”" for m in missing))
+            prompt = reinsert(prompt, missing, target)
+            missing, extra = validate(prompt, compiled, required)
+        problems = missing and [f"misses “{m}”" for m in missing] or []
+        problems += extra + check_prompt(prompt, facts)
+        if problems:
+            dropped.append(f"{v['label']}: " + "; ".join(problems))
+            continue
+        if prompt in seen:
+            dropped.append(f"{v['label']}: the same words as another variant")
+            continue
+        seen.add(prompt)
+        out.append({"key": v["key"], "label": variant_label(v, facts), "prompt": prompt, "words": a["used"]["setting"],
+                    "builtin": builtin, "notes": notes, "looks": a["used"]["looks"]})
+    return {"variants": out, "dropped": dropped, "llm_words": llm_words or any(v["looks"] for v in out),
+            "required": required}
 
 
 # ------------------------------------------------------------------------------------------------ images
@@ -450,6 +701,7 @@ def composite(frame: bytes, refs: list[bytes]) -> bytes:
 class Backend:
     name = "none"
     model = ""
+    temperature = 0.0     # ↻ Rewrite asks for another set of words (Ollama samples; the others answer the same)
 
     def available(self) -> bool:  # pragma: no cover - interface
         return False
@@ -514,7 +766,8 @@ class OllamaBackend(Backend):
 
     def generate(self, system, prompt, images, timeout):
         body = {"model": self.model, "stream": False, "think": False, "keep_alive": "5m",
-                "options": {"temperature": 0, "num_predict": 400, "num_ctx": 8192},
+                "options": {"temperature": self.temperature, "num_predict": 800, "num_ctx": 8192,
+                            **({"seed": int(time.time()) % 100000} if self.temperature else {})},
                 "messages": [{"role": "system", "content": system},
                              {"role": "user", "content": prompt,
                               "images": [base64.b64encode(_jpeg(i)).decode() for i in images]},
@@ -553,7 +806,7 @@ class ComfyBackend(Backend):
              "t": {"class_type": "TextGenerate", "inputs": {
                  "clip": ["m", 0], "prompt": prompt + ("\nThe picture: image 1 on the left; the cast pictures stacked "
                                                        "on the right, top to bottom (images 2, 3 …)." if len(images) > 1 else ""),
-                 "max_length": 500, "sampling_mode": "off", "thinking": False, "use_default_template": True,
+                 "max_length": 900, "sampling_mode": "off", "thinking": False, "use_default_template": True,
                  "system_prompt": ["s", 0]}},
              "p": {"class_type": "PreviewAny", "inputs": {"source": ["t", 0]}}}
         if img is not None:
@@ -624,18 +877,21 @@ def compiled_prompt(look_in: dict | None, scene: dict | None, target: str) -> st
 def auto_prompt(look: dict | None, scene: dict | None, target: str, frame: bytes | None, refs: list[tuple[bytes, str]] = (),
                 backend: Backend | None = None, force: bool = False, steps: int | None = None,
                 timeout: float = TIMEOUT_S) -> dict:
-    """Write the frame prompt for one shot. Never raises: a missing, slow or invalid LLM gives the compiled prompt.
-    Returns {source: auto|compiled, prompt, compiled, seen, changed, notes, problems, backend, model, sig, cached, ms}."""
+    """Write the frame prompt for one shot, in up to four variants (VARIANTS) from one vision-model call. Never raises:
+    a missing, slow or invalid LLM gives the compiled prompt. Every variant is the compiled prompt's stage words plus
+    the LLM's own (checked: required_facts / validate); `prompt` is the first variant's.
+    Returns {source: auto|compiled, prompt, variant, variants: [{key, label, prompt, words, builtin, notes}], compiled,
+    seen, changed, notes, problems, backend, model, sig, cached, ms}."""
     t0 = time.time()
     target = target if target in TARGETS else "still"
-    look = look or {}
+    look = {k: v for k, v in (look or {}).items() if k != "frame_prompts"}
     scene = scene or {}
     facts = stage_facts(look, scene)
     sig = facts_sig(facts, target)
     compiled = compiled_prompt(look, scene, target)
     base = {"source": "compiled", "prompt": compiled, "compiled": compiled, "seen": "", "changed": "", "notes": [],
             "problems": [], "backend": getattr(backend, "name", "none"), "model": getattr(backend, "model", ""),
-            "sig": sig, "target": target, "cached": False}
+            "sig": sig, "target": target, "cached": False, "variant": "", "variants": []}
 
     def done(r):
         r["ms"] = int((time.time() - t0) * 1000)
@@ -652,20 +908,24 @@ def auto_prompt(look: dict | None, scene: dict | None, target: str, frame: bytes
         return done({**base, "notes": ["No stage frame was sent: the compiled prompt is used."]})
     prompt = user_prompt(facts, [lab for _, lab in refs], target) + f"\n(shot_id={facts['shot_id']})"
     try:
+        backend.temperature = 0.7 if force else 0.0
         reply = backend.generate(SYSTEM, prompt, images, timeout)
         llm = parse_reply(reply)
     except Exception as e:  # noqa: BLE001 - slow, missing or broken: the compiled prompt
         return done({**base, "notes": [f"The vision model gave no usable answer ({type(e).__name__}: {str(e)[:120]}): "
                                        "the compiled prompt is used."]})
-    out = assemble(look, scene, llm, target, steps)
-    problems = check_prompt(out["prompt"], facts)
-    if not out["used"]["setting"] and not out["used"]["looks"]:
+    built = build_variants(look, scene, llm, target, compiled, steps)
+    vs = built["variants"]
+    problems = list(built["dropped"]) if not vs else []
+    if vs and not built["llm_words"]:
         problems.append("the vision model's words did not survive the checks")
-    if problems:
-        return done({**base, "seen": llm["seen"], "changed": llm["changed"], "problems": problems, "llm": llm,
-                     "notes": out["notes"] + ["The written prompt failed the checks: the compiled prompt is used."]})
-    res = {**base, "source": "auto", "prompt": out["prompt"], "llm": llm, "seen": _limit_words(llm["seen"], 30),
-           "changed": _limit_words(llm["changed"], 30), "notes": out["notes"], "used": out["used"]}
+    if problems or not vs:
+        return done({**base, "seen": llm["seen"], "changed": llm["changed"], "problems": problems or ["no variant passed the checks"],
+                     "llm": llm, "notes": ["The written prompt failed the checks: the compiled prompt is used."]})
+    first = vs[0]
+    res = {**base, "source": "auto", "prompt": first["prompt"], "variant": first["key"], "variants": vs, "llm": llm,
+           "seen": _limit_words(llm["seen"], 30), "changed": _limit_words(llm["changed"], 30),
+           "notes": first["notes"] + built["dropped"], "used": {"setting": first["words"], "looks": first["looks"]}}
     if len(_CACHE) >= _CACHE_MAX:
         _CACHE.pop(next(iter(_CACHE)))
     _CACHE[key] = res
