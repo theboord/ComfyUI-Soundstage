@@ -107,7 +107,9 @@ def test_nothing_in_the_app_or_the_installers_runs_it():
     hits = []
     for base in ("web", "soundstage", "tools"):
         for p in (ROOT / base).rglob("*"):
-            if p.is_file() and p.suffix in {".py", ".mjs", ".js", ".sh", ".html", ".json"} and p != SCRIPT:
+            # knowledge_index.mjs is Ask's text pack generated from the docs: it quotes the docs, it calls nothing
+            if p.is_file() and p.suffix in {".py", ".mjs", ".js", ".sh", ".html", ".json"} and p != SCRIPT \
+                    and p != ROOT / "web/agent/knowledge_index.mjs":
                 if "fetch_rocketbox" in p.read_text(errors="ignore"):
                     hits.append(str(p.relative_to(ROOT)))
     init = (ROOT / "__init__.py").read_text()
