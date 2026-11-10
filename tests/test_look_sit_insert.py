@@ -131,3 +131,56 @@ def test_a_body_in_frame_keeps_its_place_stance_and_shoes():
     assert not S.hands_only(e)
     still = compile_look({"description": ROOM}, sc)["still_prompt"]
     assert "standing" in still and "dark shoes" in still and "natural expressions" in still
+
+
+# ---------------------------------------------------------------- the hands-only insert's motion prompt (GPU test, S3)
+
+TAPS = [{"frame": f, "joints": {"r_index_1": [v, 0], "r_middle_1": [18, 0]}}
+        for f, v in ((0, 14), (8, -12), (12, 14), (16, -12), (20, 14), (24, -12), (28, 14),
+                     (58, -12), (62, 14), (66, -12), (70, 14), (74, -12), (78, 14), (82, 14))]
+
+
+def test_a_hands_only_insert_motion_prompt_says_the_hands_the_surface_and_the_taps():
+    sc = _scene({**HANDS, "pose_keys": TAPS}, camera=INSERT_CAM, frames=97)
+    out = compile_look({"description": ROOM}, sc)
+    m = out["motion_prompt"]
+    assert "Only her hands and forearms are in frame, resting on the edge of the table" in m
+    assert "Her fingers tap on the edge of the table, pause, then tap again." in m
+    assert "pink button-up shirt with rolled-up sleeves shows at her wrists" in m
+    for gone in ("stands", "standing", "right of frame", "facing the camera", "jeans", "dark shoes", "shoes",
+                 "legs", "looks down", "fully clothed"):
+        assert gone not in m, gone
+    assert "no face, no body" in m
+    neg = out["motion_negative"]
+    for w in ("face", "head", "standing figure", "legs"):
+        assert w in neg, w
+
+
+def test_the_description_keeps_the_hands_and_the_room_and_loses_the_jeans_and_the_hair():
+    sc = _scene(HANDS, camera=INSERT_CAM, frames=97)
+    desc = ("A bare rented room in late afternoon. Maya wears a pink button-up shirt with rolled-up sleeves, blue jeans, "
+            "her dark hair tied back. Close on Maya's right hand resting on the edge of the table. Her fingers tap the "
+            "table edge, go still, then tap again.")
+    m = compile_look({"description": desc}, sc)["motion_prompt"]
+    assert "Maya wears a pink button-up shirt with rolled-up sleeves." in m
+    assert "Her fingers tap the table edge, go still, then tap again." in m
+    assert "jeans" not in m and "hair tied back" not in m
+    assert "fingers tap on the edge" not in m, "the description already says what the fingers do"
+
+
+def test_finger_bursts_count_tapping_bursts_from_the_pose_keys():
+    sc = _scene({**HANDS, "pose_keys": TAPS}, camera=INSERT_CAM, frames=97)
+    assert S.finger_bursts(sc, sc["actors"][2]) == 2
+    one = _scene({**HANDS, "pose_keys": TAPS[:7]}, camera=INSERT_CAM, frames=97)
+    assert S.finger_bursts(one, one["actors"][2]) == 1
+    assert S.finger_bursts(sc, {"pose_keys": [{"frame": 0, "joints": {"spine": [18, 0, 0]}}]}) == 0
+    still = _scene(HANDS, camera=INSERT_CAM, frames=97)
+    m = compile_look({"description": ROOM}, still)["motion_prompt"]
+    assert "fingers tap" not in m, "no finger keys, no taps"
+
+
+def test_a_body_in_frame_keeps_its_motion_blocking_and_no_motion_negative():
+    sc = _scene(HANDS, camera={"position": [0.9, 1.5, -3.2], "target": [0.9, 1.0, 0.7], "focal_mm": 32}, frames=97)
+    out = compile_look({"description": ROOM}, sc)
+    assert "stands" in out["motion_prompt"] and "dark shoes" in out["motion_prompt"]
+    assert out["motion_negative"] == ""

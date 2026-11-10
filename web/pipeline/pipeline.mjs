@@ -54,6 +54,12 @@ export function frameLockFor(c) {
 }
 /** The depth_lock a candidate was painted with (0 = off: every frame from before LOOK_START 3, and Paint Studio frames). */
 export const depthLockFor = (c) => (!c || c.edited || c.seed == null || (c.ls || 0) < 3 ? 0 : +c.dlock || 0);
+/** The video's negative for one queue: yours, then the compiled pieces it doesn't already say (comma-separated). */
+export function joinNegative(mine, add) {
+  const have = new Set(String(mine || "").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean));
+  const more = String(add || "").split(",").map((x) => x.trim()).filter((x) => x && !have.has(x.toLowerCase()));
+  return [String(mine || "").trim().replace(/,\s*$/, ""), more.join(", ")].filter(Boolean).join(", ");
+}
 /** The router's Krea 2 Turbo option (the frame node's "Strict" depth lock paints on it). */
 export const isKreaTurbo = (m) => /^Krea 2 Turbo/.test(String(m || ""));
 /** "off" | "light" (Krea 2 depth pass over the Klein frame) | "strict" (Krea 2 paints the frame on the depth pass). */
@@ -1871,6 +1877,16 @@ export class Pipeline {
   /** H3 makes its own sound: hand it the sound fields and keep the Soundstage mix (and the LTX audio-driven
    *  final) out of this queue, so the H3 final with its own audio is the one that lands. Restored afterwards. */
   async _queueVideo(step) {
+    // A hands-only insert: the compiled motion negative ("face, head, standing figure, legs …", look/compile.py
+    // HANDS_ONLY_MOTION_NEG) joins your negative for this queue only; your own text comes back after it
+    const add = (await this._compiledLook())?.motion_negative || "";
+    if (!add) return this._queueVideoAs(step);
+    const keep = this.w(5509, "value")?.value ?? "";
+    this.set(5509, "value", joinNegative(keep, add));
+    try { return await this._queueVideoAs(step); } finally { this.set(5509, "value", keep); }
+  }
+
+  async _queueVideoAs(step) {
     if (step === 4 && !isH3(this.m.engine.value) && this._voice() === "ltx" && this.w(9092, "enabled")?.value
       && String(this.w(9087, "line")?.value || "").trim()) return this._queueLtxVoice(step);
     if (step !== 4 || !isH3(this.m.engine.value)) return this.queueAt(step);
@@ -1898,7 +1914,10 @@ export class Pipeline {
   }
 
   /** The shot's LTX motion prompt, compiled by the same code the Look node runs (POST /soundstage/look/compile). */
-  async _motionPrompt() {
+  async _motionPrompt() { return String((await this._compiledLook())?.motion_prompt || ""); }
+
+  /** The Look node's compile for the active shot (POST /soundstage/look/compile), or null. */
+  async _compiledLook() {
     let look = {};
     try { look = JSON.parse(this.w(9079, "look")?.value || "{}"); } catch { look = {}; }
     let scene = null;
@@ -1907,8 +1926,8 @@ export class Pipeline {
       const r = await this.ctx.api.fetchApi("/soundstage/look/compile", { method: "POST",
         headers: { "Content-Type": "application/json" }, body: JSON.stringify({ look, scene }) });
       const d = await r.json();
-      return r.ok ? String(d.motion_prompt || "") : "";
-    } catch { return ""; }
+      return r.ok && d && typeof d === "object" ? d : null;
+    } catch { return null; }
   }
 
   /** The audio-driven final starts from the chosen frame (picker, Krea or touch-up), not from the Krea still. */

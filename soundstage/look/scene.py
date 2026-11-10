@@ -377,6 +377,50 @@ def hands_only(e: dict) -> bool:
     return (e or {}).get("crop") == HANDS_ONLY
 
 
+_FINGER = re.compile(r"^[lr]_(?:thumb|index|middle|ring|pinky)_")
+TAP_GAP_S = 0.75   # finger keys further apart than this are a pause between two bursts of tapping
+
+
+def _pose_keys(scene: dict, a: dict) -> list[dict]:
+    """A person's Pose keys in the active shot (a shot with its own blocking keeps its own, as sit_spans does)."""
+    own = (a.get("by_shot") or {}).get(scene.get("active_shot")) or {}
+    keys = own.get("pose_keys") if own.get("keys") and "pose_keys" in own else a.get("pose_keys")
+    return sorted((k for k in keys or [] if isinstance(k, dict)), key=lambda k: float(k.get("frame") or 0))
+
+
+def finger_bursts(scene: dict, a: dict) -> int:
+    """How many bursts of finger movement a person's Pose keys hold (0 = the fingers never move): a finger key that
+    differs from the one before is a movement; movements more than TAP_GAP_S apart are separate bursts. Maya S3's
+    insert (frames 0-28 tapping, 28-58 still, 58-82 tapping) is two: "tap, pause, then tap again"."""
+    _, fps = frame_range(scene)
+    prev, times = None, []
+    for k in _pose_keys(scene, a or {}):
+        sig = tuple(sorted((j, tuple(v) if isinstance(v, list) else v) for j, v in (k.get("joints") or {}).items()
+                           if _FINGER.match(j)))
+        if prev is not None and sig != prev:
+            times.append(float(k.get("frame") or 0) / (fps or 24.0))
+        prev = sig
+    if not times:
+        return 0
+    return 1 + sum(1 for t0, t1 in zip(times, times[1:]) if t1 - t0 > TAP_GAP_S)
+
+
+def hands_motion_sentence(e: dict, scene: dict | None = None) -> str:
+    """The motion prompt's blocking for a hands-only insert: the hands, the surface, what is beside or in them, and
+    what the fingers do; no stance, facing, place in frame, legs, shoes or face (Maya S3, 2026-11-09: "A woman stands
+    right of frame, facing the camera" under a hands insert)."""
+    pron = {"woman": "her", "man": "his", "girl": "her", "boy": "his"}.get((e.get("actor") or {}).get("kind"), "their")
+    at = e.get("hands_surface")
+    rest = _join_and([*(e.get("hands_objects") or [])])
+    s = f"Only {pron} hands and forearms are in frame" + (f", resting on the edge of {at}" if at else "") + \
+        (f" {rest}" if rest else "") + f"; the rest of {pron} body stays out of frame above."
+    n = finger_bursts(scene or {}, e.get("actor") or {})
+    if n:
+        edge = f" on the edge of {at}" if at else ""
+        s += f" {pron.capitalize()} fingers tap{edge}" + (", pause, then tap again." if n > 1 else ".")
+    return s
+
+
 def shot_size(z: float, height: float, focal_mm: float) -> str:
     """Shot size from how much of the subject's height the frame covers at its distance."""
     frame_h = z * G.sensor_h() / focal_mm

@@ -489,6 +489,63 @@ LEGACY_STILL = {"kodak_200t": "Kodak Vision3 200T film stock, tungsten balance, 
 REAL_HANDS = "real hands, natural skin texture with knuckles, veins and fine creases, real fabric with creases"
 # what the frame models painted on the Maya S3 insert: legs and shoes standing on the table
 HANDS_ONLY_NEG = "legs, feet, shoes, standing figure, full body, face, person standing on the table"
+# The motion prompt's negative on a hands-only insert (compile_look "motion_negative"; ⑤ Motion adds it to the video's
+# negative for the queue). LTX reads a negative only above CFG 1.
+HANDS_ONLY_MOTION_NEG = "face, head, standing figure, legs, feet, shoes, full body"
+# Words a hands-only insert's motion prompt never carries from the description: the lower body, the stance, the face
+# and hair (the Maya S3 description: "Maya wears a pink button-up shirt with rolled-up sleeves, blue jeans, her dark
+# hair tied back"; the jeans and the hair are out of frame).
+_NOT_HANDS = re.compile(r"\b(?:jeans|trousers|pants|shorts|skirts?|leggings|shoes?|boots?|sneakers|trainers|heels|socks|"
+                        r"legs?|knees?|feet|foot|hair|ponytail|braids?|face|eyes|head|stands?|standing|sits?|sitting|"
+                        r"seated|walks?|walking|facing|expressions?)\b", re.I)
+
+
+def hands_only_text(text: str) -> str:
+    """A description for a hands-only insert: the comma (or 'and') pieces that name what is out of frame are dropped;
+    the room, the light, the shirt and the hands stay. A sentence with nothing left goes."""
+    out = []
+    for sentence in re.split(r"(?<=[.!?])\s+", (text or "").strip()):
+        if not sentence:
+            continue
+        end = sentence[-1] if sentence[-1] in ".!?" else ""
+        body = sentence[:-1] if end else sentence
+        keep = []
+        for clause in re.split(r",\s*", body):
+            if not _NOT_HANDS.search(clause):
+                keep.append(clause)
+                continue
+            parts = [x for x in re.split(r"\s+and\s+", clause) if not _NOT_HANDS.search(x)]
+            if parts and len(parts) < len(re.split(r"\s+and\s+", clause)) and not re.search(r"\b(?:wears?|wearing)\b", parts[0]) \
+                    and re.search(r"\b(?:wears?|wearing)\b", clause):
+                parts = []   # "Maya wears jeans and a shirt": the verb went with the dropped half; leave it whole out
+            if parts:
+                keep.append(" and ".join(parts))
+        if keep:
+            t = ", ".join(keep).strip()
+            out.append(t[:1].upper() + t[1:] + (end or "."))
+    return " ".join(out)
+
+
+def is_hands_insert(f1: dict) -> bool:
+    """Every person in frame 1 is hands only (scene.hands_only): an insert on the hands."""
+    return bool(f1["people"]) and all(S.hands_only(e) for e in f1["people"])
+
+
+def hands_identity(scene: dict, look: dict, f1: dict) -> str:
+    """The motion prompt's clothing line for a hands-only insert: only the sleeves show ("Her pink button-up shirt with
+    rolled-up sleeves shows at her wrists from the first frame to the last."), never the jeans or the shoes."""
+    by_id = {a.get("id"): a for a in scene.get("actors") or []}
+    out = []
+    for e in f1["people"]:
+        top = top_wear(known_wear(by_id.get(e["id"]) or e["actor"], look))
+        if not top:
+            continue
+        pron = {"woman": "her", "man": "his", "girl": "her", "boy": "his"}.get((e.get("actor") or {}).get("kind"), "their")
+        top = re.sub(r"^(?:a|an|the)\s+", "", top)
+        out.append(f"{pron.capitalize()} {top} shows at {pron} wrists from the first frame to the last.")
+    return " ".join(out)
+
+
 REAL_PEOPLE_NEG = "plastic skin, mannequin, doll-like faces, wax figure, CGI character, 3D render, video game character"
 
 # A look that asks for a drawn or rendered world keeps its people stylised too.
@@ -937,10 +994,24 @@ def compile_motion(look: dict, scene: dict, parts: dict) -> str:
             ("underwater" if f1["underwater"] and "underwater" not in (loc["place"] or "") else loc["place"] and f"in {loc['place']}"),
         ], " ")
     light = _join([_no_numbers(f1["lighting"]), loc["weather"]])
-    blocking_s = S.blocking_sentence(f1["people"] + f1["others"], f1["camera"])
+    # An insert on the hands (the still's hands_only): the hands, the surface and what the fingers do, no stance,
+    # facing, place in frame, legs, shoes or face (Maya S3, 2026-11-09)
+    hands = is_hands_insert(f1)
+    hands_ids = {e["id"] for e in f1["people"]} if hands else set()
+    if hands:   # the rim the backlight puts on hair and shoulders is out of frame: say where it lands
+        light = light.replace("rim on hair and shoulders", "rim on the hands and sleeves")
+        blocking_s = " ".join(x for x in [" ".join(S.hands_motion_sentence(e, scene) for e in f1["people"]),
+                                          S.blocking_sentence(f1["others"], f1["camera"])] if x)
+        mf = {**mf, "marks": [m for m in mf["marks"] if m["id"] not in hands_ids]}
+    else:
+        blocking_s = S.blocking_sentence(f1["people"] + f1["others"], f1["camera"])
     props = [p for p in f1["props"] if p["kind"] == "building"]
     set_s = _cap(f"{props[0]['word']} {'fills the background' if props[0]['where'] == 'filling the background' else 'stands ' + props[0]['where']}") + "." if props else ""
     desc = (look.get("description") or "").strip().rstrip(".")
+    if hands:
+        desc = hands_only_text(desc).rstrip(".")
+        if re.search(r"\bfingers?\b|\btap", desc, re.I):   # the description says what the fingers do: once is enough
+            blocking_s = re.sub(r" \w+ fingers tap[^.]*\.", "", blocking_s)
     lens_s = _join([S._article(f1['lens_band']), c.get("lens", {}).get("motion", ""),
                     c.get("aperture", {}).get("motion", "")])
     look_s = _join([
@@ -971,8 +1042,9 @@ def compile_motion(look: dict, scene: dict, parts: dict) -> str:
         "" if scene.get("look_start") is False else motion_identity(scene, {e["id"] for e in f1["people"] + f1["others"]}),
         # what each car is (a real body style, a blank plate) and who each person is (hat or hair): look/identity.py
         "" if scene.get("look_start") is False else body_words(scene, _in_shot_ids(scene, f1)),
-        "" if scene.get("look_start") is False else people_identity(scene, look, _in_shot_ids(scene, f1)),
-        head_beats(scene),                       # head and gaze blocking: every person's head, beat by beat
+        "" if scene.get("look_start") is False else (hands_identity(scene, look, f1) if hands
+                                                     else people_identity(scene, look, _in_shot_ids(scene, f1))),
+        "" if hands else head_beats(scene),      # head and gaze blocking: every person's head, beat by beat (no head in an insert)
         _camera_sentence(mf, f1, look),
         impact_beats(scene),                     # Milestone 21: timed material beats off the baked hits
         sfx_beats(scene),                        # practical effects: the fireball, squibs, stage blood (look/sfx.py)
@@ -985,7 +1057,8 @@ def compile_motion(look: dict, scene: dict, parts: dict) -> str:
         _cap(mood_s) + "." if mood_s else "",
         c.get("energy", {}).get("motion", ""),
         _sound(parts, loc),
-        _frame_holds(scene, f1, lock, rides) if (f1["people"] or f1["others"]) else "",
+        ("Only the hands and what they touch are in frame, start to end; no face, no body, nobody else." if hands
+         else _frame_holds(scene, f1, lock, rides) if (f1["people"] or f1["others"]) else ""),
         LOCK_CLAUSE,
     ]
     text = " ".join(s for s in sentences if s and s != ".")
@@ -1035,6 +1108,8 @@ def compile_look(look_in: dict | None, scene: dict | None) -> dict:
         "still_prompt": still,
         "still_negative": negative,
         "motion_prompt": motion,
+        # ⑤ Motion adds it to the video's negative for the queue (LTX reads a negative only above CFG 1)
+        "motion_negative": HANDS_ONLY_MOTION_NEG if is_hands_insert(f1) else "",
         "edit_prompt": edit_prompt,
         "kb_refs": parts["kb_refs"],
         "kb": [_kb_card(r) for r in parts["kb_refs"]],

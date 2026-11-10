@@ -83,6 +83,7 @@ class SoundstageLook(IO.ComfyNode):
         result["notes"] = typed + result["notes"]
         summary = "\n\n".join([f"STILL (frame 1)\n{result['still_prompt']}", f"NEGATIVE\n{result['still_negative']}",
                                f"MOTION (LTX)\n{result['motion_prompt']}"]
+                              + ([f"MOTION NEGATIVE\n{result['motion_negative']}"] if result.get("motion_negative") else [])
                               + ([f"NOTES\n" + "\n".join(result["notes"])] if result["notes"] else []))
         return IO.NodeOutput(result["still_prompt"], result["still_negative"], result["motion_prompt"],
                              json.dumps(result, ensure_ascii=False), result["edit_prompt"], ui={"text": [summary]})

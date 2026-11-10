@@ -138,3 +138,26 @@ test("the cast notes point the Krea 2 look at Strict + the cast pass", () => {
   assert.match(KREA_TURBO_CAST_NOTE, /cast pass/);
   assert.doesNotMatch(KREA_TURBO_CAST_NOTE, /Identity Edit/);
 });
+
+// Maya S3: a hands-only insert's compiled motion negative joins the video's negative (5509) for the queue only.
+test("⑤ Motion adds the hands-only motion negative for one queue and gives your negative back", async () => {
+  const { joinNegative } = await import("../../web/pipeline/pipeline.mjs");
+  assert.equal(joinNegative("", "face, head"), "face, head");
+  assert.equal(joinNegative("blurry, Face", "face, head, legs"), "blurry, Face, head, legs");
+  assert.equal(joinNegative("blurry,", ""), "blurry");
+  const neg = { name: "value", value: "blurry" };
+  const p = Object.create(Pipeline.prototype);
+  p.ctx = { app: { graph: { _nodes: [{ id: 5509, widgets: [neg] }] } } };
+  let seen = null;
+  p._queueVideoAs = async () => { seen = neg.value; return "queued"; };
+  p._compiledLook = async () => ({ motion_negative: "face, head, standing figure, legs" });
+  assert.equal(await p._queueVideo(3), "queued");
+  assert.equal(seen, "blurry, face, head, standing figure, legs");
+  assert.equal(neg.value, "blurry");
+  p._compiledLook = async () => ({ motion_negative: "" });
+  await p._queueVideo(3);
+  assert.equal(seen, "blurry");
+  p._compiledLook = async () => null;   // no server: the queue goes on with your negative
+  await p._queueVideo(3);
+  assert.equal(seen, "blurry");
+});
