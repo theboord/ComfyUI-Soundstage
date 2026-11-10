@@ -77,10 +77,16 @@ def test_prepare_says_what_the_pass_needs():
 
 
 def test_the_instruction_keeps_everything_but_the_face():
+    # FLUX 3 Klein: "is the woman in image 2" at CFG 1 left the frame's own face on (castflux3, Maya S2 / S4)
     t = CP.instruction("woman")
-    assert t.startswith("The woman in image 1 is the woman in image 2: give her the face and hair")
+    assert t.startswith("Replace the face and hair of the woman in image 1 with the face and hair of the woman in image 2, "
+                        "so she is clearly the same person as in image 2.")
     assert "Keep her pose, her clothes, the light" in t and "Do not add anyone" in t
-    assert "give him" in CP.instruction("man") and "give them" in CP.instruction("person")
+    assert "so he is" in CP.instruction("man") and "so they are clearly" in CP.instruction("person")
+    # FLUX.2 Klein 9B keeps the wording idfix tested on it
+    t9 = CP.instruction("woman", "flux2")
+    assert t9.startswith("The woman in image 1 is the woman in image 2: give her the face and hair")
+    assert "give him" in CP.instruction("man", "flux2") and "give them" in CP.instruction("person", "flux2")
 
 
 # ---------------------------------------------------------------- the graph
@@ -125,9 +131,10 @@ def test_the_pass_repaints_only_the_person_with_the_cast_picture(info2, mid):
     srcs = {tuple(g.nodes[r.inputs["pixels"][0]].inputs["image"]) for r in refs}   # VAEEncode <- the scaled picture
     assert srcs == {tuple(frame), tuple(T.link("ref2"))}
     ks = by["KSampler"][0]
-    assert (ks.inputs["steps"], ks.inputs["cfg"], ks.inputs["denoise"]) == (16, 1.0, 1.0)
+    assert (ks.inputs["steps"], ks.inputs["cfg"], ks.inputs["denoise"]) == (16, 3.0, 1.0)
     enc = [n for n in by["CLIPTextEncode"] if "image 2" in n.inputs["text"]]
-    assert enc and "Do not add anyone" in enc[0].inputs["text"]
+    assert enc and enc[0].inputs["text"] == CP.instruction("woman")
+    assert len(by["CLIPTextEncode"]) == 1 and by["ConditioningZeroOut"], "CFG 3 against the zeroed-out positive"
     assert T.check_graph(g) == []
 
 
@@ -161,7 +168,8 @@ def test_klein_9b_does_the_pass_only_when_flux_3_klein_is_missing(info2, mid):
     by = by_type(g)
     assert by["UNETLoader"][0].inputs["unet_name"].startswith("flux-2-klein-9b")
     assert by["CLIPLoader"][0].inputs["type"] == "flux2"
-    assert by["KSampler"][0].inputs["steps"] == 4, "4-step distilled"
+    assert (by["KSampler"][0].inputs["steps"], by["KSampler"][0].inputs["cfg"]) == (4, 1.0), "4-step distilled"
+    assert [n for n in by["CLIPTextEncode"] if n.inputs["text"] == CP.instruction("woman", "flux2")]
     assert T.check_graph(g) == []
 
 

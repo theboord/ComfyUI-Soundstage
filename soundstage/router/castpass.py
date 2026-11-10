@@ -31,18 +31,28 @@ import numpy as np
 CAST_LABEL = "character sheet"   # web/cast/shotcast.mjs KIND_LABEL.character: "Maya — character sheet"
 GROW = 24                        # px the person's silhouette is grown by (hair, loose clothes, a pose a little off)
 FEATHER = 10                     # px of soft edge
-# (clip type, steps): FLUX 3 Klein's edit template (adapters.KLEIN_STEPS), FLUX.2 Klein 9B is 4-step distilled
-PASS = {"flux3": ("flux3", 16), "flux2": ("flux2", 4)}
+# (clip type, steps, cfg). FLUX 3 Klein: its edit template's 16 steps (adapters.KLEIN_STEPS) at CFG 3. At CFG 1 with
+# the "is the woman in image 2" wording it gave the frame back almost untouched (0.01-1 % of pixels moved, the frame
+# model's face kept; castflux3 test, Maya S2 / S4, 2026-11-09); the "Replace the face and hair" wording at CFG 3 put the
+# cast face on in all four (S4 closer than Klein 9B), one person, silhouette match 0.91-0.94. FLUX.2 Klein 9B: 4-step
+# distilled, CFG 1, its own tested wording.
+PASS = {"flux3": ("flux3", 16, 3.0), "flux2": ("flux2", 4, 1.0)}
 STEPS = PASS["flux3"][1]
 MIN_AREA = 0.002                 # a person smaller than this share of frame 1 is too small for a likeness
 
 
-def instruction(noun: str = "person") -> str:
-    """The edit instruction: 'the woman in image 1 is the woman in image 2', keep everything else."""
+def instruction(noun: str = "person", model: str = "flux3") -> str:
+    """The edit instruction, image 1 = the frame, image 2 = the cast picture; keep everything else. FLUX 3 Klein: "Replace
+    the face and hair of the woman in image 1 with ..." (the other wording left the frame's face on it). FLUX.2 Klein 9B:
+    "The woman in image 1 is the woman in image 2: give her ..." (what idfix tested on it)."""
     n = re.sub(r"^(?:a|an|the|one)\s+", "", (noun or "person").strip()) or "person"
-    obj, pos = {"woman": ("her", "her"), "girl": ("her", "her"), "man": ("him", "his"), "boy": ("him", "his")}.get(n, ("them", "their"))
-    return (f"The {n} in image 1 is the {n} in image 2: give {obj} the face and hair of the {n} in image 2. Keep {pos} "
-            f"pose, {pos} clothes, the light and everything else exactly as in image 1. Do not add anyone.")
+    subj, obj, pos = {"woman": ("she is", "her", "her"), "girl": ("she is", "her", "her"), "man": ("he is", "him", "his"),
+                      "boy": ("he is", "him", "his")}.get(n, ("they are", "them", "their"))
+    keep = f"Keep {pos} pose, {pos} clothes, the light and everything else exactly as in image 1. Do not add anyone."
+    if model == "flux2":
+        return f"The {n} in image 1 is the {n} in image 2: give {obj} the face and hair of the {n} in image 2. {keep}"
+    return (f"Replace the face and hair of the {n} in image 1 with the face and hair of the {n} in image 2, so {subj} "
+            f"clearly the same person as in image 2. {keep}")
 
 
 def _people(scene: dict) -> list[dict]:
@@ -149,8 +159,9 @@ def apply(g, m: dict, p: dict, image):
         return image
     from .edit_graph import klein_edit
     ws, key = hit
-    clip_type, steps = PASS[key]
+    clip_type, steps, cfg = PASS[key]
     mask = g.node("LoadImageMask", image=cp["mask_file"], channel="red").out(0)
     # p["classes"]: ReferenceMultiLatent when this ComfyUI has it (0.39+), else chained ReferenceLatent (edit_graph)
-    q = {"weights": ws, "clip_type": clip_type, "seed": p["seed"], "steps": steps, "cfg": 1.0, "classes": p.get("classes")}
-    return klein_edit(g, q, source=image, prompt=instruction(cp["noun"]), refs=[refs[cp["ref"]]], mask=mask)
+    # no negative text: at CFG 3 the negative is the zeroed-out positive (edit_graph.klein_edit)
+    q = {"weights": ws, "clip_type": clip_type, "seed": p["seed"], "steps": steps, "cfg": cfg, "classes": p.get("classes")}
+    return klein_edit(g, q, source=image, prompt=instruction(cp["noun"], key), refs=[refs[cp["ref"]]], mask=mask)
