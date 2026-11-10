@@ -1261,6 +1261,15 @@ def groups(entries: list[dict], cam: dict) -> list[dict]:
             facing += ", the horse's tail toward us" if len(g) == 1 else ", the horses' tails toward us"
         if lay:   # frame 1 measured on the ID pass (look/frame_lock.py): where it really is and how big
             where, far, dist = lay
+        elif all(e.get("rig") == "vehicle" and e.get("size_by_width") for e in g):
+            # A car is long and low: by its height alone the hero car that fills half the frame read "seen whole in
+            # the middle distance", and Krea 2 painted it small down the street (carpush, 2026-11-09). Without the
+            # measured layout (the browser's Auto / compiled prompt), size a vehicle by its width, about 1.9x its height (the demo hero car: 0.29 tall, 0.55 wide).
+            from . import frame_lock as FL
+            w = min(1.0, h * 1.9)
+            where, far = screen_words(sx), w < 0.12
+            dist = (f"close to the camera, about {FL.frac_words(w)} frame wide" if w >= 0.4
+                    else "in the middle ground" if w >= 0.15 else "small in the distance")
         else:
             where, far, dist = screen_words(sx), h < 0.18, _distance_words(h, all(e.get("rig") == "biped" for e in g), len(g) > 1)
         out.append({"nouns": _group_nouns([e["noun"] for e in g]), "plural": len(g) > 1, "where": where,
@@ -1543,6 +1552,9 @@ def frame1_facts(scene: dict) -> dict:
     cam0, _, _ = camera_at_ends(scene)
     ff = frame_facts(scene, cam0, 0)
     lay = scene.get("frame1_layout") if scene.get("look_start") is not False else None
+    if scene.get("look_start") is not False:   # frames picked before the lock keep their old words (they reproduce)
+        for e in ff["people"] + ff["others"]:
+            e["size_by_width"] = True
     if isinstance(lay, dict) and lay:
         # The stage measured frame 1 on its ID pass (3D Stage node): every entry says where it really is. A rider
         # reads as one figure with the horse under them.

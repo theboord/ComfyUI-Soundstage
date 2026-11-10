@@ -77,7 +77,9 @@ def test_still_prompt_states_the_measured_layout():
     after = compile_look({}, _chase_scene(lay))["still_prompt"]
     assert "close to the camera, two thirds of the frame wide" in after
     assert "small in the distance, a tenth of the frame wide" in after
-    assert "close to the camera" not in before
+    # without the measured layout the guess differs, but a car is sized by its width: never "middle distance" for a
+    # car that fills two thirds of the frame (carpush, 2026-11-09)
+    assert before != after and "seen whole in the middle distance" not in before
     # a frame picked before the lock (look_start false) compiles exactly as it did
     assert compile_look({}, _chase_scene(lay, look_start=False))["still_prompt"] == \
         compile_look({}, _chase_scene(None, look_start=False))["still_prompt"]

@@ -238,7 +238,9 @@ def test_chase_auto_keeps_every_stage_fact_in_every_variant():
             assert fact in p, (v["key"], fact)
         for wrong in ("open lot", "grass", "grey classic car", "empty ground", "daylight sun", "wet asphalt", "puddles", "woman"):
             assert wrong not in p, (v["key"], wrong)
-        assert "the empty road in the foreground" in p     # the set's own ground, not "empty ground"
+        # the hero car fills half the frame: sized by its width, close to the camera (carpush, 2026-11-09: "seen whole
+        # in the middle distance, the empty road in the foreground" made Krea 2 paint it small down the street)
+        assert "close to the camera" in p and "middle distance" not in p, (v["key"], p)
     assert r["prompt"] == r["variants"][0]["prompt"] and r["variant"] == "natural"
     assert "warm sodium lamp glow on the asphalt" in r["prompt"]
     notes = " ".join(r["variants"][0]["notes"])
