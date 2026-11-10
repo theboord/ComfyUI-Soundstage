@@ -1906,6 +1906,15 @@ function createStageWidget(node, inputName) {
     (v) => stage.setAppearance({ skin: v }));
   const cHair = colorInput("Hair", "hair_color"), cTop = colorInput("Top", "top_color"), cBottom = colorInput("Bottom", "bottom_color");
   const cMain = colorInput("Colour", "color");
+  // What a car or prop IS, in words: the prompts use it instead of the stock body style (stage.setDescription).
+  const descWrap = document.createElement("label");
+  const descIn = Object.assign(document.createElement("input"), { type: "text", placeholder: "Describe it, e.g. a silver 1960s coupé",
+    title: "What this object is, in words: the frame and video prompts call it this instead of the stock model's body style" });
+  descIn.style.cssText = "width:220px";
+  descIn.addEventListener("pointerdown", (e) => e.stopPropagation());
+  descIn.addEventListener("keydown", (e) => e.stopPropagation());
+  descIn.addEventListener("change", () => stage.setDescription(descIn.value));
+  descWrap.append("Describe", descIn);
   const peopleLook = peopleLookControls(stage, mkSelect);   // Face shown / faceless (stage/people/peopleui.mjs)
   const swimCtl = swimControl(stage, mkSelect, SWIM_MODES);   // Swim: tread, strokes, back float, dive, can't swim (stage.setSwim)
   const rideSel = mkSelect("Ride / sit on", { "": { label: "—" } }, "", (v) => {
@@ -2014,7 +2023,7 @@ function createStageWidget(node, inputName) {
   });
   sitSel.sel.title = "Sit down on a chair, bench or sofa in the shot (they walk there from the playhead), or stand up at the playhead";
   const personCtl = [apBuild.wrap, apHair.wrap, cHair.wrap, apTop.wrap, cTop.wrap, apBottom.wrap, cBottom.wrap, apSkin.wrap, peopleLook.face.wrap, swimCtl.swim.wrap, rideSel.wrap, seatSel.wrap, hopBtn, sitSel.wrap];
-  apRow.append(...personCtl, cMain.wrap, followSel.wrap, stuntSel.wrap, stuntKmh, stuntRoad.wrap, stuntMass, beamSel.wrap);
+  apRow.append(...personCtl, cMain.wrap, descWrap, followSel.wrap, stuntSel.wrap, stuntKmh, stuntRoad.wrap, stuntMass, beamSel.wrap);
   // Pose Studio: every joint (fingers too), a gallery and keys, under the selected person's appearance controls.
   const poseHost = document.createElement("div");
   const posePanel = new PosePanel(poseHost, { stage, api, onStatus: (m) => { status.textContent = m; },
@@ -2037,6 +2046,8 @@ function createStageWidget(node, inputName) {
     const person = isPerson(info.kind);
     for (const w of personCtl) w.hidden = !person;
     cMain.wrap.hidden = person;
+    descWrap.hidden = person;
+    if (document.activeElement !== descIn) descIn.value = info.description || "";
     const ap = { ...(DEFAULT_APPEARANCE[info.kind] || {}), ...(info.appearance || {}) };
     if (person) {
       apBuild.sel.value = ap.build; apHair.sel.value = ap.hair; apTop.sel.value = ap.top; apBottom.sel.value = ap.bottom;

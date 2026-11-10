@@ -117,6 +117,18 @@ def body_words(scene: dict, ids: set | None = None) -> str:
         if not body or S.classify(a)[1] != "vehicle":
             continue
         paint, _ = _look(a)
+        own = (a.get("description") or "").strip().rstrip(".")
+        if own:
+            # The car's own description (Properties > Describe) is what the car IS: it replaces the stock body style, so
+            # "a silver classic 1960s grand-touring coupé" is not also called "a modern fastback" (carpush, 2026-11-09).
+            # The noun stays the library's ("the sports car"), so the sentence doesn't repeat the description.
+            noun = S.definite(S._article(S.library().get(a.get("kind") or "", (a.get("kind") or "car",))[0].lower()))
+            what = own if re.match(r"(?i)(a|an|the)\s", own) else S._article(own)
+            if paint and paint.split()[0].lower() not in own.lower():
+                what = re.sub(r"(?i)^(a|an|the)\s", lambda m: f"{m.group(1)} {paint} ", what, count=1)
+            what = re.sub(r"\ba (?=[aeiou])", "an ", what)
+            out.append(f"{noun[:1].upper()}{noun[1:]} is {what}, with {PLATE}.")
+            continue
         noun = S.definite(S.classify(a)[0])
         what = f"{body[:2]}{paint} {body[2:]}" if paint and body.startswith("a ") else body
         what = re.sub(r"\ba (?=[aeiou])", "an ", what)

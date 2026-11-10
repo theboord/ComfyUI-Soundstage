@@ -6638,6 +6638,17 @@ export class Stage {
     this.onChange(this.toJSON());
   }
 
+  /** What the selected object IS, in words ("a silver classic 1960s grand-touring coupé"): the prompts call it that
+   *  instead of the library's stock body style. Empty clears it. One undo step. */
+  setDescription(text) {
+    const a = this.state.actors.find((x) => x.id === this.selected);
+    if (!a) return;
+    const t = String(text || "").trim().slice(0, 200);
+    if ((a.description || "") === t) return;
+    if (t) a.description = t; else delete a.description;
+    this.onChange(this.toJSON());
+  }
+
   select(id) {
     const prev = this.selected;
     this.selected = id && this.actorMeshes.has(id) ? id : null;
@@ -6712,7 +6723,7 @@ export class Stage {
   selectedInfo() {
     const a = this.state.actors.find((x) => x.id === this.selected);
     return a ? { id: a.id, name: a.name, kind: a.kind, rotation_deg: a.rotation_deg || 0, height_m: a.height_m, scale: a.scale || 1,
-      appearance: a.appearance || null, mount_id: a.mount_id || null, pose: a.pose || null, seat: a.seat ?? null,
+      appearance: a.appearance || null, description: a.description || "", mount_id: a.mount_id || null, pose: a.pose || null, seat: a.seat ?? null,
       beam: a.beam || "steady", stunt: a.stunt || null, stunt_sim: a.stunt_sim || null, face: a.face || "shown", swim: Buoy.swimMode(a.swim) } : null;
   }
 
