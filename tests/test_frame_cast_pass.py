@@ -1,7 +1,8 @@
 """④ Frame's cast pass (soundstage/router/castpass.py, Maya scene identity test 2026-11-09): after the frame model, the
-one person in frame 1 is repainted inside their own stage silhouette by FLUX.2 Klein 9B with the cast picture as
-image 2. It can never add a person (nothing outside the mask changes) and it falls back to the plain frame whenever
-it can't run. Graphs checked against tests/test_router_object_info.json (+ LoadImageMask from the 0.38 Ada pod)."""
+one person in frame 1 is repainted inside their own stage silhouette by FLUX 3 Klein with the cast picture as image 2
+(FLUX.2 Klein 9B only where FLUX 3 Klein is not installed and 9B is). It can never add a person (nothing outside the
+mask changes) and it falls back to the plain frame whenever it can't run. Graphs checked against
+tests/test_router_object_info.json (+ LoadImageMask from the 0.38 Ada pod)."""
 import os
 import sys
 
@@ -84,15 +85,20 @@ def test_the_instruction_keeps_everything_but_the_face():
 
 # ---------------------------------------------------------------- the graph
 
-def frame_p(mid="open.krea_2_turbo", ok=True, ids=True):
+FLUX3 = {"id_unet": "flux3-image-klein-int8-convrot.safetensors", "id_text_encoder": "qwen3vl_4b_fp8_scaled.safetensors",
+         "id_vae": "flux2-vae.safetensors"}
+NO_FLUX3 = {k: None for k in FLUX3}
+K9 = {"id9_unet": "flux-2-klein-9b.safetensors", "id9_text_encoder": "qwen_3_8b.safetensors", "id9_vae": "flux2-vae.safetensors"}
+NO_K9 = {k: None for k in K9}
+
+
+def frame_p(mid="open.krea_2_turbo", ok=True, ids=True, k9=False, multi=False):
+    """ids: FLUX 3 Klein's id_* files resolved; k9: Klein 9B's id9_* files; multi: ComfyUI 0.39+ (ReferenceMultiLatent)."""
     m = entry(mid)
     p = T.base_p(m, "edit_image", image=T.link("img"), control=T.link("ctrl"), refs=[T.link("ref1"), T.link("ref2")])
-    if ids and mid != "open.flux2_klein_9b":
-        p["weights"].update(id_unet="flux-2-klein-9b.safetensors", id_text_encoder="qwen_3_8b.safetensors",
-                            id_vae="flux2-vae.safetensors")
-    elif not ids:
-        p["weights"].update(id_unet=None, id_text_encoder=None, id_vae=None)
-    p["classes"] = set(T.OBJECT_INFO) - {"ReferenceMultiLatent"}     # the 0.38 pods
+    p["weights"].update(FLUX3 if ids else NO_FLUX3)
+    p["weights"].update(K9 if k9 else NO_K9)
+    p["classes"] = set(T.OBJECT_INFO) - (set() if multi else {"ReferenceMultiLatent"})   # 0.44 pods / 0.38
     p["cast_pass"] = ({"ok": True, "ref": 1, "noun": "woman", "name": "Maya", "mask_file": "soundstage_cast/castmask_x.png"}
                       if ok else {"ok": False, "why": "the cast pass needs exactly one person in frame 1"})
     return m, p
@@ -100,15 +106,16 @@ def frame_p(mid="open.krea_2_turbo", ok=True, ids=True):
 
 @pytest.mark.parametrize("mid", ["open.krea_2_turbo", "open.flux3_klein", "open.flux2_klein_9b"])
 def test_the_pass_repaints_only_the_person_with_the_cast_picture(info2, mid):
-    m, p = frame_p(mid)
+    m, p = frame_p(mid, k9=True)     # Klein 9B installed too: FLUX 3 Klein still does the pass, on every frame model
     g = T.FakeGraph()
     frame = T.link("img_last")
     out = CP.apply(g, m, p, frame)
     assert out != frame and T.output_type(g, out) == "IMAGE"
     by = by_type(g)
     unet = [n for n in by["UNETLoader"]]
-    assert unet[0].inputs["unet_name"].startswith("flux-2-klein-9b")
-    assert by["CLIPLoader"][0].inputs["type"] == "flux2"
+    assert unet[0].inputs["unet_name"].startswith("flux3-image-klein")
+    assert by["CLIPLoader"][0].inputs["type"] == "flux3"
+    assert by["CLIPLoader"][0].inputs["clip_name"].startswith("qwen3vl_4b")
     mask = by["LoadImageMask"][0]
     assert mask.inputs == {"image": "soundstage_cast/castmask_x.png", "channel": "red"}
     noise = by["SetLatentNoiseMask"][0]
@@ -118,27 +125,79 @@ def test_the_pass_repaints_only_the_person_with_the_cast_picture(info2, mid):
     srcs = {tuple(g.nodes[r.inputs["pixels"][0]].inputs["image"]) for r in refs}   # VAEEncode <- the scaled picture
     assert srcs == {tuple(frame), tuple(T.link("ref2"))}
     ks = by["KSampler"][0]
-    assert (ks.inputs["steps"], ks.inputs["cfg"], ks.inputs["denoise"]) == (CP.STEPS, 1.0, 1.0)
+    assert (ks.inputs["steps"], ks.inputs["cfg"], ks.inputs["denoise"]) == (16, 1.0, 1.0)
     enc = [n for n in by["CLIPTextEncode"] if "image 2" in n.inputs["text"]]
     assert enc and "Do not add anyone" in enc[0].inputs["text"]
     assert T.check_graph(g) == []
 
 
-@pytest.mark.parametrize("why", ["skipped", "no_klein9b", "ref_gone"])
+def test_on_comfyui_0_39_plus_the_references_go_through_reference_multi_latent(info2):
+    """The pods (0.44.2): one ReferenceMultiLatent, the frame and the cast picture each on its 16-snapped canvas
+    ("keep resolution"), image 1 the very canvas the masked latent is encoded from."""
+    m, p = frame_p(multi=True)
+    g = T.FakeGraph()
+    frame = T.link("img_last")
+    out = CP.apply(g, m, p, frame)
+    by = by_type(g)
+    assert "ReferenceLatent" not in by and len(by["ReferenceMultiLatent"]) == 1
+    rml = by["ReferenceMultiLatent"][0]
+    assert rml.inputs["resolution"] == "keep resolution" and "resolution.megapixels" not in rml.inputs
+    im0, im1 = rml.inputs["images.image0"], rml.inputs["images.image1"]
+    assert g.nodes[im0[0]].inputs["image"] == frame and g.nodes[im1[0]].inputs["image"] == T.link("ref2")
+    assert all(g.nodes[i[0]].inputs["resolution_steps"] == 16 for i in (im0, im1))
+    noise = by["SetLatentNoiseMask"][0]
+    enc = g.nodes[noise.inputs["samples"][0]]
+    assert enc.class_type == "VAEEncode" and enc.inputs["pixels"] == im0, "the masked latent is on image 1's canvas"
+    ks = by["KSampler"][0]
+    assert ks.inputs["positive"] == rml.out(0) and ks.inputs["negative"] == rml.out(1)
+    assert T.check_graph(g) == [] and T.output_type(g, out) == "IMAGE"
+
+
+@pytest.mark.parametrize("mid", ["open.krea_2_turbo", "open.flux2_klein_9b"])
+def test_klein_9b_does_the_pass_only_when_flux_3_klein_is_missing(info2, mid):
+    m, p = frame_p(mid, ids=False, k9=True)
+    g = T.FakeGraph()
+    CP.apply(g, m, p, T.link("img_last"))
+    by = by_type(g)
+    assert by["UNETLoader"][0].inputs["unet_name"].startswith("flux-2-klein-9b")
+    assert by["CLIPLoader"][0].inputs["type"] == "flux2"
+    assert by["KSampler"][0].inputs["steps"] == 4, "4-step distilled"
+    assert T.check_graph(g) == []
+
+
+@pytest.mark.parametrize("why", ["skipped", "no_klein", "ref_gone"])
 def test_otherwise_the_frame_is_left_as_it_was(info2, why):
-    m, p = frame_p(ok=why != "skipped", ids=why != "no_klein9b")
+    m, p = frame_p(ok=why != "skipped", ids=why != "no_klein")     # no_klein: neither FLUX 3 Klein nor Klein 9B
     if why == "ref_gone":
         p["refs"] = p["refs"][:1]
     g = T.FakeGraph()
     assert CP.apply(g, m, p, T.link("img_last")) == T.link("img_last") and not g.nodes
 
 
-def test_the_frame_models_carry_klein_9b_as_their_cast_pass_weights():
-    for mid in ("open.krea_2_turbo", "open.flux3_klein"):
-        roles = {w["role"] for w in entry(mid)["optional_weights"]}
-        assert {"id_unet", "id_text_encoder", "id_vae"} <= roles, mid
-    assert CP.id_weights(entry("open.flux2_klein_9b"), {"unet": "u", "text_encoder": "t", "vae": "v"}) == \
-        {"unet": "u", "text_encoder": "t", "vae": "v"}
+def test_the_frame_models_carry_flux_3_klein_then_klein_9b_as_their_cast_pass_weights():
+    for mid in ("open.krea_2_turbo", "open.flux3_klein", "open.flux2_klein_9b"):
+        spec = {w["role"]: w for w in entry(mid)["optional_weights"]}
+        assert {"id_unet", "id_text_encoder", "id_vae", "id9_unet", "id9_text_encoder", "id9_vae"} <= set(spec), mid
+        assert spec["id_unet"]["any"] == ["flux3-image-klein-int8-convrot.safetensors"]
+        assert "qwen3vl_4b_fp8_scaled.safetensors" in spec["id_text_encoder"]["any"]
+        assert all(spec[r]["classes"] == ["clip_type:flux3"] for r in ("id_unet", "id_text_encoder", "id_vae")), \
+            "FLUX 3 Klein needs ComfyUI's flux3 text-encoder type (0.39+)"
+    own = {"unet": "u", "text_encoder": "t", "vae": "v"}
+    assert CP.id_weights(entry("open.flux3_klein"), {**own, **K9}) == (own, "flux3")
+    assert CP.id_weights(entry("open.flux2_klein_9b"), {**own, **FLUX3})[1] == "flux3", "FLUX 3 Klein first, on 9B too"
+    assert CP.id_weights(entry("open.flux2_klein_9b"), {**own, **NO_FLUX3}) == (own, "flux2")
+    assert CP.id_weights(entry("open.krea_2_turbo"), {**own, **NO_FLUX3, **K9})[1] == "flux2"
+    assert CP.id_weights(entry("open.krea_2_turbo"), {**own, **NO_FLUX3, **NO_K9}) is None
+
+
+def test_a_comfyui_without_the_flux3_type_does_not_resolve_flux_3_klein_for_the_pass():
+    from soundstage.router import registry as R
+    files = {"diffusion_models": ["flux3-image-klein-int8-convrot.safetensors", "flux-2-klein-9b.safetensors"],
+             "text_encoders": ["qwen3vl_4b_fp8_scaled.safetensors", "qwen_3_8b.safetensors"], "vae": ["flux2-vae.safetensors"]}
+    m = entry("open.krea_2_turbo")
+    old = R.resolve_weights(m, lambda folder: files.get(folder, []), {"CLIPLoader", "clip_type:flux2"})
+    new = R.resolve_weights(m, lambda folder: files.get(folder, []), {"CLIPLoader", "clip_type:flux2", "clip_type:flux3"})
+    assert CP.id_weights(m, old)[1] == "flux2" and CP.id_weights(m, new)[1] == "flux3"
 
 
 def test_a_person_seated_on_a_chair_is_still_the_one_person():

@@ -12,7 +12,8 @@ What is wired (2026-11-08):
 - Klein's references (adapters.klein_refs, fill_graph._klein) chain ReferenceLatent through `klein_references` when
   ComfyUI has no ReferenceMultiLatent (before 0.39: the pods), as ComfyUI's own FLUX.2 Klein edit templates do.
 
-`klein_edit` is the one-builder version of the Klein paths; nothing calls it yet. Every canvas is 16-snapped (_scaled).
+`klein_edit` is the one-builder version of the Klein paths; ④ Frame's cast pass (castpass.apply) calls it. Every canvas
+is 16-snapped (_scaled).
 
 Structure control: Klein takes none. control_image never reaches its conditioning (adapters.flux3_klein); its layout
 comes only from the source picture as an aligned reference plus an instruction that says to keep it. Real depth control
@@ -22,7 +23,8 @@ No ComfyUI imports: built against a GraphBuilder-like `g`, checked against an /o
 """
 from __future__ import annotations
 
-from .adapters import (RouterError, _loaders, _sampling, _with_lora, _with_shift, blur_start, depth_control)
+from .adapters import (RouterError, _loaders, _sampling, _with_lora, _with_shift, blur_start, depth_control, has_class,
+                       klein_refs)
 
 # registry role "edit_lora" (open.krea_2_turbo): v1_2 in loras/Krea2/ on Jon's machine, v1_1 in loras/krea2/ on the pods
 KREA_EDIT_LORAS = ("krea2_identity_edit_v1_2.safetensors", "krea2_identity_edit_v1_1.safetensors")
@@ -107,8 +109,14 @@ def klein_edit(g, p, *, source, prompt, refs=(), depth=None, start=None, mask=No
     neg = (g.node("CLIPTextEncode", text=p["negative"], clip=clip).out(0) if p.get("negative") and cfg > 1
            else g.node("ConditioningZeroOut", conditioning=pos).out(0))
     images = ([source] if source_ref else []) + ([depth] if depth is not None else []) + list(refs)
-    pos, neg, _ = klein_references(g, vae, pos, neg, images, mp)
     canvas = _scaled(g, source, mp)
+    if has_class(p, "ReferenceMultiLatent"):
+        # 0.39+: one node; each picture already on its 16-snapped canvas ("keep resolution"), so image 1's reference
+        # latent and the (masked) start latent are the same size, pixel for pixel. Same latents as the chain below.
+        scaled = [canvas if (source_ref and i == 0) else _scaled(g, im, mp) for i, im in enumerate(images)]
+        pos, neg, _, _ = klein_refs(g, p, pos, neg, vae, scaled, None, resolution="keep resolution")
+    else:
+        pos, neg, _ = klein_references(g, vae, pos, neg, images, mp)
     if start is not None:
         start = _scaled(g, start, mp)
     latent = _start_latent(g, vae, canvas, start=start, mask=mask)

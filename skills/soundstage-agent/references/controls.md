@@ -583,6 +583,7 @@ Each line: **control**: what it does.
 - **Download the whole set as a**: Download the whole set as a .glb (Blender, Unreal, Unity, C4D…)
 - **Fix this object**: Re-analyse only this object in the clip and rebuild it alone
 - **Add a missed object**: Click it on the source frame
+- **What this object is, in words**: What this object is, in words: the frame and video prompts call it this instead of the stock model's body style
 - **Speed when the driver starts the stunt**: Speed when the driver starts the stunt (km/h)
 - **The car's mass**: The car's mass (kg): heavier slides further and rolls more slowly
 - **Stay on foot until the playhead, then hop on**: Stay on foot until the playhead, then hop on (move the playhead to frame 0 and press again to ride from the start)

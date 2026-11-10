@@ -1,6 +1,10 @@
 """④ Frame's cast pass: after the frame model paints frame 1, the one person in it gets the cast picture's face and hair
-through a masked identity pass on FLUX.2 Klein 9B (image 1 = the painted frame, image 2 = the cast picture, the noise
-mask = that person's region from the stage's ID pass of frame 1, grown and feathered).
+through a masked identity pass on FLUX 3 Klein (image 1 = the painted frame, image 2 = the cast picture, the noise
+mask = that person's region from the stage's ID pass of frame 1, grown and feathered). FLUX.2 Klein 9B does the same
+pass only on a ComfyUI that has no FLUX 3 Klein (its files, or the "flux3" text-encoder type of 0.39+) and has 9B.
+
+2026-11-09 evening: the pass moved from FLUX.2 Klein 9B to FLUX 3 Klein (Mike removed 9B, its qwen_3_8b encoder and
+its LoRAs from the pod volume; FLUX 3 Klein runs on the pods since ComfyUI 0.44.2). The design is unchanged.
 
 Why this and not the other ways (Maya scene, 2026-11-09, idfix comparison sheets; S2, S4, S5 and the pull-back close-up):
 - Krea 2's two-reference identity edit (the frame or the stage colour pass as "scene", the cast picture as "subject")
@@ -27,7 +31,9 @@ import numpy as np
 CAST_LABEL = "character sheet"   # web/cast/shotcast.mjs KIND_LABEL.character: "Maya — character sheet"
 GROW = 24                        # px the person's silhouette is grown by (hair, loose clothes, a pose a little off)
 FEATHER = 10                     # px of soft edge
-STEPS = 4                        # FLUX.2 Klein 9B is 4-step distilled
+# (clip type, steps): FLUX 3 Klein's edit template (adapters.KLEIN_STEPS), FLUX.2 Klein 9B is 4-step distilled
+PASS = {"flux3": ("flux3", 16), "flux2": ("flux2", 4)}
+STEPS = PASS["flux3"][1]
 MIN_AREA = 0.002                 # a person smaller than this share of frame 1 is too small for a likeness
 
 
@@ -116,23 +122,35 @@ def prepare(scene: dict, id_rgb: np.ndarray, labels: list[str]) -> dict:
     return {"ok": True, "mask": mask, "ref": ref, "noun": noun, "name": actor.get("name") or ""}
 
 
-def id_weights(m: dict, w: dict) -> dict | None:
-    """FLUX.2 Klein 9B's three files: the model's own when it IS Klein 9B, else the entry's optional id_* roles."""
-    if m.get("adapter") == "flux2_klein":
-        return {"unet": w.get("unet"), "text_encoder": w.get("text_encoder"), "vae": w.get("vae")}
-    ws = {"unet": w.get("id_unet"), "text_encoder": w.get("id_text_encoder"), "vae": w.get("id_vae")}
+def _three(w: dict, prefix: str = "") -> dict | None:
+    ws = {"unet": w.get(prefix + "unet"), "text_encoder": w.get(prefix + "text_encoder"), "vae": w.get(prefix + "vae")}
     return ws if all(ws.values()) else None
+
+
+def id_weights(m: dict, w: dict) -> tuple[dict, str] | None:
+    """(the pass model's three files, "flux3" | "flux2"): FLUX 3 Klein (the frame model's own files when it IS FLUX 3
+    Klein, else the entry's id_* roles, which resolve only where ComfyUI has the "flux3" text-encoder type); FLUX.2
+    Klein 9B (its own files, or the id9_* roles) only when FLUX 3 Klein is not there. None: neither is installed."""
+    ad = m.get("adapter")
+    for key, ws in (("flux3", _three(w) if ad == "flux3_klein" else None), ("flux3", _three(w, "id_")),
+                    ("flux2", _three(w) if ad == "flux2_klein" else None), ("flux2", _three(w, "id9_"))):
+        if ws:
+            return ws, key
+    return None
 
 
 def apply(g, m: dict, p: dict, image):
     """The pass on the expanded graph, after the frame model's `image`; `image` unchanged when it does not apply
-    (no cast picture, not one person, Klein 9B not installed): the plain frame, as before."""
+    (no cast picture, not one person, neither FLUX 3 Klein nor Klein 9B installed): the plain frame, as before."""
     cp = p.get("cast_pass") or {}
-    ws = id_weights(m, p.get("weights") or {})
+    hit = id_weights(m, p.get("weights") or {})
     refs = p.get("refs") or []
-    if not cp.get("ok") or ws is None or cp["ref"] >= len(refs):
+    if not cp.get("ok") or hit is None or cp["ref"] >= len(refs):
         return image
     from .edit_graph import klein_edit
+    ws, key = hit
+    clip_type, steps = PASS[key]
     mask = g.node("LoadImageMask", image=cp["mask_file"], channel="red").out(0)
-    q = {"weights": ws, "clip_type": "flux2", "seed": p["seed"], "steps": STEPS, "cfg": 1.0, "classes": p.get("classes")}
+    # p["classes"]: ReferenceMultiLatent when this ComfyUI has it (0.39+), else chained ReferenceLatent (edit_graph)
+    q = {"weights": ws, "clip_type": clip_type, "seed": p["seed"], "steps": steps, "cfg": 1.0, "classes": p.get("classes")}
     return klein_edit(g, q, source=image, prompt=instruction(cp["noun"]), refs=[refs[cp["ref"]]], mask=mask)

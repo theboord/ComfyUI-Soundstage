@@ -85,13 +85,44 @@
      "role": "id_unet",
      "folder": "diffusion_models",
      "any": [
+      "flux3-image-klein-int8-convrot.safetensors"
+     ],
+     "classes": [
+      "clip_type:flux3"
+     ]
+    },
+    {
+     "role": "id_text_encoder",
+     "folder": "text_encoders",
+     "any": [
+      "qwen3vl_4b_fp8_scaled.safetensors",
+      "qwen3vl_4b_int8_convrot.safetensors"
+     ],
+     "classes": [
+      "clip_type:flux3"
+     ]
+    },
+    {
+     "role": "id_vae",
+     "folder": "vae",
+     "any": [
+      "flux2-vae.safetensors"
+     ],
+     "classes": [
+      "clip_type:flux3"
+     ]
+    },
+    {
+     "role": "id9_unet",
+     "folder": "diffusion_models",
+     "any": [
       "flux-2-klein-9b.safetensors",
       "flux-2-klein-9b-fp8.safetensors",
       "flux-2-klein-9b-kv-fp8.safetensors"
      ]
     },
     {
-     "role": "id_text_encoder",
+     "role": "id9_text_encoder",
      "folder": "text_encoders",
      "any": [
       "qwen_3_8b.safetensors",
@@ -100,7 +131,7 @@
      ]
     },
     {
-     "role": "id_vae",
+     "role": "id9_vae",
      "folder": "vae",
      "any": [
       "flux2-vae.safetensors"
@@ -271,13 +302,44 @@
      "role": "id_unet",
      "folder": "diffusion_models",
      "any": [
+      "flux3-image-klein-int8-convrot.safetensors"
+     ],
+     "classes": [
+      "clip_type:flux3"
+     ]
+    },
+    {
+     "role": "id_text_encoder",
+     "folder": "text_encoders",
+     "any": [
+      "qwen3vl_4b_fp8_scaled.safetensors",
+      "qwen3vl_4b_int8_convrot.safetensors"
+     ],
+     "classes": [
+      "clip_type:flux3"
+     ]
+    },
+    {
+     "role": "id_vae",
+     "folder": "vae",
+     "any": [
+      "flux2-vae.safetensors"
+     ],
+     "classes": [
+      "clip_type:flux3"
+     ]
+    },
+    {
+     "role": "id9_unet",
+     "folder": "diffusion_models",
+     "any": [
       "flux-2-klein-9b.safetensors",
       "flux-2-klein-9b-fp8.safetensors",
       "flux-2-klein-9b-kv-fp8.safetensors"
      ]
     },
     {
-     "role": "id_text_encoder",
+     "role": "id9_text_encoder",
      "folder": "text_encoders",
      "any": [
       "qwen_3_8b.safetensors",
@@ -286,7 +348,7 @@
      ]
     },
     {
-     "role": "id_vae",
+     "role": "id9_vae",
      "folder": "vae",
      "any": [
       "flux2-vae.safetensors"
@@ -359,7 +421,64 @@
      ]
     }
    ],
-   "optional_weights": [],
+   "optional_weights": [
+    {
+     "role": "id_unet",
+     "folder": "diffusion_models",
+     "any": [
+      "flux3-image-klein-int8-convrot.safetensors"
+     ],
+     "classes": [
+      "clip_type:flux3"
+     ]
+    },
+    {
+     "role": "id_text_encoder",
+     "folder": "text_encoders",
+     "any": [
+      "qwen3vl_4b_fp8_scaled.safetensors",
+      "qwen3vl_4b_int8_convrot.safetensors"
+     ],
+     "classes": [
+      "clip_type:flux3"
+     ]
+    },
+    {
+     "role": "id_vae",
+     "folder": "vae",
+     "any": [
+      "flux2-vae.safetensors"
+     ],
+     "classes": [
+      "clip_type:flux3"
+     ]
+    },
+    {
+     "role": "id9_unet",
+     "folder": "diffusion_models",
+     "any": [
+      "flux-2-klein-9b.safetensors",
+      "flux-2-klein-9b-fp8.safetensors",
+      "flux-2-klein-9b-kv-fp8.safetensors"
+     ]
+    },
+    {
+     "role": "id9_text_encoder",
+     "folder": "text_encoders",
+     "any": [
+      "qwen_3_8b.safetensors",
+      "qwen_3_8b_fp8mixed.safetensors",
+      "qwen_3_8b_fp8_scaled.safetensors"
+     ]
+    },
+    {
+     "role": "id9_vae",
+     "folder": "vae",
+     "any": [
+      "flux2-vae.safetensors"
+     ]
+    }
+   ],
    "auto_download": false,
    "params": {},
    "license": "FLUX Non-Commercial License (FLUX.2 [klein] 9B): non-commercial use only; a commercial licence is sold by BFL",

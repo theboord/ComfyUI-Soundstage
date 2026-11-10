@@ -301,8 +301,10 @@ def test_krea_label_says_identity_edit_only_on_the_edit_stage_when_installed():
 def test_flux2_klein_9b_entry_runs_on_the_pod_files_with_its_loras():
     m = entry("open.flux2_klein_9b")
     w = R.resolve_weights(m, lister(POD38), CLASSES_ALL)
-    assert w == {"unet": "flux-2-klein-9b.safetensors", "text_encoder": "split_files/text_encoders/qwen_3_8b.safetensors",
-                 "vae": "flux2-vae.safetensors"}
+    # its own three files; the id_* / id9_* roles beside them are ④ Frame's cast pass (router/castpass.py)
+    assert {k: v for k, v in w.items() if not k.startswith("id")} == {
+        "unet": "flux-2-klein-9b.safetensors", "text_encoder": "split_files/text_encoders/qwen_3_8b.safetensors",
+        "vae": "flux2-vae.safetensors"}
     assert R.label_for(m) == "FLUX.2 Klein 9B · local [NC]"
     assert LC.ADAPTER_FAMILY["flux2_klein"] == "klein"
     p = T.base_p(m, "edit_image", image=T.link("img"))

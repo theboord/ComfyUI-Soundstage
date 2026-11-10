@@ -51,12 +51,19 @@ LTX_IC_CLASSES = LTX_CLASSES + ["LTXICLoRALoaderModelOnly", "LTXAddVideoICLoRAGu
                                 "GetImageSize"]
 
 
-ID_WEIGHTS = [  # ④ Frame's cast pass (router/castpass.py): FLUX.2 Klein 9B repaints the one person with the cast picture
-    {"role": "id_unet", "folder": "diffusion_models",
-     "any": ["flux-2-klein-9b.safetensors", "flux-2-klein-9b-fp8.safetensors", "flux-2-klein-9b-kv-fp8.safetensors"]},
+# ④ Frame's cast pass (router/castpass.py): FLUX 3 Klein repaints the one person with the cast picture (id_*, gated on
+# ComfyUI's "flux3" text-encoder type, 0.39+); FLUX.2 Klein 9B (id9_*) only when FLUX 3 Klein is not installed.
+ID_WEIGHTS = [
+    {"role": "id_unet", "folder": "diffusion_models", "any": ["flux3-image-klein-int8-convrot.safetensors"],
+     "classes": ["clip_type:flux3"]},
     {"role": "id_text_encoder", "folder": "text_encoders",
+     "any": ["qwen3vl_4b_fp8_scaled.safetensors", "qwen3vl_4b_int8_convrot.safetensors"], "classes": ["clip_type:flux3"]},
+    {"role": "id_vae", "folder": "vae", "any": ["flux2-vae.safetensors"], "classes": ["clip_type:flux3"]},
+    {"role": "id9_unet", "folder": "diffusion_models",
+     "any": ["flux-2-klein-9b.safetensors", "flux-2-klein-9b-fp8.safetensors", "flux-2-klein-9b-kv-fp8.safetensors"]},
+    {"role": "id9_text_encoder", "folder": "text_encoders",
      "any": ["qwen_3_8b.safetensors", "qwen_3_8b_fp8mixed.safetensors", "qwen_3_8b_fp8_scaled.safetensors"]},
-    {"role": "id_vae", "folder": "vae", "any": ["flux2-vae.safetensors"]}]
+    {"role": "id9_vae", "folder": "vae", "any": ["flux2-vae.safetensors"]}]
 
 
 def partner(id, name, provider, stages, adapter, classes, variant=None, params=None, notes="",
@@ -160,6 +167,7 @@ WIRED = [
             "any": ["qwen_3_8b.safetensors", "qwen_3_8b_fp8mixed.safetensors", "qwen_3_8b_fp8_scaled.safetensors"]},
            {"role": "vae", "folder": "vae", "any": ["flux2-vae.safetensors"]}],
           "FLUX Non-Commercial License (FLUX.2 [klein] 9B): non-commercial use only; a commercial licence is sold by BFL",
+          optional_weights=ID_WEIGHTS,
           notes="Edit = ReferenceMultiLatent, or chained ReferenceLatent on a ComfyUI without it (0.38). 4 steps cfg 1 "
                 "euler/simple by default. Its LoRAs go on with ④ Frame's add-on stack. No depth lock (Krea 2 only).",
           source_ids=["open.flux2_klein_9b"], optional_classes=["ReferenceMultiLatent"]),
